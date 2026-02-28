@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useTerminalStore, type MarketEvent } from '../store/useTerminalStore';
+import { useTerminalStore } from '../store/useTerminalStore';
 import { format } from 'date-fns';
 import { AlertTriangle, Activity, FishSymbol, Zap } from 'lucide-react';
 
