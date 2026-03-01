@@ -359,12 +359,18 @@ export default function TelegramSettings() {
                             {config ? (
                                 <div className="space-y-2">
                                     {[
+                                        // Legacy Core Alerts
                                         { id: 'oi_spike', label: 'Open Interest Spikes/Flushes', defaultCd: 600 },
                                         { id: 'wall', label: 'Orderbook Wall Approaching', defaultCd: 900 },
                                         { id: 'atr_expand', label: 'ATR Volatility Expansion', defaultCd: 300 },
-                                        { id: 'whale', label: 'Whale Trap/Absorption', defaultCd: 60 },
                                         { id: 'liquidation', label: 'Major Liquidations', defaultCd: 60 },
-                                        { id: 'funding_extreme', label: 'Funding Rate Extremes', defaultCd: 3600 },
+                                        { id: 'whale', label: 'Whale Activity (Executions & Momentum)', defaultCd: 60 },
+
+                                        // Phase 2 Advanced Alerts
+                                        { id: 'funding', label: 'Funding Rate Extremes', defaultCd: 3600 },
+                                        { id: 'value_area', label: 'Value Area Breakouts', defaultCd: 3600 },
+                                        { id: 'rvol', label: 'RVOL Anomalies (5m)', defaultCd: 3600 },
+                                        { id: 'market_context', label: 'Market Context & Daily Wrap', defaultCd: 14400 },
                                     ].map(cat => (
                                         <div key={cat.id} className="flex items-center justify-between p-3 border border-slate-800/50 hover:bg-slate-800/20 rounded transition-colors group">
                                             <div className="flex-1 min-w-0 pr-4">
