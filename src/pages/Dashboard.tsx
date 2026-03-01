@@ -41,6 +41,7 @@ export default function App() {
   const fundingHistory = useTerminalStore((state) => state.fundingHistory[activeSymbol]);
   const longShortRatio = useTerminalStore((state) => state.longShortRatio[activeSymbol]);
   const globalInterval = useTerminalStore((state) => state.globalInterval);
+  const telegramConfig = useTerminalStore((state) => state.telegramConfig);
 
   const activeTicker = tickers[activeSymbol]; // Used for 24h change
 
@@ -107,6 +108,12 @@ export default function App() {
           Godmode Futures <span className="text-terminal-muted text-sm ml-2">v2.0</span>
         </h1>
         <div className="ml-auto flex items-center gap-2 md:gap-4 text-xs text-terminal-muted font-mono">
+          {/* Telegram Egress Status */}
+          <div className="hidden md:flex items-center gap-2 px-2 py-1 rounded bg-[#0a0a0a] border border-terminal-border/30" title="Master Telegram Egress Toggle Status">
+            <span className={`w-2 h-2 rounded-full ${telegramConfig.globalEnabled ? 'bg-terminal-green shadow-[0_0_8px_#00ff41]' : 'bg-red-500 shadow-[0_0_8px_#ef4444]'}`}></span>
+            <span className="font-bold tracking-wider text-[10px]">{telegramConfig.globalEnabled ? 'TG: ON' : 'TG: OFF'}</span>
+          </div>
+
           {/* Telegram Bot Settings Link */}
           <Link
             to="/integrations/telegram"
