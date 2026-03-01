@@ -1,24 +1,53 @@
 import { useEffect, useRef } from 'react';
 import { useTerminalStore } from '../store/useTerminalStore';
 
-// Helper to optionally send Telegram notifications
-export const sendTelegramAlert = async (title: string, message: string, alertType: string, cooldownSecs: number = 60) => {
-    try {
-        // We attempt to call the local docker-compose service proxy if available
-        // In a real production setup with a reverse proxy, this might go to a specific path like /api/bot/alert
-        // For development/testing on the same machine, hitting localhost:8080 or the internal Docker hostname is used.
-        // Assuming Nginx or similar could route this, but for direct access we use relative /api/alert or a configurable env URL.
-        const botUrl = import.meta.env.VITE_TELEGRAM_BOT_URL || '/api/bot/alert';
+// Helper to check if current local time is within quiet hours
+const isWithinQuietHours = (startStr: string, endStr: string) => {
+    const now = new Date();
+    const currentMins = now.getHours() * 60 + now.getMinutes();
 
+    const [startH, startM] = startStr.split(':').map(Number);
+    const [endH, endM] = endStr.split(':').map(Number);
+
+    const startMins = startH * 60 + startM;
+    const endMins = endH * 60 + endM;
+
+    if (startMins <= endMins) {
+        // Standard range (e.g., 09:00 to 17:00)
+        return currentMins >= startMins && currentMins <= endMins;
+    } else {
+        // Wraps around midnight (e.g., 22:00 to 06:00)
+        return currentMins >= startMins || currentMins <= endMins;
+    }
+};
+
+// Helper to optionally send Telegram notifications
+export const sendTelegramAlert = async (title: string, message: string, alertType: string, cooldownSecs: number, categoryKey: string) => {
+    const state = useTerminalStore.getState();
+    const config = state.telegramConfig;
+
+    if (!config.globalEnabled) return;
+    if (config.categories && config.categories[categoryKey] === false) return;
+
+    if (config.quietHours?.enabled && config.quietHours.start && config.quietHours.end) {
+        if (isWithinQuietHours(config.quietHours.start, config.quietHours.end)) {
+            console.log(`[SmartAlerts] Suppressing ${title} due to quiet hours.`);
+            return;
+        }
+    }
+
+    try {
+        const botUrl = import.meta.env.VITE_TELEGRAM_BOT_URL || '/api/bot/alert';
         await fetch(botUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 message: `<b>🚨 ${title}</b>\n\n${message}`,
                 type: alertType,
-                severity: "warning", // Defaulting to warning for now, can be expanded
-                symbol: title.split(']')[0].replace('[', ''), // Extract symbol from title like "[BTCUSDT] OI SPIKE"
-                cooldown: cooldownSecs
+                severity: "warning",
+                symbol: title.split(']')[0].replace('[', ''),
+                cooldown: cooldownSecs,
+                category: categoryKey
             })
         });
     } catch (e) {
@@ -33,13 +62,14 @@ export function useSmartAlerts(symbol: string) {
         const interval = setInterval(() => {
             const state = useTerminalStore.getState();
             const now = Date.now();
+            const config = state.telegramConfig;
 
             // Only alert if we have a valid price
             const price = state.prices[symbol];
             if (!price) return;
 
-            // Helper to check cooldown (e.g., 5 minutes for most alerts)
-            const canAlert = (key: string, cooldownMs = 5 * 60 * 1000) => {
+            // Helper to check cooldown locally first to avoid spamming the backend or generating duplicate UI events
+            const canAlert = (key: string, cooldownMs: number) => {
                 if (!lastAlerts.current[key] || now - lastAlerts.current[key] > cooldownMs) {
                     lastAlerts.current[key] = now;
                     return true;
@@ -52,7 +82,9 @@ export function useSmartAlerts(symbol: string) {
             const atrSma = state.currentAtrSma[symbol];
             if (atr && atrSma) {
                 const ratio = atr / atrSma;
-                if (ratio > 1.3 && canAlert('ATR_EXPANSION')) {
+                // Use configurable cooldown or default to 5m
+                const cdSecs = (config.cooldowns && config.cooldowns['atr_expand']) || 300;
+                if (ratio > 1.3 && canAlert(`ATR_EXPANSION_${symbol}`, cdSecs * 1000)) {
                     const title = 'VOLATILITY EXPANSION';
                     const msg = `ATR is ${ratio.toFixed(2)}x its moving average. Breakout likely underway.`;
 
@@ -61,21 +93,20 @@ export function useSmartAlerts(symbol: string) {
                         symbol,
                         price,
                         amount: 0,
-                        value: ratio, // Store ratio in value field for arbitrary use
+                        value: ratio,
                         side: 'NEUTRAL',
                         timestamp: now,
                         title: title,
                         message: msg,
                     });
 
-                    sendTelegramAlert(`[${symbol}] ${title}`, msg, `ATR_${symbol}`, 300);
+                    sendTelegramAlert(`[${symbol}] ${title}`, msg, `ATR_${symbol}`, cdSecs, 'atr_expand');
                 }
             }
 
             // 2. Open Interest Spike (> 1.5% in 5m)
             const oiHistory = state.oiHistory[symbol];
             if (oiHistory && oiHistory.length > 0) {
-                // Find record from roughly 5m ago
                 const fiveMinsAgo = now - 5 * 60 * 1000;
                 const windowHistory = oiHistory.filter(h => h.timestamp >= fiveMinsAgo);
 
@@ -84,7 +115,9 @@ export function useSmartAlerts(symbol: string) {
                     const newest = windowHistory[windowHistory.length - 1].value;
                     const oiChangePct = ((newest - oldest) / Math.abs(oldest)) * 100;
 
-                    if (Math.abs(oiChangePct) > 1.5 && canAlert('OI_SPIKE', 10 * 60 * 1000)) { // 10 min cooldown
+                    const cdSecs = (config.cooldowns && config.cooldowns['oi_spike']) || 600;
+
+                    if (Math.abs(oiChangePct) > 1.5 && canAlert(`OI_SPIKE_${symbol}`, cdSecs * 1000)) {
                         const isUp = oiChangePct > 0;
                         const title = isUp ? 'OI SPIKE DETECTED' : 'OI FLUSH DETECTED';
                         const msg = `Open Interest ${isUp ? 'increased' : 'dropped'} by ${Math.abs(oiChangePct).toFixed(2)}% in 5m.`;
@@ -101,7 +134,7 @@ export function useSmartAlerts(symbol: string) {
                             message: msg,
                         });
 
-                        sendTelegramAlert(`[${symbol}] ${title}`, msg, `OI_${symbol}`, 600);
+                        sendTelegramAlert(`[${symbol}] ${title}`, msg, `OI_${symbol}`, cdSecs, 'oi_spike');
                     }
                 }
             }
@@ -109,11 +142,11 @@ export function useSmartAlerts(symbol: string) {
             // 3. Imbalance approaching Magnet or Wall
             const bidWalls = state.bidWalls[symbol] || [];
             const askWalls = state.askWalls[symbol] || [];
+            const wallCdSecs = (config.cooldowns && config.cooldowns['wall']) || 900;
 
-            // Check top wall proximity
             if (bidWalls.length > 0) {
                 const distPct = ((price - bidWalls[0].price) / price) * 100;
-                if (distPct < 0.25 && canAlert(`APPROACH_BID_${bidWalls[0].price}`, 15 * 60 * 1000)) {
+                if (distPct < 0.25 && canAlert(`APPROACH_BID_${symbol}_${bidWalls[0].price}`, wallCdSecs * 1000)) {
                     const title = 'SUPPORT WALL APPROACHING';
                     const msg = `Price is ${distPct.toFixed(2)}% away from major support wall ($${(bidWalls[0].value / 1000000).toFixed(1)}M).`;
 
@@ -129,13 +162,13 @@ export function useSmartAlerts(symbol: string) {
                         message: msg,
                     });
 
-                    sendTelegramAlert(`[${symbol}] ${title}`, msg, `WALL_${symbol}`, 900);
+                    sendTelegramAlert(`[${symbol}] ${title}`, msg, `WALL_${symbol}`, wallCdSecs, 'wall');
                 }
             }
 
             if (askWalls.length > 0) {
                 const distPct = ((askWalls[0].price - price) / price) * 100;
-                if (distPct < 0.25 && canAlert(`APPROACH_ASK_${askWalls[0].price}`, 15 * 60 * 1000)) {
+                if (distPct < 0.25 && canAlert(`APPROACH_ASK_${symbol}_${askWalls[0].price}`, wallCdSecs * 1000)) {
                     const title = 'RESISTANCE WALL APPROACHING';
                     const msg = `Price is ${distPct.toFixed(2)}% away from major resistance wall ($${(askWalls[0].value / 1000000).toFixed(1)}M).`;
 
@@ -151,11 +184,11 @@ export function useSmartAlerts(symbol: string) {
                         message: msg,
                     });
 
-                    sendTelegramAlert(`[${symbol}] ${title}`, msg, `WALL_${symbol}`, 900);
+                    sendTelegramAlert(`[${symbol}] ${title}`, msg, `WALL_${symbol}`, wallCdSecs, 'wall');
                 }
             }
 
-        }, 5000); // Check every 5 seconds
+        }, 5000);
 
         return () => clearInterval(interval);
     }, [symbol]);

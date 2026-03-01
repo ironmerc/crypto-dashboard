@@ -7,7 +7,7 @@ interface MarketContextProps {
 }
 
 export function MarketContext({ symbol }: MarketContextProps) {
-    const prices = useTerminalStore(state => state.prices);
+    const price = useTerminalStore(state => state.prices[symbol]);
     const ema21 = useTerminalStore(state => state.currentEMA21[symbol]);
     const ema50 = useTerminalStore(state => state.currentEMA50[symbol]);
     const vwap = useTerminalStore(state => state.currentVWAP[symbol]);
@@ -21,11 +21,8 @@ export function MarketContext({ symbol }: MarketContextProps) {
     const oiHistory = useTerminalStore(state => state.oiHistory[symbol]);
     const fundingRate = useTerminalStore(state => state.fundingRate[symbol]);
     const orderBook = useTerminalStore(state => state.orderBook[symbol]);
-
     const bidWalls = useTerminalStore(state => state.bidWalls[symbol]) || [];
     const askWalls = useTerminalStore(state => state.askWalls[symbol]) || [];
-
-    const price = prices[symbol];
 
     // 1. Session Awareness
     const sessionInfo = useMemo(() => {
@@ -33,12 +30,12 @@ export function MarketContext({ symbol }: MarketContextProps) {
         const utcMin = new Date().getUTCMinutes();
         const time = utcHour + utcMin / 60;
 
-        let active = [];
+        const active = [];
         if (time >= 0 && time < 9) active.push('Asia');
         if (time >= 8 && time < 16) active.push('London');
         if (time >= 13.5 && time < 20) active.push('US');
 
-        let overlap = active.length > 1;
+        const overlap = active.length > 1;
         return {
             names: active.length > 0 ? active.join(' / ') : 'After Hours',
             overlap
