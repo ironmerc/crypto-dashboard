@@ -3,7 +3,7 @@ services:
     build: .
     container_name: crypto-terminal
     ports:
-      - "80:80"
+      - "8000:80"
     restart: unless-stopped
     depends_on:
       - telegram-bot
