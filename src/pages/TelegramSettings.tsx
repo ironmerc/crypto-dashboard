@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTerminalStore } from '../store/useTerminalStore';
-import { Settings, ShieldAlert, ArrowLeft, Send, Activity, Clock, Bell, Trash2, Shield, Radio } from 'lucide-react';
+import { ShieldAlert, ArrowLeft, Send, Activity, Clock, Bell, Settings, Radio, Shield, Trash2 } from 'lucide-react';
 
 interface BotStatus {
     status: 'online' | 'offline' | 'unreachable';
@@ -11,37 +11,15 @@ interface BotStatus {
     server_time_utc?: string;
 }
 
-interface AlertHistoryItem {
-    timestamp: string;
-    symbol: string;
-    category: string;
-    severity: string;
-    message: string;
-}
-
-interface TelegramConfig {
-    globalEnabled: boolean;
-    quietHours: { enabled: boolean; start: string; end: string };
-    categories: Record<string, boolean>;
-    cooldowns: Record<string, number>;
-}
-
 export default function TelegramSettings() {
+    const config = useTerminalStore((state) => state.telegramConfig);
     const updateConfig = useTerminalStore((state) => state.updateTelegramConfig);
 
-    const [config, setConfig] = useState<TelegramConfig | null>(() => useTerminalStore.getState().telegramConfig);
     const [status, setStatus] = useState<BotStatus>({ status: 'unreachable' });
-    const [history, setHistory] = useState<AlertHistoryItem[]>([]);
+    const [history, setHistory] = useState<{ timestamp: string; symbol: string; category: string; severity: string; message: string; }[]>([]);
 
     const [testMessage, setTestMessage] = useState('This is a manual test from the ops console.');
     const [testSeverity, setTestSeverity] = useState('INFO');
-
-    useEffect(() => {
-        const unsub = useTerminalStore.subscribe((state) => {
-            setConfig(state.telegramConfig);
-        });
-        return () => unsub();
-    }, []);
 
     // 2. Fetch Data (Status & Ledger) - explicitly inside useEffect to avoid exhaustive-deps
     useEffect(() => {
@@ -89,13 +67,18 @@ export default function TelegramSettings() {
     }, []);
 
     const sendTestAlert = async () => {
+        if (!config.globalEnabled) {
+            alert("Master Egress Toggle is OFF. Manual diagnostic tests are blocked.");
+            return;
+        }
+
         try {
             const botUrl = import.meta.env.VITE_TELEGRAM_BOT_URL || '/api/bot/alert';
             await fetch(botUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    message: `<b>🚨 [TEST] ${testSeverity}</b>\n\n${testMessage}`,
+                    message: `<b>🚨 [DIAGNOSTIC] ${testSeverity}</b>\n\n${testMessage}`,
                     type: `TEST_${testSeverity}`,
                     severity: testSeverity.toLowerCase(),
                     symbol: 'SYSTEM',
@@ -103,11 +86,12 @@ export default function TelegramSettings() {
                     category: 'test_ping'
                 })
             });
-            // Give it a second to process, then re-fetch history
-            setTimeout(() => {
-                const evt = new Event('refreshHistory');
-                window.dispatchEvent(evt); // Or just call fetchHistory directly if we refactored
-            }, 1000);
+            // Re-fetch history immediately
+            const res = await fetch('/api/bot/history');
+            if (res.ok) {
+                const data = await res.json();
+                setHistory(data);
+            }
         } catch (e) {
             console.error('Failed test alert', e);
         }
@@ -195,10 +179,14 @@ export default function TelegramSettings() {
                                 </div>
                                 <button
                                     onClick={sendTestAlert}
-                                    className="w-full flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white p-2 rounded text-sm transition-colors"
+                                    disabled={!config.globalEnabled}
+                                    className={`w-full flex items-center justify-center space-x-2 p-2 rounded text-sm transition-all ${config.globalEnabled
+                                        ? "bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20"
+                                        : "bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700"
+                                        }`}
                                 >
-                                    <Send className="w-4 h-4" />
-                                    <span>Fire Diagnostic Payload</span>
+                                    <Send className={`w-4 h-4 ${!config.globalEnabled && "opacity-50"}`} />
+                                    <span>{config.globalEnabled ? "Fire Diagnostic Payload" : "Egress Blocked"}</span>
                                 </button>
                             </div>
                         </div>
@@ -290,6 +278,8 @@ export default function TelegramSettings() {
                                         { id: 'wall', label: 'Orderbook Wall Approaching', defaultCd: 900 },
                                         { id: 'atr_expand', label: 'ATR Volatility Expansion', defaultCd: 300 },
                                         { id: 'whale', label: 'Whale Trap/Absorption', defaultCd: 60 },
+                                        { id: 'liquidation', label: 'Major Liquidations', defaultCd: 60 },
+                                        { id: 'funding_extreme', label: 'Funding Rate Extremes', defaultCd: 3600 },
                                     ].map(cat => (
                                         <div key={cat.id} className="flex items-center justify-between p-3 border border-slate-800/50 hover:bg-slate-800/20 rounded transition-colors group">
                                             <div className="flex-1 min-w-0 pr-4">

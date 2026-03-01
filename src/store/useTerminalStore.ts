@@ -333,9 +333,9 @@ export const useTerminalStore = create<TerminalState>()(
                 telegramConfig: {
                     ...state.telegramConfig,
                     ...updates,
-                    categories: { ...state.telegramConfig.categories, ...(updates.categories || {}) },
-                    quietHours: { ...state.telegramConfig.quietHours, ...(updates.quietHours || {}) },
-                    cooldowns: { ...state.telegramConfig.cooldowns, ...(updates.cooldowns || {}) }
+                    categories: updates.categories ? { ...state.telegramConfig.categories, ...updates.categories } : state.telegramConfig.categories,
+                    quietHours: updates.quietHours ? { ...state.telegramConfig.quietHours, ...updates.quietHours } : state.telegramConfig.quietHours,
+                    cooldowns: updates.cooldowns ? { ...state.telegramConfig.cooldowns, ...updates.cooldowns } : state.telegramConfig.cooldowns
                 }
             }))
         }),
