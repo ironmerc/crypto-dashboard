@@ -5,3 +5,14 @@ services:
     ports:
       - "80:80"
     restart: unless-stopped
+    depends_on:
+      - telegram-bot
+
+  telegram-bot:
+    build: ./telegram-bot
+    container_name: telegram-bot
+    env_file:
+      - .env
+    expose:
+      - "8080"
+    restart: unless-stopped

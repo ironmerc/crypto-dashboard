@@ -10,7 +10,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 // Futures Imports
 import { useFuturesStream } from './hooks/useFuturesStream';
 import { useOpenInterest } from './hooks/useOpenInterest';
-import { useSmartAlerts } from './hooks/useSmartAlerts';
+import { useSmartAlerts, sendTelegramAlert } from './hooks/useSmartAlerts';
 import { useTerminalStore } from './store/useTerminalStore';
 import { EventFeed } from './components/EventFeed';
 import { VolumeTape } from './components/VolumeTape';
@@ -85,6 +85,16 @@ export default function App() {
           Godmode Futures <span className="text-terminal-muted text-sm ml-2">v2.0</span>
         </h1>
         <div className="ml-auto flex items-center gap-4 text-xs text-terminal-muted hidden md:flex font-mono">
+          {/* Test Alert Button */}
+          <button
+            onClick={() => sendTelegramAlert(`[TEST] System Ping`, `User requested a manual test alert from the dashboard. System is nominally online.`, 'test_ping', 5)}
+            className="border border-terminal-border/50 px-3 py-1 rounded bg-transparent text-terminal-muted hover:text-terminal-fg hover:border-terminal-fg/50 transition-colors flex items-center gap-2"
+            title="Send Test Telegram Alert"
+          >
+            <Activity className="w-3 h-3" />
+            TEST ALERT
+          </button>
+
           {/* Global Timeframe Selector */}
           <div className="flex bg-[#0a0a0a] border border-terminal-border/30 rounded overflow-hidden shadow-lg p-0.5">
             {['1m', '5m', '15m', '30m', '1h', '4h', '12h', '1d', '1w', '1M'].map(t => (
