@@ -7,11 +7,10 @@ import { useFearGreedIndex } from '../hooks/useFearGreedIndex';
 import { CandleChart } from '../components/CandleChart';
 import { OrderBook } from '../components/OrderBook';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-
-// Futures Imports
 import { useFuturesStream } from '../hooks/useFuturesStream';
 import { useOpenInterest } from '../hooks/useOpenInterest';
 import { useSmartAlerts } from '../hooks/useSmartAlerts';
+import { useMarketContextAlerts } from '../hooks/useMarketContextAlerts';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { EventFeed } from '../components/EventFeed';
 import { VolumeTape } from '../components/VolumeTape';
@@ -33,6 +32,7 @@ export default function App() {
   useFuturesStream(activeSymbol, watchSymbols);
   useOpenInterest(activeSymbol);
   useSmartAlerts(activeSymbol);
+  useMarketContextAlerts(activeSymbol);
 
   const openInterest = useTerminalStore((state) => state.openInterest[activeSymbol]);
   const oiHistory = useTerminalStore((state) => state.oiHistory[activeSymbol]);
