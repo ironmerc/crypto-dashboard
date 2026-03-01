@@ -143,9 +143,9 @@ export default function App() {
       <ActionAlertStrip />
 
       {/* MAIN GRID */}
-      <main className="flex flex-col gap-4 flex-grow min-h-0 w-full overflow-hidden">
+      <main className={`flex flex-col gap-4 flex-grow w-full ${isMobile ? '' : 'min-h-0 overflow-hidden'}`}>
         {isMobile ? (
-          <div className="flex flex-col gap-4 overflow-y-auto pr-1">
+          <div className="flex flex-col gap-4 pr-1 mb-20 md:mb-0">
             {/* MOBILE VIEW: SIMPLE STACK */}
             <section className="panel flex flex-col gap-4 min-h-[400px]">
               <div className="flex flex-col gap-3">
@@ -190,7 +190,7 @@ export default function App() {
                 <h2 className="text-lg font-bold uppercase tracking-tight">{activeSymbol.replace('USDT', '/USDT-PERP')}</h2>
                 {futuresPrice && <div className={`text-xl font-mono ${activeTicker && parseFloat(activeTicker.changePercent24h) >= 0 ? 'text-terminal-green' : 'text-terminal-red'}`}>{futuresPrice.toFixed(2)}</div>}
               </div>
-              <div className="flex-grow min-h-[400px]">
+              <div className="flex-grow h-[400px] w-full">
                 <ErrorBoundary><CandleChart key={activeSymbol} symbol={activeSymbol} /></ErrorBoundary>
               </div>
             </section>

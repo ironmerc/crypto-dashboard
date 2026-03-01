@@ -134,7 +134,7 @@ export function useSmartAlerts(symbol: string) {
                             message: msg,
                         });
 
-                        sendTelegramAlert(`[${symbol}] ${title}`, msg, `OI_${symbol}`, cdSecs, 'oi_spike');
+                        sendTelegramAlert(`[${symbol}] ${title}`, msg, `OI_${isUp ? 'UP' : 'DOWN'}_${symbol}`, cdSecs, 'oi_spike');
                     }
                 }
             }
@@ -162,7 +162,7 @@ export function useSmartAlerts(symbol: string) {
                         message: msg,
                     });
 
-                    sendTelegramAlert(`[${symbol}] ${title}`, msg, `WALL_${symbol}`, wallCdSecs, 'wall');
+                    sendTelegramAlert(`[${symbol}] ${title}`, msg, `SUPPORT_WALL_${symbol}`, wallCdSecs, 'wall');
                 }
             }
 
@@ -184,7 +184,7 @@ export function useSmartAlerts(symbol: string) {
                         message: msg,
                     });
 
-                    sendTelegramAlert(`[${symbol}] ${title}`, msg, `WALL_${symbol}`, wallCdSecs, 'wall');
+                    sendTelegramAlert(`[${symbol}] ${title}`, msg, `RESISTANCE_WALL_${symbol}`, wallCdSecs, 'wall');
                 }
             }
 

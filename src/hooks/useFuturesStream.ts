@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import useWebSocket from 'react-use-websocket';
 import { useTerminalStore } from '../store/useTerminalStore';
 import type { OrderBookLevel, Side, MarketEvent } from '../store/useTerminalStore';
+import { sendTelegramAlert } from './useSmartAlerts';
 
 const BINANCE_FUTURES_WS = 'wss://fstream.binance.com/ws';
 
@@ -170,6 +171,16 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
                     side,
                     timestamp: msg.T
                 });
+
+                const config = useTerminalStore.getState().telegramConfig;
+                const cdSecs = (config.cooldowns && config.cooldowns['whale']) || 60;
+                sendTelegramAlert(
+                    `[${msg.s}] 🐋 WHALE ${side} DETECTED`,
+                    `Aggressive $${(value / 1000).toFixed(1)}k ${side} execution @ $${price.toFixed(2)}`,
+                    `WHALE_${side}_${msg.s}`,
+                    cdSecs,
+                    'whale'
+                );
             }
         }
 
@@ -196,6 +207,16 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
             };
 
             addEvent(liqEvent);
+
+            const config = useTerminalStore.getState().telegramConfig;
+            const cdSecs = (config.cooldowns && config.cooldowns['liquidation']) || 60;
+            sendTelegramAlert(
+                `[${order.s}] 💥 LIQ ${side}`,
+                `$${(value / 1000).toFixed(1)}k ${side} liquidated @ $${price.toFixed(2)}`,
+                `LIQ_${side}_${order.s}`,
+                cdSecs,
+                'liquidation'
+            );
         }
 
         // 3. WS Depth Updates (Active Symbol Only)
