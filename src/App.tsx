@@ -75,7 +75,7 @@ export default function App() {
   const fundingDelta = calcDelta(fundingHistory, fundingRate, intervalMs);
 
   return (
-    <div className="h-screen w-full bg-[#050505] text-terminal-text p-4 selection:bg-terminal-fg selection:text-black flex flex-col gap-4 overflow-hidden">
+    <div className="h-screen w-full bg-[#050505] text-terminal-text p-2 md:p-4 selection:bg-terminal-fg selection:text-black flex flex-col gap-4 overflow-y-auto lg:overflow-hidden">
 
       {/* HEADER */}
       <header className="flex items-center gap-3 border-b border-terminal-border/50 pb-3 shrink-0">
@@ -110,10 +110,10 @@ export default function App() {
       <ActionAlertStrip />
 
       {/* MAIN GRID */}
-      <main className="grid grid-cols-12 grid-rows-6 gap-4 flex-grow min-h-0">
+      <main className="flex flex-col lg:grid lg:grid-cols-12 lg:grid-rows-6 gap-4 flex-grow min-h-0">
 
         {/* --- LEFT SIDEBAR (Col 1-2) --- */}
-        <section className="col-span-2 row-span-6 flex flex-col gap-4">
+        <section className="flex flex-col gap-4 lg:col-span-2 lg:row-span-6">
           <div className="panel flex flex-col gap-3 shrink-0">
             <h2 className="text-[10px] uppercase text-terminal-muted font-bold tracking-widest flex items-center gap-2 border-b border-terminal-border/30 pb-2">
               <Activity className="w-3 h-3" /> Market Pulse
@@ -201,16 +201,16 @@ export default function App() {
             </div>
           </div>
 
-          <div className="panel flex-grow overflow-hidden">
+          <div className="panel flex-grow overflow-hidden min-h-[250px] lg:min-h-0">
             <VolumeTape key={`tape-${activeSymbol}`} symbol={activeSymbol} />
           </div>
         </section>
 
         {/* --- CENTER AREA: Chart & Heatmap (Col 3-9) --- */}
-        <section className="col-span-7 row-span-6 flex flex-col gap-4">
+        <section className="flex flex-col gap-4 lg:col-span-7 lg:row-span-6">
 
           {/* Main Chart */}
-          <div className="panel flex-grow relative overflow-hidden flex flex-col" style={{ flexBasis: '55%' }}>
+          <div className="panel flex-grow relative overflow-hidden flex flex-col min-h-[400px] lg:min-h-0" style={{ flexBasis: '55%' }}>
             <div className="absolute top-4 left-4 z-10 pointer-events-none flex items-end gap-3">
               <h2 className="text-2xl font-bold uppercase tracking-widest flex items-center gap-3 bg-black/50 px-2 rounded">
                 {activeSymbol.replace('USDT', '/USDT-PERP')}
@@ -237,7 +237,7 @@ export default function App() {
         </section>
 
         {/* --- RIGHT SIDEBAR: OrderBook & EventFeed & Context (Col 10-12) --- */}
-        <section className="col-span-3 row-span-6 flex flex-col gap-4">
+        <section className="flex flex-col gap-4 lg:col-span-3 lg:row-span-6">
 
           {/* Market Context (Top) */}
           <div className="flex-grow overflow-hidden flex flex-col" style={{ flexBasis: '40%', minHeight: '300px' }}>
