@@ -162,6 +162,8 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
 
             // Whale Detection
             if (value >= WHALE_TRADE_USD) {
+
+
                 addEvent({
                     type: 'Whale',
                     symbol: msg.s,
@@ -205,6 +207,8 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
                 side: side as Side,
                 timestamp: order.T
             };
+
+
 
             addEvent(liqEvent);
 
@@ -253,9 +257,7 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
             const currentFunding = useTerminalStore.getState().fundingRate[activeSymbol];
             if (!currentFunding) return;
 
-            const config = useTerminalStore.getState().telegramConfig;
-            // Respect global enable status and specific toggle (if it exists, falling back to true for now if not explicitly modeled)
-            if (!config.globalEnabled) return;
+
 
             const now = Date.now();
             if (now - lastFundingAlertTime.current < FUNDING_ALERT_COOLDOWN) return;
@@ -301,9 +303,7 @@ _Market may be over-leveraged in one direction._
 
             if (!price || !vah || !val) return;
 
-            const config = state.telegramConfig;
-            // Temporarily gating it on globalEnabled, in the future we can add a specific toggle to the settings UI
-            if (!config.globalEnabled) return;
+
 
             const now = Date.now();
 
@@ -358,9 +358,7 @@ _Price has gained acceptance outside the high-volume node._
 
         const checkWhaleMomentum = () => {
             const state = useTerminalStore.getState();
-            const config = state.telegramConfig;
 
-            if (!config.globalEnabled || !config.categories?.whale) return;
 
             const currentDelta = state.whaleDelta[activeSymbol] || 0;
 
@@ -409,9 +407,7 @@ _Smart money is aggressively executing along a single vector._
 
         const checkRvol = () => {
             const state = useTerminalStore.getState();
-            const config = state.telegramConfig;
 
-            if (!config.globalEnabled) return;
 
             const now = Date.now();
             const currentDelta = state.volumeDelta[activeSymbol];
@@ -483,9 +479,7 @@ _Extremely high activity detected, potentially signaling a major move or absorpt
 
         const checkDailyWrapUp = () => {
             const state = useTerminalStore.getState();
-            const config = state.telegramConfig;
 
-            if (!config.globalEnabled) return;
 
             const now = new Date();
             const isMidnightUTC = now.getUTCHours() === 0 && now.getUTCMinutes() === 0;

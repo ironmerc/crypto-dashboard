@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useTerminalStore } from '../store/useTerminalStore';
+
 import { calculateMarketContext } from '../lib/marketContextEngine';
 import { sendTelegramAlert } from './useSmartAlerts';
 
@@ -13,10 +13,9 @@ export function useMarketContextAlerts(symbol: string) {
             const context = calculateMarketContext(symbol);
             if (!context || !context.price) return;
 
-            const config = useTerminalStore.getState().telegramConfig;
 
-            // Respect global enable status
-            if (!config.globalEnabled) return;
+
+
 
             const title = `📊 [${symbol}] Market Context Summary`;
             const msg = `

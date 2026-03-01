@@ -26,8 +26,15 @@ export const sendTelegramAlert = async (title: string, message: string, alertTyp
     const state = useTerminalStore.getState();
     const config = state.telegramConfig;
 
-    if (!config.globalEnabled) return;
-    if (config.categories && config.categories[categoryKey] === false) return;
+    // Strict check 
+    if (config.globalEnabled === false || String(config.globalEnabled) === "false") {
+        console.log(`[Egress] Blocked ${alertType} because global egress is OFF`);
+        return;
+    }
+    if (config.categories && config.categories[categoryKey] === false) {
+        console.log(`[Egress] Blocked ${alertType} because category ${categoryKey} is OFF`);
+        return;
+    }
 
     if (config.quietHours?.enabled && config.quietHours.start && config.quietHours.end) {
         if (isWithinQuietHours(config.quietHours.start, config.quietHours.end)) {
@@ -85,6 +92,8 @@ export function useSmartAlerts(symbol: string) {
                 // Use configurable cooldown or default to 5m
                 const cdSecs = (config.cooldowns && config.cooldowns['atr_expand']) || 300;
                 if (ratio > 1.3 && canAlert(`ATR_EXPANSION_${symbol}`, cdSecs * 1000)) {
+                    if (!config.globalEnabled || (config.categories && config.categories['atr_expand'] === false)) return;
+
                     const title = 'VOLATILITY EXPANSION';
                     const msg = `ATR is ${ratio.toFixed(2)}x its moving average. Breakout likely underway.`;
 
@@ -118,6 +127,8 @@ export function useSmartAlerts(symbol: string) {
                     const cdSecs = (config.cooldowns && config.cooldowns['oi_spike']) || 600;
 
                     if (Math.abs(oiChangePct) > 1.5 && canAlert(`OI_SPIKE_${symbol}`, cdSecs * 1000)) {
+                        if (!config.globalEnabled || (config.categories && config.categories['oi_spike'] === false)) return;
+
                         const isUp = oiChangePct > 0;
                         const title = isUp ? 'OI SPIKE DETECTED' : 'OI FLUSH DETECTED';
                         const msg = `Open Interest ${isUp ? 'increased' : 'dropped'} by ${Math.abs(oiChangePct).toFixed(2)}% in 5m.`;
@@ -147,6 +158,8 @@ export function useSmartAlerts(symbol: string) {
             if (bidWalls.length > 0) {
                 const distPct = ((price - bidWalls[0].price) / price) * 100;
                 if (distPct < 0.25 && canAlert(`APPROACH_BID_${symbol}_${bidWalls[0].price}`, wallCdSecs * 1000)) {
+                    if (!config.globalEnabled || (config.categories && config.categories['wall'] === false)) return;
+
                     const title = 'SUPPORT WALL APPROACHING';
                     const msg = `Price is ${distPct.toFixed(2)}% away from major support wall ($${(bidWalls[0].value / 1000000).toFixed(1)}M).`;
 
@@ -169,6 +182,8 @@ export function useSmartAlerts(symbol: string) {
             if (askWalls.length > 0) {
                 const distPct = ((askWalls[0].price - price) / price) * 100;
                 if (distPct < 0.25 && canAlert(`APPROACH_ASK_${symbol}_${askWalls[0].price}`, wallCdSecs * 1000)) {
+                    if (!config.globalEnabled || (config.categories && config.categories['wall'] === false)) return;
+
                     const title = 'RESISTANCE WALL APPROACHING';
                     const msg = `Price is ${distPct.toFixed(2)}% away from major resistance wall ($${(askWalls[0].value / 1000000).toFixed(1)}M).`;
 
