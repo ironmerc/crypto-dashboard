@@ -32,3 +32,7 @@ This application is built with React/Vite but is intended to be run locally or o
 When the React UI detects an anomaly (like an ATR Expansion or an Open Interest Spike), it fires a JSON payload to `/api/bot/alert`. 
 
 Nginx intercepts this route and transparently passes the payload to `http://telegram-bot:8080/`. The Python bot accepts the signal, puts it into an internal asynchronous queue, replies `202 Accepted` immediately, and then handles the API dispatch and rate-limit cooldowns in the background.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
