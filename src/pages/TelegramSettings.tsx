@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTerminalStore } from '../store/useTerminalStore';
-import { ShieldAlert, ArrowLeft, Send, Activity, Clock, Bell, Settings, Radio, Shield, Trash2 } from 'lucide-react';
+import { ShieldAlert, ArrowLeft, Send, Activity, Clock, Bell, Settings, Shield, Trash2 } from 'lucide-react';
 
 interface BotStatus {
     status: 'online' | 'offline' | 'unreachable';
@@ -19,7 +19,6 @@ export default function TelegramSettings() {
     const [history, setHistory] = useState<{ timestamp: string; symbol: string; category: string; severity: string; message: string; }[]>([]);
 
     const [testMessage, setTestMessage] = useState('This is a manual test from the ops console.');
-    const [testSeverity, setTestSeverity] = useState('INFO');
 
     // 2. Fetch Data (Status & Ledger) - explicitly inside useEffect to avoid exhaustive-deps
     useEffect(() => {
@@ -66,10 +65,82 @@ export default function TelegramSettings() {
         };
     }, []);
 
-    const sendTestAlert = async () => {
+    const fireMockAlert = async (type: string) => {
         if (!config.globalEnabled) {
             alert("Master Egress Toggle is OFF. Manual diagnostic tests are blocked.");
             return;
+        }
+
+        let title = "";
+        let message = "";
+        let category = type;
+        const symbol = "BTCUSDT";
+
+        switch (type) {
+            // Phase 1 Legacy
+            case 'oi_spike':
+                title = `[BTCUSDT] 🚀 OI Spike Detected`;
+                message = "<b>Delta:</b> +$5.2M in 5m\n<b>Current OI:</b> $125.4M\n\n<i>Sudden influx of leverage detected.</i>";
+                category = "oi_spike";
+                break;
+            case 'wall':
+                title = `[BTCUSDT] 🧱 Orderbook Wall Approaching`;
+                message = "<b>Type:</b> Ask Wall (Resistance)\n<b>Size:</b> $2.4M\n<b>Distance:</b> 0.15% away\n\n<i>Significant liquidity pool detected nearby.</i>";
+                category = "wall";
+                break;
+            case 'atr_expand':
+                title = `[BTCUSDT] ⚡ Volatility Expansion (ATR)`;
+                message = "<b>Current ATR:</b> $450\n<b>Average ATR:</b> $210\n<b>Multiplier:</b> 2.1x\n\n<i>Rapid expansion in price ranges. Expect turbulence.</i>";
+                category = "atr_expand";
+                break;
+            case 'liquidation':
+                title = `[BTCUSDT] 💥 Major Liquidation`;
+                message = "<b>Side:</b> Short\n<b>Amount:</b> $1.2M\n<b>Price:</b> $64,250\n\n<i>Forced coverage detected in the market.</i>";
+                category = "liquidation";
+                break;
+            case 'whale':
+                title = `[BTCUSDT] 🐋 Giant Trade Executed`;
+                message = "<b>Direction:</b> BUY\n<b>Size:</b> $3.5M\n<b>Price:</b> $64,100\n\n<i>A massive block order just filled on the tape.</i>";
+                category = "whale";
+                break;
+
+            // Phase 2 Advanced
+            case 'market_context_summary':
+                title = `[BTCUSDT] 🧭 Market Context Summary`;
+                message = "<b>Regime:</b> Trending Up (Strong)\n<b>Volatility:</b> Expansion (High Risk)\n<b>Positioning:</b> Active Long Building (OI +1.2%)\n<b>Execution:</b> Spread Tight\n\n<i>Macro conditions support trend-following strategies.</i>";
+                category = "market_context";
+                break;
+            case 'funding_extreme':
+                title = `[BTCUSDT] ⚠️ Extreme Funding Rate`;
+                message = "<b>Current Rate:</b> 0.0521%\n<b>Implication:</b> Extreme Long Bias\n\n<i>Leverage is heavily skewed. Risk of a long squeeze is elevated.</i>";
+                category = "funding";
+                break;
+            case 'va_breakout':
+                title = `[BTCUSDT] 📈 Value Area Breakout`;
+                message = "<b>Direction:</b> 🟢 Breaking VAH (Bullish)\n<b>Current Price:</b> $65,100\n<b>VAH:</b> $64,800\n<b>VAL:</b> $63,200\n\n<i>Price has gained acceptance outside the high-volume node.</i>";
+                category = "value_area";
+                break;
+            case 'whale_momentum':
+                title = `[BTCUSDT] 🐋💨 Whale Momentum Shift`;
+                message = "<b>Direction:</b> 🟢 Massive Accumulation\n<b>15m Net Flow Shift:</b> +$8.4M\n\n<i>Smart money is aggressively executing along a single vector.</i>";
+                category = "whale";
+                break;
+            case 'rvol':
+                title = `[BTCUSDT] 🌋 Abnormal RVOL Detected`;
+                message = "<b>RVOL Spike:</b> 4.2x Average\n<b>Dominant Pressure:</b> 🟢 Buying\n<b>5m Volume:</b> $24.5M\n\n<i>Extremely high activity detected.</i>";
+                category = "rvol";
+                break;
+            case 'daily_wrap':
+                title = `[BTCUSDT] 📅 Daily Market Wrap-Up`;
+                message = "<b>Closing Price:</b> $64,500\n<b>Net Whale Flow (24h):</b> +$15.2M\n<b>Net OI Change (24h):</b> +$42.1M\n<b>Current Funding:</b> 0.0125%\n\n<i>Session closed, data reset for the new day.</i>";
+                category = "market_context";
+                break;
+
+            default:
+                title = `[SYSTEM] Diagnostic Ping`;
+                message = testMessage;
+                category = "test_ping";
+                break;
         }
 
         try {
@@ -78,12 +149,12 @@ export default function TelegramSettings() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    message: `<b>🚨 [DIAGNOSTIC] ${testSeverity}</b>\n\n${testMessage}`,
-                    type: `TEST_${testSeverity}`,
-                    severity: testSeverity.toLowerCase(),
-                    symbol: 'SYSTEM',
+                    message: `<b>🚨 ${title}</b>\n\n${message}`,
+                    type: `TEST_MOCK_${type.toUpperCase()}_${Date.now()}`,
+                    severity: "info",
+                    symbol: symbol,
                     cooldown: 0,
-                    category: 'test_ping'
+                    category: category
                 })
             });
             // Re-fetch history immediately
@@ -151,43 +222,57 @@ export default function TelegramSettings() {
                             </div>
                         </div>
 
-                        {/* Manual Test Controls */}
+                        {/* Alert Test Suite */}
                         <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-5">
                             <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center">
-                                <Radio className="w-4 h-4 mr-2" /> Diagnostics Drop
+                                <ShieldAlert className="w-4 h-4 mr-2" /> Alert Validation Suite
                             </h2>
                             <div className="space-y-4">
+                                <div className="text-xs text-slate-500 mb-2">Click to fire a simulated alert to Telegram (bypasses cooldowns).</div>
+
                                 <div>
-                                    <label className="block text-xs text-slate-500 mb-1">Severity</label>
-                                    <select
-                                        value={testSeverity}
-                                        onChange={e => setTestSeverity(e.target.value)}
-                                        className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500">
-                                        <option value="INFO">INFO (Trace)</option>
-                                        <option value="WARNING">WARNING (Degraded)</option>
-                                        <option value="CRITICAL">CRITICAL (System Fault)</option>
-                                    </select>
+                                    <h3 className="text-xs font-semibold text-indigo-400 mb-2 border-b border-slate-800 pb-1">Legacy Alerts (Phase 1)</h3>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button onClick={() => fireMockAlert('oi_spike')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">OI Spikes/Flushes</button>
+                                        <button onClick={() => fireMockAlert('wall')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">Orderbook Walls</button>
+                                        <button onClick={() => fireMockAlert('atr_expand')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">ATR Expansion</button>
+                                        <button onClick={() => fireMockAlert('liquidation')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">Major Liquidations</button>
+                                        <button onClick={() => fireMockAlert('whale')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors col-span-2">Whale Executions</button>
+                                    </div>
                                 </div>
+
                                 <div>
-                                    <label className="block text-xs text-slate-500 mb-1">Payload Message</label>
+                                    <h3 className="text-xs font-semibold text-emerald-400 mb-2 border-b border-slate-800 pb-1 mt-4">Advanced Context (Phase 2)</h3>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button onClick={() => fireMockAlert('market_context_summary')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">4H Context Summary</button>
+                                        <button onClick={() => fireMockAlert('funding_extreme')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">Funding Extremes</button>
+                                        <button onClick={() => fireMockAlert('va_breakout')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">Value Area Breakout</button>
+                                        <button onClick={() => fireMockAlert('whale_momentum')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">Whale Net Momentum</button>
+                                        <button onClick={() => fireMockAlert('rvol')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">RVOL Anomaly</button>
+                                        <button onClick={() => fireMockAlert('daily_wrap')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">Daily Wrap-Up</button>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <h3 className="text-xs font-semibold text-slate-400 mb-2 border-b border-slate-800 pb-1 mt-4">Custom Payload</h3>
                                     <textarea
                                         value={testMessage}
                                         onChange={e => setTestMessage(e.target.value)}
-                                        rows={3}
-                                        className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500 font-mono text-xs"
+                                        rows={2}
+                                        className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500 font-mono text-xs mb-2"
                                     />
+                                    <button
+                                        onClick={() => fireMockAlert('custom')}
+                                        disabled={!config.globalEnabled}
+                                        className={`w-full flex items-center justify-center space-x-2 p-1.5 rounded text-xs transition-all ${config.globalEnabled
+                                            ? "bg-indigo-600 hover:bg-indigo-500 text-white"
+                                            : "bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700"
+                                            }`}
+                                    >
+                                        <Send className={`w-3 h-3 ${!config.globalEnabled && "opacity-50"}`} />
+                                        <span>Send Custom Ping</span>
+                                    </button>
                                 </div>
-                                <button
-                                    onClick={sendTestAlert}
-                                    disabled={!config.globalEnabled}
-                                    className={`w-full flex items-center justify-center space-x-2 p-2 rounded text-sm transition-all ${config.globalEnabled
-                                        ? "bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20"
-                                        : "bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700"
-                                        }`}
-                                >
-                                    <Send className={`w-4 h-4 ${!config.globalEnabled && "opacity-50"}`} />
-                                    <span>{config.globalEnabled ? "Fire Diagnostic Payload" : "Egress Blocked"}</span>
-                                </button>
                             </div>
                         </div>
                     </div>
