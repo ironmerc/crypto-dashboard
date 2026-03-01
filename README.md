@@ -1,73 +1,34 @@
-# React + TypeScript + Vite
+# Godmode Futures Watchtower v2.0
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A highly customizable, low-latency cryptocurrency futures dashboard designed for rigorous market monitoring and off-screen alerting.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Scalable UI**: Fully responsive grid that squishes down responsively. Shrink the browser or snap it to the side to trigger a cohesive zoom scale out.
+- **Resizable Panels**: User-adjustable heights and column widths utilizing custom `react-resizable-panels` that match the terminal theme.
+- **Internal Overflow Handling**: Compressing horizontal or vertical panes automatically introduces sleek internal scrollbars rather than clipping the content.
+- **Dedicated Alert Bot**: A lightweight Python `aiohttp` Telegram Bot that runs internally in its own Docker container, circumventing CORS complexity entirely via Nginx reverse proxies.
 
-## React Compiler
+## Quick Start (Docker)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+This application is built with React/Vite but is intended to be run locally or on a Raspberry Pi using Docker Compose so that the React frontend, the Nginx reverse proxy, and the backend Python alerting bot all spin up together.
 
-## Expanding the ESLint configuration
+1. **Clone the repository**
+2. **Setup Telegram Environment**
+   * Copy `.env.example` to `.env`.
+   * Open `.env` and fill in your `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
+3. **Build & Up**
+   ```bash
+   docker-compose up -d --build
+   ```
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Architecture
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+* **Frontend**: React + TypeScript + Zustand + Vite + TailwindCSS.
+* **Serving Layer**: Nginx (serves static frontend files and reverse-proxies API requests to the bot to bypass CORS).
+* **Alert Backend**: Python 3.11 Alpine container running `aiohttp` and `asyncio.Queue` for non-blocking Telegram alerts with granular cooldowns.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### The Bot Pipeline
+When the React UI detects an anomaly (like an ATR Expansion or an Open Interest Spike), it fires a JSON payload to `/api/bot/alert`. 
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Nginx intercepts this route and transparently passes the payload to `http://telegram-bot:8080/`. The Python bot accepts the signal, puts it into an internal asynchronous queue, replies `202 Accepted` immediately, and then handles the API dispatch and rate-limit cooldowns in the background.
