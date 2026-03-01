@@ -43,6 +43,15 @@
     border-radius: 0.5rem;
     padding: 1rem;
   }
+
+  .dashboard-scale {
+    @media (min-width: 1024px) and (max-width: 1440px) {
+      zoom: 0.8;
+    }
+    @media (min-width: 768px) and (max-width: 1023px) {
+      zoom: 0.6;
+    }
+  }
 }
 
 /* Custom hacker scrollbar */
