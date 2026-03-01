@@ -89,8 +89,16 @@ export default function App() {
     };
   }, [oiHistory, openInterest, fundingHistory, fundingRate, intervalMs, renderTime]);
 
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 1024);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   return (
-    <div className="dashboard-scale h-screen w-full bg-[#050505] text-terminal-text p-2 md:p-4 selection:bg-terminal-fg selection:text-black flex flex-col gap-4 overflow-y-auto lg:overflow-hidden">
+    <div className={`dashboard-scale min-h-screen w-full bg-[#050505] text-terminal-text p-2 md:p-4 selection:bg-terminal-fg selection:text-black flex flex-col gap-4 ${isMobile ? 'overflow-y-auto' : 'h-screen overflow-hidden'}`}>
 
       {/* HEADER */}
       <header className="flex items-center gap-3 border-b border-terminal-border/50 pb-3 shrink-0">
@@ -98,7 +106,7 @@ export default function App() {
         <h1 className="text-xl font-bold uppercase tracking-widest glow-text">
           Godmode Futures <span className="text-terminal-muted text-sm ml-2">v2.0</span>
         </h1>
-        <div className="ml-auto flex items-center gap-4 text-xs text-terminal-muted hidden md:flex font-mono">
+        <div className="ml-auto flex items-center gap-2 md:gap-4 text-xs text-terminal-muted font-mono">
           {/* Telegram Bot Settings Link */}
           <Link
             to="/integrations/telegram"
@@ -136,189 +144,263 @@ export default function App() {
 
       {/* MAIN GRID */}
       <main className="flex flex-col gap-4 flex-grow min-h-0 w-full overflow-hidden">
-        <PanelGroup orientation="horizontal">
-
-          {/* --- LEFT SIDEBAR (Col 1-2) --- */}
-          <Panel defaultSize={20} minSize={15} collapsible={true} className="lg:w-auto w-full h-full lg:flex-grow flex flex-col gap-4 lg:inline-flex lg:max-w-[20%]">
-            <PanelGroup orientation="vertical">
-              <Panel defaultSize={35} minSize={20} className="panel flex flex-col gap-3 mb-4 overflow-y-auto scrollbar-thin">
+        {isMobile ? (
+          <div className="flex flex-col gap-4 overflow-y-auto pr-1">
+            {/* MOBILE VIEW: SIMPLE STACK */}
+            <section className="panel flex flex-col gap-4 min-h-[400px]">
+              <div className="flex flex-col gap-3">
                 <h2 className="text-[10px] uppercase text-terminal-muted font-bold tracking-widest flex items-center gap-2 border-b border-terminal-border/30 pb-2">
                   <Activity className="w-3 h-3" /> Market Pulse
                 </h2>
-
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-terminal-muted opacity-70">Fear & Greed</span>
-                  {fgLoading ? (
-                    <span className="animate-pulse">...</span>
-                  ) : (
-                    <span className={`font-bold ${parseInt(fgData?.value || '0') > 50 ? 'text-terminal-green' : 'text-terminal-red'}`}>
-                      {fgData?.value}
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-terminal-muted opacity-70">Open Interest</span>
-                  <div className="text-right">
-                    <div className="font-mono text-terminal-fg">
-                      {openInterest ? `$${(openInterest * (futuresPrice || 0) / 1000000).toFixed(1)} M` : '--'}
-                    </div>
-                    {oiDelta !== null && (
-                      <div className={`text-[9px] ${oiDelta > 0 ? 'text-terminal-green' : oiDelta < 0 ? 'text-terminal-red' : 'text-terminal-muted'}`}>
-                        {oiDelta > 0 ? '+' : ''}{oiDelta.toFixed(2)}% ({globalInterval})
-                      </div>
-                    )}
+                {/* Simplified Pulse Stats for Mobile */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-terminal-muted opacity-70">Fear & Greed</span>
+                    <span className={`font-bold ${parseInt(fgData?.value || '0') > 50 ? 'text-terminal-green' : 'text-terminal-red'}`}>{fgData?.value}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-terminal-muted opacity-70">OI Delta</span>
+                    <span className={oiDelta && oiDelta > 0 ? 'text-terminal-green' : 'text-terminal-red'}>{oiDelta?.toFixed(2)}%</span>
                   </div>
                 </div>
+              </div>
 
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-terminal-muted opacity-70">Funding Rate</span>
-                  <div className="text-right">
-                    <div className={`font-mono ${fundingRate && fundingRate > 0 ? 'text-terminal-green' : fundingRate && fundingRate < 0 ? 'text-terminal-red' : 'text-terminal-fg'}`}>
-                      {fundingRate ? `${(fundingRate * 100).toFixed(4)}%` : '--'}
-                    </div>
-                    {fundingDelta !== null && (
-                      <div className={`text-[9px] ${fundingDelta > 0 ? 'text-terminal-green' : fundingDelta < 0 ? 'text-terminal-red' : 'text-terminal-muted'}`}>
-                        {fundingDelta > 0 ? '+' : ''}{fundingDelta.toFixed(2)}% ({globalInterval})
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-terminal-muted opacity-70">L/S Ratio ({globalInterval})</span>
-                  <span className={`font-mono ${longShortRatio && longShortRatio > 1 ? 'text-terminal-green' : longShortRatio && longShortRatio < 1 ? 'text-terminal-red' : 'text-terminal-fg'}`}>
-                    {longShortRatio ? longShortRatio.toFixed(2) : '--'}
-                  </span>
-                </div>
-              </Panel>
-
-              <PanelResizeHandle className="h-4 lg:h-2 flex items-center justify-center cursor-row-resize bg-terminal-bg relative group my-1 z-10">
-                <div className="w-16 h-1 rounded-full bg-terminal-border group-hover:bg-terminal-fg/50 transition-colors" />
-              </PanelResizeHandle>
-
-              <Panel defaultSize={45} minSize={20} className="panel flex flex-col overflow-hidden mb-4">
-                <h2 className="text-[10px] uppercase text-terminal-muted font-bold tracking-widest mb-3 flex items-center gap-2 border-b border-terminal-border/30 pb-2 shrink-0">
+              {/* Watchlist Mobile */}
+              <div className="flex flex-col gap-2">
+                <h2 className="text-[10px] uppercase text-terminal-muted font-bold tracking-widest flex items-center gap-2 border-b border-terminal-border/30 pb-2">
                   <Layers className="w-3 h-3" /> Watchlist
                 </h2>
-                <div className="flex-grow overflow-y-auto pr-1 space-y-1 scrollbar-thin">
-                  {watchSymbols.map((sym) => {
-                    const isSelected = activeSymbol === sym;
-                    const t = tickers[sym];
-                    if (!t) return <div key={sym} className="text-terminal-muted text-[10px] animate-pulse">{sym} loading...</div>;
-
-                    const isUp = parseFloat(t.changePercent24h) >= 0;
-
-                    return (
-                      <button
-                        key={sym}
-                        onClick={() => setActiveSymbol(sym)}
-                        className={`w-full text-left px-2 py-1.5 rounded flex justify-between items-center transition-colors border text-xs ${isSelected
-                          ? 'border-terminal-fg bg-[#00ff4111] glow-text'
-                          : 'border-transparent hover:bg-terminal-border/30 text-terminal-muted opacity-70 hover:opacity-100'
-                          }`}
-                      >
-                        <span className="font-bold">{sym.replace('USDT', '')}</span>
-                        <div className="text-right">
-                          <div className={isSelected ? 'text-terminal-fg' : 'text-white'}>{t.price}</div>
-                          <div className={`text-[9px] flex items-center justify-end ${isUp ? 'text-terminal-green' : 'text-terminal-red'}`}>
-                            {isUp ? <ArrowUpRight className="w-2 h-2" /> : <ArrowDownRight className="w-2 h-2" />}
-                            {Math.abs(parseFloat(t.changePercent24h)).toFixed(2)}%
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
+                <div className="flex overflow-x-auto gap-2 pb-2 scrollbar-none">
+                  {watchSymbols.map((sym) => (
+                    <button
+                      key={sym}
+                      onClick={() => setActiveSymbol(sym)}
+                      className={`px-3 py-2 rounded border text-xs whitespace-nowrap ${activeSymbol === sym ? 'border-terminal-fg bg-[#00ff4111] text-terminal-fg' : 'border-terminal-border text-terminal-muted'}`}
+                    >
+                      {sym.replace('USDT', '')}
+                    </button>
+                  ))}
                 </div>
-              </Panel>
+              </div>
+            </section>
 
-              <PanelResizeHandle className="h-4 lg:h-2 flex items-center justify-center cursor-row-resize bg-terminal-bg relative group my-1 z-10">
-                <div className="w-16 h-1 rounded-full bg-terminal-border group-hover:bg-terminal-fg/50 transition-colors" />
-              </PanelResizeHandle>
+            {/* Main Chart Mobile */}
+            <section className="panel min-h-[500px] relative flex flex-col">
+              <div className="flex justify-between items-end mb-4">
+                <h2 className="text-lg font-bold uppercase tracking-tight">{activeSymbol.replace('USDT', '/USDT-PERP')}</h2>
+                {futuresPrice && <div className={`text-xl font-mono ${activeTicker && parseFloat(activeTicker.changePercent24h) >= 0 ? 'text-terminal-green' : 'text-terminal-red'}`}>{futuresPrice.toFixed(2)}</div>}
+              </div>
+              <div className="flex-grow min-h-[400px]">
+                <ErrorBoundary><CandleChart key={activeSymbol} symbol={activeSymbol} /></ErrorBoundary>
+              </div>
+            </section>
 
-              <Panel defaultSize={20} minSize={10} className="panel flex-grow overflow-y-auto scrollbar-thin min-h-[200px] lg:min-h-0">
-                <VolumeTape key={`tape - ${activeSymbol} `} symbol={activeSymbol} />
-              </Panel>
-            </PanelGroup>
-          </Panel>
+            {/* Liquidity Mobile */}
+            <section className="panel min-h-[400px]">
+              <LiquidityIntelligence key={`intel-mob-${activeSymbol}`} symbol={activeSymbol} />
+            </section>
 
-          <PanelResizeHandle className="hidden lg:flex w-4 lg:w-2 flex-col items-center justify-center cursor-col-resize bg-terminal-bg relative group mx-1 z-10">
-            <div className="w-1 h-16 rounded-full bg-terminal-border group-hover:bg-terminal-fg/50 transition-colors" />
-          </PanelResizeHandle>
-
-          {/* --- CENTER AREA: Chart & Heatmap (Col 3-9) --- */}
-          <Panel defaultSize={55} minSize={30} className="lg:w-auto w-full h-full lg:flex-grow-[3] flex flex-col gap-4 lg:inline-flex lg:min-w-[40%]">
-            <PanelGroup orientation="vertical">
-              {/* Main Chart */}
-              <Panel defaultSize={65} minSize={30} className="panel flex-grow relative overflow-hidden flex flex-col min-h-[400px] lg:min-h-0 mb-4">
-                <div className="absolute top-4 left-4 z-10 pointer-events-none flex items-end gap-3">
-                  <h2 className="text-2xl font-bold uppercase tracking-widest flex items-center gap-3 bg-black/50 px-2 rounded">
-                    {activeSymbol.replace('USDT', '/USDT-PERP')}
-                  </h2>
-                  {futuresPrice && (
-                    <div className={`text-2xl font-mono leading-none bg-black/50 px-2 rounded ${activeTicker && parseFloat(activeTicker.changePercent24h) >= 0 ? 'text-terminal-green glow-text' : 'text-terminal-red glow-red'}`}>
-                      {futuresPrice.toFixed(2)}
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex-grow w-full h-full mt-8">
-                  <ErrorBoundary>
-                    <CandleChart key={activeSymbol} symbol={activeSymbol} />
-                  </ErrorBoundary>
-                </div>
-              </Panel>
-
-              <PanelResizeHandle className="h-4 lg:h-2 flex items-center justify-center cursor-row-resize bg-terminal-bg relative group my-1 z-10">
-                <div className="w-16 h-1 rounded-full bg-terminal-border group-hover:bg-terminal-fg/50 transition-colors" />
-              </PanelResizeHandle>
-
-              {/* Liquidity Intelligence (Bottom) */}
-              <Panel defaultSize={35} minSize={20} className="panel relative overflow-y-auto scrollbar-thin p-0 border-0 flex-shrink-0 min-h-[350px] lg:min-h-0">
-                <LiquidityIntelligence key={`intel - ${activeSymbol} `} symbol={activeSymbol} />
-              </Panel>
-            </PanelGroup>
-          </Panel>
-
-          <PanelResizeHandle className="hidden lg:flex w-4 lg:w-2 flex-col items-center justify-center cursor-col-resize bg-terminal-bg relative group mx-1 z-10">
-            <div className="w-1 h-16 rounded-full bg-terminal-border group-hover:bg-terminal-fg/50 transition-colors" />
-          </PanelResizeHandle>
-
-          {/* --- RIGHT SIDEBAR: OrderBook & EventFeed & Context (Col 10-12) --- */}
-          <Panel defaultSize={25} minSize={15} collapsible={true} className="lg:w-auto w-full h-full lg:flex-grow flex flex-col gap-4 lg:inline-flex lg:max-w-[25%]">
-            <PanelGroup orientation="vertical">
-              {/* Market Context (Top) */}
-              <Panel defaultSize={35} minSize={20} className="flex-grow flex flex-col min-h-[300px] lg:min-h-0 mb-4 overflow-y-auto scrollbar-thin">
-                <MarketContext symbol={activeSymbol} />
-              </Panel>
-
-              <PanelResizeHandle className="h-4 lg:h-2 flex items-center justify-center cursor-row-resize bg-terminal-bg relative group my-1 z-10">
-                <div className="w-16 h-1 rounded-full bg-terminal-border group-hover:bg-terminal-fg/50 transition-colors" />
-              </PanelResizeHandle>
-
-              {/* Smart Event Feed (Middle) */}
-              <Panel defaultSize={30} minSize={15} className="flex-grow overflow-y-auto scrollbar-thin mb-4">
+            {/* Tape & Feed Mobile */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <section className="panel min-h-[300px]">
+                <VolumeTape symbol={activeSymbol} />
+              </section>
+              <section className="panel min-h-[300px]">
                 <EventFeed symbol={activeSymbol} />
-              </Panel>
+              </section>
+            </div>
 
-              <PanelResizeHandle className="h-4 lg:h-2 flex items-center justify-center cursor-row-resize bg-terminal-bg relative group my-1 z-10">
-                <div className="w-16 h-1 rounded-full bg-terminal-border group-hover:bg-terminal-fg/50 transition-colors" />
-              </PanelResizeHandle>
+            {/* Context & Orderbook Mobile */}
+            <section className="panel min-h-[300px]">
+              <MarketContext symbol={activeSymbol} />
+            </section>
+            <section className="panel min-h-[400px]">
+              <OrderBook symbol={activeSymbol} />
+            </section>
+          </div>
+        ) : (
+          <PanelGroup orientation="horizontal">
+            {/* --- LEFT SIDEBAR (Col 1-2) --- */}
+            <Panel defaultSize={20} minSize={15} collapsible={true} className="flex flex-col gap-4">
+              <PanelGroup orientation="vertical">
+                <Panel defaultSize={35} minSize={20} className="panel flex flex-col gap-3 mb-4 overflow-y-auto scrollbar-thin">
+                  <h2 className="text-[10px] uppercase text-terminal-muted font-bold tracking-widest flex items-center gap-2 border-b border-terminal-border/30 pb-2">
+                    <Activity className="w-3 h-3" /> Market Pulse
+                  </h2>
 
-              {/* Order Book Depth (Bottom) */}
-              <Panel defaultSize={35} minSize={20} className="panel flex-grow flex flex-col overflow-y-auto scrollbar-thin">
-                <h2 className="text-[10px] uppercase text-terminal-muted font-bold tracking-widest mb-2 border-b border-terminal-border/30 pb-2 flex justify-between">
-                  <span>Order Book Depth (L2)</span>
-                  <span className="text-terminal-fg/50 font-mono text-[9px]">{globalInterval} SYNC</span>
-                </h2>
-                <div className="flex-grow overflow-hidden">
-                  <OrderBook key={activeSymbol} symbol={activeSymbol} />
-                </div>
-              </Panel>
-            </PanelGroup>
-          </Panel>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-terminal-muted opacity-70">Fear & Greed</span>
+                    {fgLoading ? (
+                      <span className="animate-pulse">...</span>
+                    ) : (
+                      <span className={`font-bold ${parseInt(fgData?.value || '0') > 50 ? 'text-terminal-green' : 'text-terminal-red'}`}>
+                        {fgData?.value}
+                      </span>
+                    )}
+                  </div>
 
-        </PanelGroup>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-terminal-muted opacity-70">Open Interest</span>
+                    <div className="text-right">
+                      <div className="font-mono text-terminal-fg">
+                        {openInterest ? `$${(openInterest * (futuresPrice || 0) / 1000000).toFixed(1)} M` : '--'}
+                      </div>
+                      {oiDelta !== null && (
+                        <div className={`text-[9px] ${oiDelta > 0 ? 'text-terminal-green' : oiDelta < 0 ? 'text-terminal-red' : 'text-terminal-muted'}`}>
+                          {oiDelta > 0 ? '+' : ''}{oiDelta.toFixed(2)}% ({globalInterval})
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-terminal-muted opacity-70">Funding Rate</span>
+                    <div className="text-right">
+                      <div className={`font-mono ${fundingRate && fundingRate > 0 ? 'text-terminal-green' : fundingRate && fundingRate < 0 ? 'text-terminal-red' : 'text-terminal-fg'}`}>
+                        {fundingRate ? `${(fundingRate * 100).toFixed(4)}%` : '--'}
+                      </div>
+                      {fundingDelta !== null && (
+                        <div className={`text-[9px] ${fundingDelta > 0 ? 'text-terminal-green' : fundingDelta < 0 ? 'text-terminal-red' : 'text-terminal-muted'}`}>
+                          {fundingDelta > 0 ? '+' : ''}{fundingDelta.toFixed(2)}% ({globalInterval})
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-terminal-muted opacity-70">L/S Ratio ({globalInterval})</span>
+                    <span className={`font-mono ${longShortRatio && longShortRatio > 1 ? 'text-terminal-green' : longShortRatio && longShortRatio < 1 ? 'text-terminal-red' : 'text-terminal-fg'}`}>
+                      {longShortRatio ? longShortRatio.toFixed(2) : '--'}
+                    </span>
+                  </div>
+                </Panel>
+
+                <PanelResizeHandle className="h-2 flex items-center justify-center cursor-row-resize bg-terminal-bg relative group my-1 z-10">
+                  <div className="w-16 h-1 rounded-full bg-terminal-border group-hover:bg-terminal-fg/50 transition-colors" />
+                </PanelResizeHandle>
+
+                <Panel defaultSize={45} minSize={20} className="panel flex flex-col overflow-hidden mb-4">
+                  <h2 className="text-[10px] uppercase text-terminal-muted font-bold tracking-widest mb-3 flex items-center gap-2 border-b border-terminal-border/30 pb-2 shrink-0">
+                    <Layers className="w-3 h-3" /> Watchlist
+                  </h2>
+                  <div className="flex-grow overflow-y-auto pr-1 space-y-1 scrollbar-thin">
+                    {watchSymbols.map((sym) => {
+                      const isSelected = activeSymbol === sym;
+                      const t = tickers[sym];
+                      if (!t) return <div key={sym} className="text-terminal-muted text-[10px] animate-pulse">{sym} loading...</div>;
+
+                      const isUp = parseFloat(t.changePercent24h) >= 0;
+
+                      return (
+                        <button
+                          key={sym}
+                          onClick={() => setActiveSymbol(sym)}
+                          className={`w-full text-left px-2 py-1.5 rounded flex justify-between items-center transition-colors border text-xs ${isSelected
+                            ? 'border-terminal-fg bg-[#00ff4111] glow-text'
+                            : 'border-transparent hover:bg-terminal-border/30 text-terminal-muted opacity-70 hover:opacity-100'
+                            }`}
+                        >
+                          <span className="font-bold">{sym.replace('USDT', '')}</span>
+                          <div className="text-right">
+                            <div className={isSelected ? 'text-terminal-fg' : 'text-white'}>{t.price}</div>
+                            <div className={`text-[9px] flex items-center justify-end ${isUp ? 'text-terminal-green' : 'text-terminal-red'}`}>
+                              {isUp ? <ArrowUpRight className="w-2 h-2" /> : <ArrowDownRight className="w-2 h-2" />}
+                              {Math.abs(parseFloat(t.changePercent24h)).toFixed(2)}%
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </Panel>
+
+                <PanelResizeHandle className="h-2 flex items-center justify-center cursor-row-resize bg-terminal-bg relative group my-1 z-10">
+                  <div className="w-16 h-1 rounded-full bg-terminal-border group-hover:bg-terminal-fg/50 transition-colors" />
+                </PanelResizeHandle>
+
+                <Panel defaultSize={20} minSize={10} className="panel flex-grow overflow-y-auto scrollbar-thin min-h-[200px] lg:min-h-0">
+                  <VolumeTape key={`tape-${activeSymbol}`} symbol={activeSymbol} />
+                </Panel>
+              </PanelGroup>
+            </Panel>
+
+            <PanelResizeHandle className="w-2 flex flex-col items-center justify-center cursor-col-resize bg-terminal-bg relative group mx-1 z-10">
+              <div className="w-1 h-16 rounded-full bg-terminal-border group-hover:bg-terminal-fg/50 transition-colors" />
+            </PanelResizeHandle>
+
+            {/* --- CENTER AREA: Chart & Heatmap (Col 3-9) --- */}
+            <Panel defaultSize={55} minSize={30} className="flex flex-col gap-4">
+              <PanelGroup orientation="vertical">
+                {/* Main Chart */}
+                <Panel defaultSize={65} minSize={30} className="panel flex-grow relative overflow-hidden flex flex-col min-h-[400px] lg:min-h-0 mb-4">
+                  <div className="absolute top-4 left-4 z-10 pointer-events-none flex items-end gap-3">
+                    <h2 className="text-2xl font-bold uppercase tracking-widest flex items-center gap-3 bg-black/50 px-2 rounded">
+                      {activeSymbol.replace('USDT', '/USDT-PERP')}
+                    </h2>
+                    {futuresPrice && (
+                      <div className={`text-2xl font-mono leading-none bg-black/50 px-2 rounded ${activeTicker && parseFloat(activeTicker.changePercent24h) >= 0 ? 'text-terminal-green glow-text' : 'text-terminal-red glow-red'}`}>
+                        {futuresPrice.toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex-grow w-full h-full mt-8">
+                    <ErrorBoundary>
+                      <CandleChart key={activeSymbol} symbol={activeSymbol} />
+                    </ErrorBoundary>
+                  </div>
+                </Panel>
+
+                <PanelResizeHandle className="h-2 flex items-center justify-center cursor-row-resize bg-terminal-bg relative group my-1 z-10">
+                  <div className="w-16 h-1 rounded-full bg-terminal-border group-hover:bg-terminal-fg/50 transition-colors" />
+                </PanelResizeHandle>
+
+                {/* Liquidity Intelligence (Bottom) */}
+                <Panel defaultSize={35} minSize={20} className="panel relative overflow-y-auto scrollbar-thin p-0 border-0 flex-shrink-0 min-h-[350px] lg:min-h-0">
+                  <LiquidityIntelligence key={`intel-${activeSymbol}`} symbol={activeSymbol} />
+                </Panel>
+              </PanelGroup>
+            </Panel>
+
+            <PanelResizeHandle className="w-2 flex flex-col items-center justify-center cursor-col-resize bg-terminal-bg relative group mx-1 z-10">
+              <div className="w-1 h-16 rounded-full bg-terminal-border group-hover:bg-terminal-fg/50 transition-colors" />
+            </PanelResizeHandle>
+
+            {/* --- RIGHT SIDEBAR: OrderBook & EventFeed & Context (Col 10-12) --- */}
+            <Panel defaultSize={25} minSize={15} collapsible={true} className="flex flex-col gap-4">
+              <PanelGroup orientation="vertical">
+                {/* Market Context (Top) */}
+                <Panel defaultSize={35} minSize={20} className="flex-grow flex flex-col min-h-[300px] lg:min-h-0 mb-4 overflow-y-auto scrollbar-thin">
+                  <MarketContext symbol={activeSymbol} />
+                </Panel>
+
+                <PanelResizeHandle className="h-2 flex items-center justify-center cursor-row-resize bg-terminal-bg relative group my-1 z-10">
+                  <div className="w-16 h-1 rounded-full bg-terminal-border group-hover:bg-terminal-fg/50 transition-colors" />
+                </PanelResizeHandle>
+
+                {/* Smart Event Feed (Middle) */}
+                <Panel defaultSize={30} minSize={15} className="flex-grow overflow-y-auto scrollbar-thin mb-4">
+                  <EventFeed symbol={activeSymbol} />
+                </Panel>
+
+                <PanelResizeHandle className="h-2 flex items-center justify-center cursor-row-resize bg-terminal-bg relative group my-1 z-10">
+                  <div className="w-16 h-1 rounded-full bg-terminal-border group-hover:bg-terminal-fg/50 transition-colors" />
+                </PanelResizeHandle>
+
+                {/* Order Book Depth (Bottom) */}
+                <Panel defaultSize={35} minSize={20} className="panel flex-grow flex flex-col overflow-y-auto scrollbar-thin">
+                  <h2 className="text-[10px] uppercase text-terminal-muted font-bold tracking-widest mb-2 border-b border-terminal-border/30 pb-2 flex justify-between">
+                    <span>Order Book Depth (L2)</span>
+                    <span className="text-terminal-fg/50 font-mono text-[9px]">{globalInterval} SYNC</span>
+                  </h2>
+                  <div className="flex-grow overflow-hidden">
+                    <OrderBook key={activeSymbol} symbol={activeSymbol} />
+                  </div>
+                </Panel>
+              </PanelGroup>
+            </Panel>
+          </PanelGroup>
+        )}
       </main>
     </div>
   );

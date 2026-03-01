@@ -45,12 +45,10 @@
   }
 
   .dashboard-scale {
-    @media (min-width: 1024px) and (max-width: 1440px) {
-      zoom: 0.8;
-    }
-    @media (min-width: 768px) and (max-width: 1023px) {
-      zoom: 0.6;
-    }
+    /* Standardized fluid layout instead of problematic zoom */
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
   }
 }
 
