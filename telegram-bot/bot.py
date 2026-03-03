@@ -3,6 +3,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from collections import deque
+import json
 from aiohttp import web, ClientSession
 
 # Configure logging
@@ -26,6 +27,51 @@ alert_queue = asyncio.Queue()
 
 # Simple cooldown tracker: { "alert_type": timestamp_of_last_send }
 cooldown_tracker = {}
+
+# Persistent Bot Configuration
+CONFIG_FILE = "config.json"
+DEFAULT_CONFIG = {
+    "globalEnabled": True,
+    "activeSessions": ["London", "US", "Asia"],
+    "monitoredTimeframes": ["15m", "1h", "4h"],
+    "alertOnStateChange": True,
+    "quietHours": {"enabled": False, "start": "22:00", "end": "06:00"},
+    "categories": {},
+    "cooldowns": {},
+    "thresholds": {
+        "whaleMinAmount": 500000,
+        "liquidationMinAmount": 1000000,
+        "oiSpikePercentage": 1.5,
+        "fundingExtremeRate": 0.05,
+        "atrExpansionRatio": 1.3,
+        "whaleMomentumDelta": 5000000,
+        "rvolMultiplier": 3.0,
+        "rsiOverbought": 70,
+        "rsiOversold": 30,
+        "emaSeparationPct": 0.15
+    }
+}
+
+bot_config = DEFAULT_CONFIG.copy()
+
+def load_config():
+    global bot_config
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                saved = json.load(f)
+                bot_config.update(saved)
+                logger.info("Configuration loaded from config.json")
+        except Exception as e:
+            logger.error(f"Failed to load config: {e}")
+
+def save_config():
+    try:
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(bot_config, f, indent=2)
+            logger.info("Configuration saved to config.json")
+    except Exception as e:
+        logger.error(f"Failed to save config: {e}")
 
 # Global State for Ops Console
 bot_username = "UnknownBot"
@@ -145,6 +191,31 @@ async def handle_alert(request):
         logger.error(f"Failed to parse alert incoming data: {e}")
         return web.json_response({"error": "Invalid JSON payload"}, status=400)
 
+async def handle_get_config(request):
+    """Returns the current bot configuration."""
+    return web.json_response(bot_config)
+
+def deep_update(base_dict, updates):
+    for key, value in updates.items():
+        if isinstance(value, dict) and key in base_dict and isinstance(base_dict[key], dict):
+            deep_update(base_dict[key], value)
+        else:
+            base_dict[key] = value
+    return base_dict
+
+async def handle_post_config(request):
+    """Updates the bot configuration from the frontend."""
+    global bot_config
+    try:
+        data = await request.json()
+        deep_update(bot_config, data)
+        save_config()
+        logger.info("Bot configuration updated from frontend via deep merge.")
+        return web.json_response({"status": "success", "config": bot_config})
+    except Exception as e:
+        logger.error(f"Failed to update config: {e}")
+        return web.json_response({"error": str(e)}, status=400)
+
 async def handle_health(request):
     """Simple health check endpoint."""
     return web.json_response({"status": "ok"}, status=200)
@@ -170,6 +241,11 @@ async def init_app():
     app.router.add_get('/health', handle_health)
     app.router.add_get('/status', handle_status)
     app.router.add_get('/history', handle_history)
+    app.router.add_get('/config', handle_get_config)
+    app.router.add_post('/config', handle_post_config)
+    
+    # Load persistence
+    load_config()
     
     # Start the background task
     app['queue_processor'] = asyncio.create_task(process_queue())
@@ -177,4 +253,4 @@ async def init_app():
     return app
 
 if __name__ == '__main__':
-    web.run_app(init_app(), host='0.0.0.0', port=8080)
+    web.run_app(init_app(), host='0.0.0.0', port=8888)

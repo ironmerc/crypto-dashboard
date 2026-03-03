@@ -25,8 +25,6 @@ export interface DerivativesInfo {
 export interface ExecutionInfo {
     spreadPct: number;
     spreadQuality: string;
-    distBid: string;
-    distAsk: string;
 }
 
 export interface LevelInteractionInfo {
@@ -45,8 +43,6 @@ export function calculateMarketContext(symbol: string) {
     const atrSma = state.currentAtrSma[symbol];
     const oiHistory = state.oiHistory[symbol];
     const orderBook = state.orderBook[symbol];
-    const bidWalls = state.bidWalls[symbol] || [];
-    const askWalls = state.askWalls[symbol] || [];
     const sessionPoc = state.sessionPoc[symbol];
     const sessionVah = state.sessionVah[symbol];
     const sessionVal = state.sessionVal[symbol];
@@ -109,9 +105,7 @@ export function calculateMarketContext(symbol: string) {
         if (spreadPct > 0.05) spreadQuality = 'Poor (Wide)';
         else if (spreadPct < 0.01) spreadQuality = 'Tight';
 
-        const distBid = bidWalls.length > 0 ? ((price - bidWalls[0].price) / price * 100).toFixed(2) : '-';
-        const distAsk = askWalls.length > 0 ? ((askWalls[0].price - price) / price * 100).toFixed(2) : '-';
-        execution = { spreadPct, spreadQuality, distBid, distAsk };
+        execution = { spreadPct, spreadQuality };
     }
 
     // 5. Level Interaction
@@ -146,8 +140,6 @@ export function calculateMarketContext(symbol: string) {
         }
 
         const levels = [];
-        if (askWalls.length > 0) levels.push({ price: askWalls[0].price, name: 'Major Resistance', isSup: false });
-        if (bidWalls.length > 0) levels.push({ price: bidWalls[0].price, name: 'Major Support', isSup: true });
         if (sessionPoc) levels.push({ price: sessionPoc, name: 'POC', isSup: price > sessionPoc });
         if (vwap) levels.push({ price: vwap, name: 'VWAP', isSup: price > vwap });
 

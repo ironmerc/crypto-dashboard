@@ -8,13 +8,11 @@ const BINANCE_FUTURES_WS = 'wss://fstream.binance.com/ws';
 
 // Thresholds for detection
 const WHALE_TRADE_USD = 500000; // $500k
-const WALL_SIZE_USD = 1000000;  // $1m
 
 export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
     const activeSymbolL = activeSymbol.toLowerCase();
     const setPrice = useTerminalStore(state => state.setPrice);
     const setOrderBook = useTerminalStore(state => state.setOrderBook);
-    const setWalls = useTerminalStore(state => state.setWalls);
     const addEvent = useTerminalStore(state => state.addEvent);
     const addTrade = useTerminalStore(state => state.addTrade);
 
@@ -86,10 +84,6 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
             asks: mergedAsks,
             lastUpdateId
         });
-
-        const bidWalls = mergedBids.filter(b => b.value >= WALL_SIZE_USD);
-        const askWalls = mergedAsks.filter(a => a.value >= WALL_SIZE_USD);
-        setWalls(activeSymbol, bidWalls, askWalls);
     };
 
     // --- Deep Liquidity REST Poller (Active Symbol Only) ---

@@ -130,10 +130,6 @@ export function MarketContext({ symbol }: MarketContextProps) {
                             Spread: <span className={execution?.spreadQuality === 'Tight' ? 'text-terminal-green' : execution?.spreadQuality.includes('Poor') ? 'text-terminal-red' : 'text-terminal-fg'}>{execution?.spreadQuality || '-'}</span>
                         </div>
                     </div>
-                    <div className="text-xs text-terminal-muted mt-2 flex justify-between border-t border-terminal-border/10 pt-1">
-                        <span className="text-terminal-red">Res: +{execution?.distAsk || '-'}%</span>
-                        <span className="text-terminal-green">Sup: -{execution?.distBid || '-'}%</span>
-                    </div>
                 </div>
 
                 {/* Level Interaction Panel */}

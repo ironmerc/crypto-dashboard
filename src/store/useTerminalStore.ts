@@ -45,6 +45,9 @@ export interface VolumeDelta {
 
 export interface TelegramConfig {
     globalEnabled: boolean;
+    activeSessions: string[]; // e.g., ['London', 'US', 'Asia']
+    monitoredTimeframes: string[]; // e.g., ['15m', '1h', '4h']
+    alertOnStateChange: boolean;
     quietHours: {
         enabled: boolean;
         start: string; // e.g., "22:00"
@@ -52,6 +55,18 @@ export interface TelegramConfig {
     };
     categories: Record<string, boolean>;
     cooldowns: Record<string, number>;
+    thresholds: {
+        whaleMinAmount: number;
+        liquidationMinAmount: number;
+        oiSpikePercentage: number;
+        fundingExtremeRate: number;
+        atrExpansionRatio: number;
+        whaleMomentumDelta: number;
+        rvolMultiplier: number;
+        rsiOverbought: number;
+        rsiOversold: number;
+        emaSeparationPct: number;
+    };
 }
 
 interface TerminalState {
@@ -66,11 +81,6 @@ interface TerminalState {
     // Order Book
     orderBook: Record<string, OrderBookState>;
     setOrderBook: (symbol: string, ob: OrderBookState) => void;
-
-    // Detected Walls
-    bidWalls: Record<string, OrderBookLevel[]>;
-    askWalls: Record<string, OrderBookLevel[]>;
-    setWalls: (symbol: string, bids: OrderBookLevel[], asks: OrderBookLevel[]) => void;
 
     // Smart Money Event Feed & Context
     events: MarketEvent[];
@@ -139,13 +149,6 @@ export const useTerminalStore = create<TerminalState>()(
             orderBook: {},
             setOrderBook: (symbol, ob) => set((state) => ({
                 orderBook: { ...state.orderBook, [symbol]: ob }
-            })),
-
-            bidWalls: {},
-            askWalls: {},
-            setWalls: (symbol, bids, asks) => set((state) => ({
-                bidWalls: { ...state.bidWalls, [symbol]: bids },
-                askWalls: { ...state.askWalls, [symbol]: asks }
             })),
 
             events: [],
@@ -305,44 +308,74 @@ export const useTerminalStore = create<TerminalState>()(
 
             telegramConfig: {
                 globalEnabled: true,
+                activeSessions: ['London', 'US', 'Asia'],
+                monitoredTimeframes: ['15m', '1h', '4h'],
+                alertOnStateChange: true,
                 quietHours: {
                     enabled: false,
                     start: "22:00",
                     end: "06:00"
                 },
                 categories: {
-                    "oi_spike": true,
-                    "wall": true,
-                    "whale": true,
-                    "liquidation": true,
-                    "atr_expand": true,
-                    "funding_extreme": true,
-                    "test_ping": true
+                    whale: true,
+                    liquidation: true,
+                    oi_spike: true,
+                    extreme_funding: true,
+                    atr_expansion: true,
+                    whale_momentum: true,
+                    rvol_anomaly: true,
+                    market_context: true,
+                    daily_wrap: true,
+                    va_breakout: true,
+                    test_ping: true
                 },
-                cooldowns: {
-                    "oi_spike": 300,
-                    "wall": 120,
-                    "whale": 60,
-                    "liquidation": 60,
-                    "atr_expand": 300,
-                    "funding_extreme": 3600,
-                    "test_ping": 5
+                cooldowns: {},
+                thresholds: {
+                    whaleMinAmount: 500000,
+                    liquidationMinAmount: 1000000,
+                    oiSpikePercentage: 1.5,
+                    fundingExtremeRate: 0.05,
+                    atrExpansionRatio: 1.3,
+                    whaleMomentumDelta: 5000000,
+                    rvolMultiplier: 3.0,
+                    rsiOverbought: 70,
+                    rsiOversold: 30,
+                    emaSeparationPct: 0.15
                 }
             },
-            updateTelegramConfig: (updates) => set((state) => ({
-                telegramConfig: {
-                    ...state.telegramConfig,
-                    ...updates,
-                    categories: updates.categories ? { ...state.telegramConfig.categories, ...updates.categories } : state.telegramConfig.categories,
-                    quietHours: updates.quietHours ? { ...state.telegramConfig.quietHours, ...updates.quietHours } : state.telegramConfig.quietHours,
-                    cooldowns: updates.cooldowns ? { ...state.telegramConfig.cooldowns, ...updates.cooldowns } : state.telegramConfig.cooldowns
-                }
-            }))
+            updateTelegramConfig: (updates) => {
+                set((state) => {
+                    const current = state.telegramConfig || {};
+                    return {
+                        telegramConfig: {
+                            ...current,
+                            ...updates,
+                            categories: updates.categories ? { ...(current.categories || {}), ...updates.categories } : (current.categories || {}),
+                            quietHours: updates.quietHours ? { ...(current.quietHours || {}), ...updates.quietHours } : (current.quietHours || {}),
+                            cooldowns: updates.cooldowns ? { ...(current.cooldowns || {}), ...updates.cooldowns } : (current.cooldowns || {}),
+                            thresholds: updates.thresholds ? { ...(current.thresholds || {}), ...updates.thresholds } : (current.thresholds || {})
+                        }
+                    };
+                });
+                // Auto-sync with Python bot on every local update (debounced via utility)
+                import('../utils/syncConfig').then(m => m.syncConfigToBot());
+            }
         }),
         {
             name: 'terminal-storage',
-            // Only persist the telegram configuration, skip all the massive market data
-            partialize: (state) => ({ telegramConfig: state.telegramConfig }),
+            // Persist telegram config + smart feed events (market data like orderbook/trades is excluded)
+            partialize: (state) => ({
+                telegramConfig: state.telegramConfig,
+                events: state.events,
+                whaleDelta: state.whaleDelta,
+            }),
+            // On rehydration, prune events older than 1 hour so the feed stays contextually fresh
+            onRehydrateStorage: () => (state) => {
+                if (state) {
+                    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+                    state.events = state.events.filter(e => e.timestamp > oneHourAgo);
+                }
+            },
         }
     )
 );

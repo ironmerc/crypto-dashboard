@@ -150,59 +150,6 @@ export function useSmartAlerts(symbol: string) {
                 }
             }
 
-            // 3. Imbalance approaching Magnet or Wall
-            const bidWalls = state.bidWalls[symbol] || [];
-            const askWalls = state.askWalls[symbol] || [];
-            const wallCdSecs = (config.cooldowns && config.cooldowns['wall']) || 900;
-
-            if (bidWalls.length > 0) {
-                const distPct = ((price - bidWalls[0].price) / price) * 100;
-                if (distPct < 0.25 && canAlert(`APPROACH_BID_${symbol}_${bidWalls[0].price}`, wallCdSecs * 1000)) {
-                    if (!config.globalEnabled || (config.categories && config.categories['wall'] === false)) return;
-
-                    const title = 'SUPPORT WALL APPROACHING';
-                    const msg = `Price is ${distPct.toFixed(2)}% away from major support wall ($${(bidWalls[0].value / 1000000).toFixed(1)}M).`;
-
-                    state.addEvent({
-                        type: 'SmartAlert',
-                        symbol,
-                        price,
-                        amount: bidWalls[0].amount,
-                        value: bidWalls[0].value,
-                        side: 'BUY',
-                        timestamp: now,
-                        title: title,
-                        message: msg,
-                    });
-
-                    sendTelegramAlert(`[${symbol}] ${title}`, msg, `SUPPORT_WALL_${symbol}`, wallCdSecs, 'wall');
-                }
-            }
-
-            if (askWalls.length > 0) {
-                const distPct = ((askWalls[0].price - price) / price) * 100;
-                if (distPct < 0.25 && canAlert(`APPROACH_ASK_${symbol}_${askWalls[0].price}`, wallCdSecs * 1000)) {
-                    if (!config.globalEnabled || (config.categories && config.categories['wall'] === false)) return;
-
-                    const title = 'RESISTANCE WALL APPROACHING';
-                    const msg = `Price is ${distPct.toFixed(2)}% away from major resistance wall ($${(askWalls[0].value / 1000000).toFixed(1)}M).`;
-
-                    state.addEvent({
-                        type: 'SmartAlert',
-                        symbol,
-                        price,
-                        amount: askWalls[0].amount,
-                        value: askWalls[0].value,
-                        side: 'SELL',
-                        timestamp: now,
-                        title: title,
-                        message: msg,
-                    });
-
-                    sendTelegramAlert(`[${symbol}] ${title}`, msg, `RESISTANCE_WALL_${symbol}`, wallCdSecs, 'wall');
-                }
-            }
-
         }, 5000);
 
         return () => clearInterval(interval);

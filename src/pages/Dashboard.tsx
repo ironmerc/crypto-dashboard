@@ -18,7 +18,7 @@ import { LiquidityIntelligence } from '../components/LiquidityIntelligence';
 import { MarketContext } from '../components/MarketContext';
 import { ActionAlertStrip } from '../components/ActionAlertStrip';
 
-export default function App() {
+export default function Dashboard() {
   const [activeSymbol, setActiveSymbol] = useState('BTCUSDT');
   const watchSymbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT', 'AVAXUSDT'];
 
@@ -110,8 +110,8 @@ export default function App() {
         <div className="ml-auto flex items-center gap-2 md:gap-4 text-xs text-terminal-muted font-mono">
           {/* Telegram Egress Status */}
           <div className="hidden md:flex items-center gap-2 px-2 py-1 rounded bg-[#0a0a0a] border border-terminal-border/30" title="Master Telegram Egress Toggle Status">
-            <span className={`w-2 h-2 rounded-full ${telegramConfig.globalEnabled ? 'bg-terminal-green shadow-[0_0_8px_#00ff41]' : 'bg-red-500 shadow-[0_0_8px_#ef4444]'}`}></span>
-            <span className="font-bold tracking-wider text-[10px]">{telegramConfig.globalEnabled ? 'TG: ON' : 'TG: OFF'}</span>
+            <span className={`w-2 h-2 rounded-full ${(telegramConfig && telegramConfig.globalEnabled) ? 'bg-terminal-green shadow-[0_0_8px_#00ff41]' : 'bg-red-500 shadow-[0_0_8px_#ef4444]'}`}></span>
+            <span className="font-bold tracking-wider text-[10px]">{(telegramConfig && telegramConfig.globalEnabled) ? 'TG: ON' : 'TG: OFF'}</span>
           </div>
 
           {/* Telegram Bot Settings Link */}
