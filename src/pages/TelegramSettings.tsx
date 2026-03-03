@@ -19,6 +19,7 @@ export default function TelegramSettings() {
 
     const [status, setStatus] = useState<BotStatus>({ status: 'unreachable' });
     const [history, setHistory] = useState<{ timestamp: string; symbol: string; category: string; severity: string; message: string; }[]>([]);
+    const [selectedTest, setSelectedTest] = useState('oi_spike');
 
 
 
@@ -476,11 +477,41 @@ export default function TelegramSettings() {
                                 <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center">
                                     <ShieldAlert className="w-4 h-4 mr-2 text-indigo-400" /> Validation Suite
                                 </h2>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button onClick={() => fireMockAlert('oi_spike')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 transition-colors">OI Spike</button>
-                                    <button onClick={() => fireMockAlert('atr_expand')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 transition-colors">ATR Expand</button>
-                                    <button onClick={() => fireMockAlert('liquidation')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 transition-colors">Liq Event</button>
-                                    <button onClick={() => fireMockAlert('whale')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 transition-colors">Whale Trade</button>
+                                <div className="space-y-3">
+                                    <div className="flex flex-col space-y-1.5">
+                                        <label className="text-[10px] text-slate-500 uppercase font-bold px-0.5">Test Vector</label>
+                                        <select
+                                            value={selectedTest}
+                                            onChange={(e) => setSelectedTest(e.target.value)}
+                                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-2 text-xs text-slate-300 focus:border-indigo-500 focus:outline-none hover:border-slate-700 transition-colors"
+                                        >
+                                            <optgroup label="Phase 1: Market Data">
+                                                <option value="oi_spike">OI Spike/Flush</option>
+                                                <option value="atr_expand">Volatility Expansion</option>
+                                                <option value="liquidation">Liquidations</option>
+                                                <option value="whale">Whale Activity</option>
+                                            </optgroup>
+                                            <optgroup label="Phase 2: Contextual Alpha">
+                                                <option value="funding_extreme">Funding Rate Extremes</option>
+                                                <option value="va_breakout">Value Area Breakout</option>
+                                                <option value="whale_momentum">Whale Momentum Shift</option>
+                                                <option value="rvol">Abnormal RVOL</option>
+                                                <option value="market_context_summary">Market Summary</option>
+                                                <option value="daily_wrap">Daily Wrap-Up</option>
+                                            </optgroup>
+                                            <optgroup label="Diagnostics">
+                                                <option value="ping">System Ping</option>
+                                            </optgroup>
+                                        </select>
+                                    </div>
+                                    <button
+                                        onClick={() => fireMockAlert(selectedTest)}
+                                        disabled={!config.globalEnabled}
+                                        className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:hover:bg-indigo-600 text-white text-xs font-bold py-2 rounded border border-indigo-500/50 transition-all flex items-center justify-center space-x-2"
+                                    >
+                                        <Zap className="w-3.5 h-3.5" />
+                                        <span>Fire Diagnostic Alert</span>
+                                    </button>
                                 </div>
                             </div>
 
