@@ -18,11 +18,11 @@ COPY entrypoint.sh .
 RUN chmod +x entrypoint.sh
 
 # Expose the internal port for the UI to talk to the bot
-EXPOSE 8080
+EXPOSE 8888
 
 # Health Check against the API server
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD wget -qO- http://localhost:8080/health || exit 1
+    CMD wget -qO- http://localhost:8888/health || exit 1
 
 # Run the entrypoint to start both processes
 CMD ["./entrypoint.sh"]

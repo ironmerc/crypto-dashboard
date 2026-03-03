@@ -20,18 +20,10 @@ class MarketEngine:
     def __init__(self, bot_url="http://localhost:8888"):
         self.bot_url = bot_url
         self.config = {}
-        self.state = {s: {
-            "regime": {},      # tf -> state string
-            "volatility": {},  # tf -> state string
-            "flow": {},        # tf -> state string
-            "execution": "Unknown",
-            "levels": {},      # tf -> last interaction
-            "last_price": 0,
-            "klines": {"15m": [], "1h": [], "4h": []},
-            "rsi": {"15m": 50, "1h": 50, "4h": 50},
-            "oi_history": [],
-            "spread_history": []
-        } for s in WATCH_SYMBOLS}
+        self.monitored_symbols = []
+        self.state = {}
+        self.ws_task = None
+        self.config_sync_task = None
         
     async def get_bot_config(self):
         """Polls the bot for updated configuration."""
@@ -61,8 +53,13 @@ class MarketEngine:
         """Proxies alerts to the bot API if sessions and global toggles allow."""
         if not self.config.get("globalEnabled", True): return
         if not self.is_session_active(): return
+        
+        # Check category toggle
         if not self.config.get("categories", {}).get(category, True): return
 
+        # Resolve threshold if applicable (caller should pass the value to check)
+        # This is primarily for the handle_message checks
+        
         session_name = self.get_active_session()
         payload = {
             "message": f"<b>🚨 {title}</b>\n\n{message}\n\n<i>Session: {session_name}</i>",
@@ -117,29 +114,51 @@ class MarketEngine:
         return ema21, ema50, rsi, atr_ratio, rvol, vwap, poc
 
     async def monitor_ws(self):
-        """Subscribes to all necessary Binance streams."""
-        streams = []
-        for s in WATCH_SYMBOLS:
-            sym = s.lower()
-            streams.extend([
-                f"{sym}@aggTrade",
-                f"{sym}@forceOrder",
-                f"{sym}@kline_15m",
-                f"{sym}@kline_1h",
-                f"{sym}@kline_4h",
-                f"{sym}@bookTicker",
-                f"{sym}@openInterest"
-            ])
-        
-        ws_url = f"{BINANCE_FUTURES_WS}{'/'.join(streams)}"
-        
+        """Subscribes to all necessary Binance streams for monitored symbols."""
         while True:
+            current_symbols = self.config.get("monitoredSymbols", ["BTCUSDT", "ETHUSDT"])
+            self.monitored_symbols = current_symbols
+            
+            # Initialize state for new symbols if missing
+            for s in current_symbols:
+                if s not in self.state:
+                    self.state[s] = {
+                        "regime": {}, "volatility": {}, "flow": {},
+                        "execution": "Unknown", "levels": {}, "last_price": 0,
+                        "klines": {"15m": [], "1h": [], "4h": []},
+                        "rsi": {"15m": 50, "1h": 50, "4h": 50},
+                        "oi_history": [], "spread_history": []
+                    }
+
+            streams = []
+            for s in current_symbols:
+                sym = s.lower()
+                streams.extend([
+                    f"{sym}@aggTrade",
+                    f"{sym}@forceOrder",
+                    f"{sym}@kline_15m",
+                    f"{sym}@kline_1h",
+                    f"{sym}@kline_4h",
+                    f"{sym}@bookTicker",
+                    f"{sym}@openInterest"
+                ])
+            
+            ws_url = f"{BINANCE_FUTURES_WS}{'/'.join(streams)}"
+        
             try:
                 async with websockets.connect(ws_url) as ws:
                     logger.info(f"Connected to Binance MTF Stream: {len(streams)} feeds")
                     while True:
-                        msg = await ws.recv()
-                        await self.handle_message(json.loads(msg))
+                        # Check if monitored symbols changed
+                        if self.config.get("monitoredSymbols") != self.monitored_symbols:
+                            logger.info("Monitored symbols changed. Rebuilding WebSocket connection...")
+                            break # Exit inner loop to reconnect with new streams
+                            
+                        try:
+                            msg = await asyncio.wait_for(ws.recv(), timeout=1.0)
+                            await self.handle_message(json.loads(msg))
+                        except asyncio.TimeoutError:
+                            continue # Keep checking for config changes
             except Exception as e:
                 logger.error(f"WS Connection lost: {e}. Retrying in 5s...")
                 await asyncio.sleep(5)
@@ -155,7 +174,12 @@ class MarketEngine:
             price = float(data['p'])
             amount = price * float(data['q'])
             self.state[symbol]["last_price"] = price # Global price update
-            threshold = self.config.get("thresholds", {}).get("whaleMinAmount", 500000)
+            
+            # Hierarchical threshold resolution
+            thresholds = self.config.get("thresholds", {}).get(symbol, 
+                         self.config.get("thresholds", {}).get("global", {}))
+            threshold = thresholds.get("whaleMinAmount", 500000)
+            
             if amount >= threshold:
                 side = "🔴 SELL" if data['m'] else "🟢 BUY"
                 await self.send_alert(
@@ -196,7 +220,10 @@ class MarketEngine:
         elif stream == "forceOrder":
             o = data['o']
             amount = float(o['p']) * float(o['q'])
-            threshold = self.config.get("thresholds", {}).get("liquidationMinAmount", 1000000)
+            thresholds = self.config.get("thresholds", {}).get(symbol, 
+                         self.config.get("thresholds", {}).get("global", {}))
+            threshold = thresholds.get("liquidationMinAmount", 1000000)
+            
             if amount >= threshold:
                 side = o['S']
                 await self.send_alert(
@@ -222,8 +249,12 @@ class MarketEngine:
                 
                 # A. Volatility State Shift
                 vol_state = "Normal"
-                if atr_ratio > 1.6: vol_state = "Extreme"
-                elif atr_ratio > 1.2: vol_state = "Expanding"
+                thresholds = self.config.get("thresholds", {}).get(symbol, 
+                             self.config.get("thresholds", {}).get("global", {}))
+                
+                exp_ratio = thresholds.get("atrExpansionRatio", 1.3)
+                if atr_ratio > exp_ratio * 1.25: vol_state = "Extreme"
+                elif atr_ratio > exp_ratio: vol_state = "Expanding"
                 elif atr_ratio < 0.75: vol_state = "Squeeze/Compacting"
                 
                 old_vol = self.state[symbol]["volatility"].get(tf, "Unknown")
@@ -239,7 +270,9 @@ class MarketEngine:
                 # B. Regime & Bias Shift
                 new_regime = "Range"
                 sep = abs(ema21 - ema50) / ema50 * 100
-                sep_threshold = self.config.get("thresholds", {}).get("emaSeparationPct", 0.15)
+                thresholds = self.config.get("thresholds", {}).get(symbol, 
+                             self.config.get("thresholds", {}).get("global", {}))
+                sep_threshold = thresholds.get("emaSeparationPct", 0.15)
                 strength = "Strong" if sep > sep_threshold else "Weak"
                 
                 if price > ema21 > ema50: new_regime = f"Uptrend ({strength})"
@@ -261,8 +294,12 @@ class MarketEngine:
                     oi_delta = ((oi_history[-1]['v'] - oi_history[0]['v']) / oi_history[0]['v']) * 100
                     price_delta = ((price - float(self.state[symbol]["klines"][tf][0][1])) / float(self.state[symbol]["klines"][tf][0][1])) * 100
                     
+                    thresholds = self.config.get("thresholds", {}).get(symbol, 
+                                 self.config.get("thresholds", {}).get("global", {}))
+                    oi_threshold = thresholds.get("oiSpikePercentage", 0.4)
+                    
                     flow = "Neutral/Stable"
-                    if abs(oi_delta) > 0.4:
+                    if abs(oi_delta) > oi_threshold:
                         if oi_delta > 0 and price_delta > 0: flow = "Active Long Building"
                         elif oi_delta > 0 and price_delta < 0: flow = "Active Short Building"
                         elif oi_delta < 0 and price_delta > 0: flow = "Short Covering Rally"
@@ -313,7 +350,7 @@ class MarketEngine:
         """Keeps in-memory config fresh."""
         while True:
             await self.get_bot_config()
-            await asyncio.sleep(10)
+            await asyncio.sleep(2)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

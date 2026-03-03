@@ -19,31 +19,41 @@ import { MarketContext } from '../components/MarketContext';
 import { ActionAlertStrip } from '../components/ActionAlertStrip';
 
 export default function Dashboard() {
-  const [activeSymbol, setActiveSymbol] = useState('BTCUSDT');
-  const watchSymbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT', 'AVAXUSDT'];
+  const monitoredSymbols = useTerminalStore((state) => state.telegramConfig.monitoredSymbols);
+  const [localActiveSymbol, setLocalActiveSymbol] = useState(monitoredSymbols[0] || 'BTCUSDT');
+
+  // Ensure active symbol is always valid after removals
+  useEffect(() => {
+    if (monitoredSymbols.length > 0 && !monitoredSymbols.includes(localActiveSymbol)) {
+      setLocalActiveSymbol(monitoredSymbols[0]);
+    }
+  }, [monitoredSymbols, localActiveSymbol]);
+
+  const addMonitoredSymbol = useTerminalStore((state) => state.addMonitoredSymbol);
+  const [quickAdd, setQuickAdd] = useState('');
 
   // Current Spot Tickers for WatchList
-  const tickers = useBinanceTickers(watchSymbols);
+  const tickers = useBinanceTickers(monitoredSymbols);
 
   // Market Data Hooks
   const { data: fgData, loading: fgLoading } = useFearGreedIndex();
 
   // Futures Hooks (Intel Engine)
-  useFuturesStream(activeSymbol, watchSymbols);
-  useOpenInterest(activeSymbol);
-  useSmartAlerts(activeSymbol);
-  useMarketContextAlerts(activeSymbol);
+  useFuturesStream(localActiveSymbol, monitoredSymbols);
+  useOpenInterest(localActiveSymbol);
+  useSmartAlerts(localActiveSymbol);
+  useMarketContextAlerts(localActiveSymbol);
 
-  const openInterest = useTerminalStore((state) => state.openInterest[activeSymbol]);
-  const oiHistory = useTerminalStore((state) => state.oiHistory[activeSymbol]);
-  const futuresPrice = useTerminalStore((state) => state.prices[activeSymbol]);
-  const fundingRate = useTerminalStore((state) => state.fundingRate[activeSymbol]);
-  const fundingHistory = useTerminalStore((state) => state.fundingHistory[activeSymbol]);
-  const longShortRatio = useTerminalStore((state) => state.longShortRatio[activeSymbol]);
+  const openInterest = useTerminalStore((state) => state.openInterest[localActiveSymbol]);
+  const oiHistory = useTerminalStore((state) => state.oiHistory[localActiveSymbol]);
+  const futuresPrice = useTerminalStore((state) => state.prices[localActiveSymbol]);
+  const fundingRate = useTerminalStore((state) => state.fundingRate[localActiveSymbol]);
+  const fundingHistory = useTerminalStore((state) => state.fundingHistory[localActiveSymbol]);
+  const longShortRatio = useTerminalStore((state) => state.longShortRatio[localActiveSymbol]);
   const globalInterval = useTerminalStore((state) => state.globalInterval);
   const telegramConfig = useTerminalStore((state) => state.telegramConfig);
 
-  const activeTicker = tickers[activeSymbol]; // Used for 24h change
+  const activeTicker = tickers[localActiveSymbol]; // Used for 24h change
 
   const getIntervalMs = (interval: string) => {
     switch (interval) {
@@ -178,11 +188,11 @@ export default function Dashboard() {
                   <Layers className="w-3 h-3" /> Watchlist
                 </h2>
                 <div className="flex overflow-x-auto gap-2 pb-2 scrollbar-none">
-                  {watchSymbols.map((sym) => (
+                  {monitoredSymbols.map((sym) => (
                     <button
                       key={sym}
-                      onClick={() => setActiveSymbol(sym)}
-                      className={`px-3 py-2 rounded border text-xs whitespace-nowrap ${activeSymbol === sym ? 'border-terminal-fg bg-[#00ff4111] text-terminal-fg' : 'border-terminal-border text-terminal-muted'}`}
+                      onClick={() => setLocalActiveSymbol(sym)}
+                      className={`px-3 py-2 rounded border text-xs whitespace-nowrap ${localActiveSymbol === sym ? 'border-terminal-fg bg-[#00ff4111] text-terminal-fg' : 'border-terminal-border text-terminal-muted'}`}
                     >
                       {sym.replace('USDT', '')}
                     </button>
@@ -194,35 +204,35 @@ export default function Dashboard() {
             {/* Main Chart Mobile */}
             <section className="panel min-h-[500px] relative flex flex-col">
               <div className="flex justify-between items-end mb-4">
-                <h2 className="text-lg font-bold uppercase tracking-tight">{activeSymbol.replace('USDT', '/USDT-PERP')}</h2>
+                <h2 className="text-lg font-bold uppercase tracking-tight">{localActiveSymbol.replace('USDT', '/USDT-PERP')}</h2>
                 {futuresPrice && <div className={`text-xl font-mono ${activeTicker && parseFloat(activeTicker.changePercent24h) >= 0 ? 'text-terminal-green' : 'text-terminal-red'}`}>{futuresPrice.toFixed(2)}</div>}
               </div>
               <div className="flex-grow h-[400px] w-full">
-                <ErrorBoundary><CandleChart key={activeSymbol} symbol={activeSymbol} /></ErrorBoundary>
+                <ErrorBoundary><CandleChart key={localActiveSymbol} symbol={localActiveSymbol} /></ErrorBoundary>
               </div>
             </section>
 
             {/* Liquidity Mobile */}
             <section className="panel min-h-[400px]">
-              <LiquidityIntelligence key={`intel-mob-${activeSymbol}`} symbol={activeSymbol} />
+              <LiquidityIntelligence key={`intel-mob-${localActiveSymbol}`} symbol={localActiveSymbol} />
             </section>
 
             {/* Tape & Feed Mobile */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <section className="panel min-h-[300px]">
-                <VolumeTape symbol={activeSymbol} />
+                <VolumeTape symbol={localActiveSymbol} />
               </section>
               <section className="panel min-h-[300px]">
-                <EventFeed symbol={activeSymbol} />
+                <EventFeed symbol={localActiveSymbol} />
               </section>
             </div>
 
             {/* Context & Orderbook Mobile */}
             <section className="panel min-h-[300px]">
-              <MarketContext symbol={activeSymbol} />
+              <MarketContext symbol={localActiveSymbol} />
             </section>
             <section className="panel min-h-[400px]">
-              <OrderBook symbol={activeSymbol} />
+              <OrderBook symbol={localActiveSymbol} />
             </section>
           </div>
         ) : (
@@ -287,21 +297,38 @@ export default function Dashboard() {
                 </PanelResizeHandle>
 
                 <Panel defaultSize={45} minSize={20} className="panel flex flex-col overflow-hidden mb-4">
-                  <h2 className="text-[10px] uppercase text-terminal-muted font-bold tracking-widest mb-3 flex items-center gap-2 border-b border-terminal-border/30 pb-2 shrink-0">
-                    <Layers className="w-3 h-3" /> Watchlist
+                  <h2 className="text-[10px] uppercase text-terminal-muted font-bold tracking-widest mb-3 flex items-center justify-between border-b border-terminal-border/30 pb-2 shrink-0">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-3 h-3" /> Watchlist
+                    </div>
+                    <div className="flex items-center gap-1 group/add">
+                      <input
+                        type="text"
+                        placeholder="ADD..."
+                        value={quickAdd}
+                        onChange={(e) => setQuickAdd(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && quickAdd) {
+                            addMonitoredSymbol(quickAdd);
+                            setQuickAdd('');
+                          }
+                        }}
+                        className="bg-transparent border-none outline-none text-[9px] w-12 focus:w-20 transition-all font-mono text-terminal-fg placeholder:text-terminal-border"
+                      />
+                    </div>
                   </h2>
                   <div className="flex-grow overflow-y-auto pr-1 space-y-1 scrollbar-thin">
-                    {watchSymbols.map((sym) => {
-                      const isSelected = activeSymbol === sym;
+                    {monitoredSymbols.map((sym) => {
+                      const isSelected = localActiveSymbol === sym;
                       const t = tickers[sym];
-                      if (!t) return <div key={sym} className="text-terminal-muted text-[10px] animate-pulse">{sym} loading...</div>;
+                      if (!t) return <div key={sym} className="text-terminal-muted text-[10px] animate-pulse px-2 py-1.5">{sym} loading...</div>;
 
                       const isUp = parseFloat(t.changePercent24h) >= 0;
 
                       return (
                         <button
                           key={sym}
-                          onClick={() => setActiveSymbol(sym)}
+                          onClick={() => setLocalActiveSymbol(sym)}
                           className={`w-full text-left px-2 py-1.5 rounded flex justify-between items-center transition-colors border text-xs ${isSelected
                             ? 'border-terminal-fg bg-[#00ff4111] glow-text'
                             : 'border-transparent hover:bg-terminal-border/30 text-terminal-muted opacity-70 hover:opacity-100'
@@ -326,7 +353,7 @@ export default function Dashboard() {
                 </PanelResizeHandle>
 
                 <Panel defaultSize={20} minSize={10} className="panel flex-grow overflow-y-auto scrollbar-thin min-h-[200px] lg:min-h-0">
-                  <VolumeTape key={`tape-${activeSymbol}`} symbol={activeSymbol} />
+                  <VolumeTape key={`tape-${localActiveSymbol}`} symbol={localActiveSymbol} />
                 </Panel>
               </PanelGroup>
             </Panel>
@@ -342,7 +369,7 @@ export default function Dashboard() {
                 <Panel defaultSize={65} minSize={30} className="panel flex-grow relative overflow-hidden flex flex-col min-h-[400px] lg:min-h-0 mb-4">
                   <div className="absolute top-4 left-4 z-10 pointer-events-none flex items-end gap-3">
                     <h2 className="text-2xl font-bold uppercase tracking-widest flex items-center gap-3 bg-black/50 px-2 rounded">
-                      {activeSymbol.replace('USDT', '/USDT-PERP')}
+                      {localActiveSymbol.replace('USDT', '/USDT-PERP')}
                     </h2>
                     {futuresPrice && (
                       <div className={`text-2xl font-mono leading-none bg-black/50 px-2 rounded ${activeTicker && parseFloat(activeTicker.changePercent24h) >= 0 ? 'text-terminal-green glow-text' : 'text-terminal-red glow-red'}`}>
@@ -353,7 +380,7 @@ export default function Dashboard() {
 
                   <div className="flex-grow w-full h-full mt-8">
                     <ErrorBoundary>
-                      <CandleChart key={activeSymbol} symbol={activeSymbol} />
+                      <CandleChart key={localActiveSymbol} symbol={localActiveSymbol} />
                     </ErrorBoundary>
                   </div>
                 </Panel>
@@ -364,7 +391,7 @@ export default function Dashboard() {
 
                 {/* Liquidity Intelligence (Bottom) */}
                 <Panel defaultSize={35} minSize={20} className="panel relative overflow-y-auto scrollbar-thin p-0 border-0 flex-shrink-0 min-h-[350px] lg:min-h-0">
-                  <LiquidityIntelligence key={`intel-${activeSymbol}`} symbol={activeSymbol} />
+                  <LiquidityIntelligence key={`intel-${localActiveSymbol}`} symbol={localActiveSymbol} />
                 </Panel>
               </PanelGroup>
             </Panel>
@@ -378,7 +405,7 @@ export default function Dashboard() {
               <PanelGroup orientation="vertical">
                 {/* Market Context (Top) */}
                 <Panel defaultSize={35} minSize={20} className="flex-grow flex flex-col min-h-[300px] lg:min-h-0 mb-4 overflow-y-auto scrollbar-thin">
-                  <MarketContext symbol={activeSymbol} />
+                  <MarketContext symbol={localActiveSymbol} />
                 </Panel>
 
                 <PanelResizeHandle className="h-2 flex items-center justify-center cursor-row-resize bg-terminal-bg relative group my-1 z-10">
@@ -387,7 +414,7 @@ export default function Dashboard() {
 
                 {/* Smart Event Feed (Middle) */}
                 <Panel defaultSize={30} minSize={15} className="flex-grow overflow-y-auto scrollbar-thin mb-4">
-                  <EventFeed symbol={activeSymbol} />
+                  <EventFeed symbol={localActiveSymbol} />
                 </Panel>
 
                 <PanelResizeHandle className="h-2 flex items-center justify-center cursor-row-resize bg-terminal-bg relative group my-1 z-10">
@@ -401,7 +428,7 @@ export default function Dashboard() {
                     <span className="text-terminal-fg/50 font-mono text-[9px]">{globalInterval} SYNC</span>
                   </h2>
                   <div className="flex-grow overflow-hidden">
-                    <OrderBook key={activeSymbol} symbol={activeSymbol} />
+                    <OrderBook key={localActiveSymbol} symbol={localActiveSymbol} />
                   </div>
                 </Panel>
               </PanelGroup>

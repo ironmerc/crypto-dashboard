@@ -43,10 +43,23 @@ export interface VolumeDelta {
     delta: number;
 }
 
+export interface TelegramThresholds {
+    whaleMinAmount: number;
+    liquidationMinAmount: number;
+    oiSpikePercentage: number;
+    fundingExtremeRate: number;
+    atrExpansionRatio: number;
+    whaleMomentumDelta: number;
+    rvolMultiplier: number;
+    rsiOverbought: number;
+    rsiOversold: number;
+    emaSeparationPct: number;
+}
+
 export interface TelegramConfig {
     globalEnabled: boolean;
     activeSessions: string[]; // e.g., ['London', 'US', 'Asia']
-
+    monitoredSymbols: string[]; // e.g., ['BTCUSDT', 'ETHUSDT']
     alertOnStateChange: boolean;
     quietHours: {
         enabled: boolean;
@@ -55,18 +68,7 @@ export interface TelegramConfig {
     };
     categories: Record<string, boolean>;
     cooldowns: Record<string, number>;
-    thresholds: {
-        whaleMinAmount: number;
-        liquidationMinAmount: number;
-        oiSpikePercentage: number;
-        fundingExtremeRate: number;
-        atrExpansionRatio: number;
-        whaleMomentumDelta: number;
-        rvolMultiplier: number;
-        rsiOverbought: number;
-        rsiOversold: number;
-        emaSeparationPct: number;
-    };
+    thresholds: Record<string, TelegramThresholds>; // symbol -> thresholds, plus "global" key
 }
 
 interface TerminalState {
@@ -123,6 +125,8 @@ interface TerminalState {
     // Telegram Configurations (Persisted)
     telegramConfig: TelegramConfig;
     updateTelegramConfig: (updates: Partial<TelegramConfig>) => void;
+    addMonitoredSymbol: (symbol: string) => void;
+    removeMonitoredSymbol: (symbol: string) => void;
 }
 
 export const useTerminalStore = create<TerminalState>()(
@@ -309,39 +313,29 @@ export const useTerminalStore = create<TerminalState>()(
             telegramConfig: {
                 globalEnabled: true,
                 activeSessions: ['London', 'US', 'Asia'],
-
+                monitoredSymbols: ['BTCUSDT', 'ETHUSDT'],
                 alertOnStateChange: true,
                 quietHours: {
                     enabled: false,
-                    start: "22:00",
-                    end: "06:00"
+                    start: '22:00',
+                    end: '06:00',
                 },
-                categories: {
-                    whale: true,
-                    liquidation: true,
-                    oi_spike: true,
-                    extreme_funding: true,
-                    atr_expansion: true,
-                    whale_momentum: true,
-                    rvol_anomaly: true,
-                    market_context: true,
-                    daily_wrap: true,
-                    va_breakout: true,
-                    test_ping: true
-                },
+                categories: {},
                 cooldowns: {},
                 thresholds: {
-                    whaleMinAmount: 500000,
-                    liquidationMinAmount: 1000000,
-                    oiSpikePercentage: 1.5,
-                    fundingExtremeRate: 0.05,
-                    atrExpansionRatio: 1.3,
-                    whaleMomentumDelta: 5000000,
-                    rvolMultiplier: 3.0,
-                    rsiOverbought: 70,
-                    rsiOversold: 30,
-                    emaSeparationPct: 0.15
-                }
+                    global: {
+                        whaleMinAmount: 500000,
+                        liquidationMinAmount: 1000000,
+                        oiSpikePercentage: 1.5,
+                        fundingExtremeRate: 0.05,
+                        atrExpansionRatio: 1.3,
+                        whaleMomentumDelta: 5000000,
+                        rvolMultiplier: 3.0,
+                        rsiOverbought: 70,
+                        rsiOversold: 30,
+                        emaSeparationPct: 0.15,
+                    }
+                },
             },
             updateTelegramConfig: (updates) => {
                 set((state) => {
@@ -350,6 +344,7 @@ export const useTerminalStore = create<TerminalState>()(
                         telegramConfig: {
                             ...current,
                             ...updates,
+                            monitoredSymbols: updates.monitoredSymbols || current.monitoredSymbols || [],
                             categories: updates.categories ? { ...(current.categories || {}), ...updates.categories } : (current.categories || {}),
                             quietHours: updates.quietHours ? { ...(current.quietHours || {}), ...updates.quietHours } : (current.quietHours || {}),
                             cooldowns: updates.cooldowns ? { ...(current.cooldowns || {}), ...updates.cooldowns } : (current.cooldowns || {}),
@@ -358,6 +353,49 @@ export const useTerminalStore = create<TerminalState>()(
                     };
                 });
                 // Auto-sync with Python bot on every local update (debounced via utility)
+                import('../utils/syncConfig').then(m => m.syncConfigToBot());
+            },
+
+            addMonitoredSymbol: (symbol: string) => {
+                set((state) => {
+                    const current = state.telegramConfig;
+                    const s = symbol.toUpperCase().trim();
+                    if (!s || current.monitoredSymbols.includes(s)) return state;
+
+                    const newSymbols = [...current.monitoredSymbols, s];
+                    const newThresholds = { ...current.thresholds };
+
+                    // Copy global defaults for the new symbol
+                    if (!newThresholds[s]) {
+                        newThresholds[s] = { ...current.thresholds.global };
+                    }
+
+                    const updatedConfig = {
+                        ...current,
+                        monitoredSymbols: newSymbols,
+                        thresholds: newThresholds
+                    };
+
+                    return { telegramConfig: updatedConfig };
+                });
+                import('../utils/syncConfig').then(m => m.syncConfigToBot());
+            },
+
+            removeMonitoredSymbol: (symbol: string) => {
+                set((state) => {
+                    const current = state.telegramConfig;
+                    const newSymbols = current.monitoredSymbols.filter(s => s !== symbol);
+                    const newThresholds = { ...current.thresholds };
+                    delete newThresholds[symbol];
+
+                    const updatedConfig = {
+                        ...current,
+                        monitoredSymbols: newSymbols,
+                        thresholds: newThresholds
+                    };
+
+                    return { telegramConfig: updatedConfig };
+                });
                 import('../utils/syncConfig').then(m => m.syncConfigToBot());
             }
         }),

@@ -33,21 +33,24 @@ CONFIG_FILE = "config.json"
 DEFAULT_CONFIG = {
     "globalEnabled": True,
     "activeSessions": ["London", "US", "Asia"],
+    "monitoredSymbols": ["BTCUSDT", "ETHUSDT"],
     "alertOnStateChange": True,
     "quietHours": {"enabled": False, "start": "22:00", "end": "06:00"},
     "categories": {},
     "cooldowns": {},
     "thresholds": {
-        "whaleMinAmount": 500000,
-        "liquidationMinAmount": 1000000,
-        "oiSpikePercentage": 1.5,
-        "fundingExtremeRate": 0.05,
-        "atrExpansionRatio": 1.3,
-        "whaleMomentumDelta": 5000000,
-        "rvolMultiplier": 3.0,
-        "rsiOverbought": 70,
-        "rsiOversold": 30,
-        "emaSeparationPct": 0.15
+        "global": {
+            "whaleMinAmount": 500000,
+            "liquidationMinAmount": 1000000,
+            "oiSpikePercentage": 1.5,
+            "fundingExtremeRate": 0.05,
+            "atrExpansionRatio": 1.3,
+            "whaleMomentumDelta": 5000000,
+            "rvolMultiplier": 3.0,
+            "rsiOverbought": 70,
+            "rsiOversold": 30,
+            "emaSeparationPct": 0.15
+        }
     }
 }
 

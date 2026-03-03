@@ -13,17 +13,17 @@ interface BotStatus {
 }
 
 export default function TelegramSettings() {
-    console.log('TelegramSettings mounting...', { hasConfig: !!useTerminalStore.getState().telegramConfig });
     const config = useTerminalStore((state) => state.telegramConfig);
     const updateConfig = useTerminalStore((state) => state.updateTelegramConfig);
+    const addMonitoredSymbol = useTerminalStore((state) => state.addMonitoredSymbol);
+    const removeMonitoredSymbol = useTerminalStore((state) => state.removeMonitoredSymbol);
 
     const [status, setStatus] = useState<BotStatus>({ status: 'unreachable' });
     const [history, setHistory] = useState<{ timestamp: string; symbol: string; category: string; severity: string; message: string; }[]>([]);
     const [selectedTest, setSelectedTest] = useState('oi_spike');
+    const [editingSymbol, setEditingSymbol] = useState('global');
+    const [newSymbol, setNewSymbol] = useState('');
 
-
-
-    // 2. Fetch Data (Status & Ledger) - explicitly inside useEffect to avoid exhaustive-deps
     useEffect(() => {
         const abortController = new AbortController();
 
@@ -53,12 +53,10 @@ export default function TelegramSettings() {
             }
         };
 
-        // Initial fetch
         fetchConfigFromBot();
         fetchStatus();
         fetchHistory();
 
-        // Intervals
         const statusInterval = setInterval(fetchStatus, 5000);
         const historyInterval = setInterval(fetchHistory, 15000);
 
@@ -69,8 +67,19 @@ export default function TelegramSettings() {
         };
     }, []);
 
+    const addSymbol = () => {
+        if (!newSymbol) return;
+        addMonitoredSymbol(newSymbol);
+        setNewSymbol('');
+    };
+
+    const removeSymbol = (s: string) => {
+        removeMonitoredSymbol(s);
+        if (editingSymbol === s) setEditingSymbol('global');
+    };
+
     const fireMockAlert = async (type: string) => {
-        if (!config.globalEnabled) {
+        if (!config || !config.globalEnabled) {
             alert("Master Egress Toggle is OFF. Manual diagnostic tests are blocked.");
             return;
         }
@@ -81,7 +90,6 @@ export default function TelegramSettings() {
         const symbol = "BTCUSDT";
 
         switch (type) {
-            // Phase 1 Legacy
             case 'oi_spike':
                 title = `[BTCUSDT] 🚀 OI Spike Detected`;
                 message = "<b>Delta:</b> +$5.2M in 5m\n<b>Current OI:</b> $125.4M\n\n<i>Sudden influx of leverage detected.</i>";
@@ -102,8 +110,6 @@ export default function TelegramSettings() {
                 message = "<b>Direction:</b> BUY\n<b>Size:</b> $3.5M\n<b>Price:</b> $64,100\n\n<i>A massive block order just filled on the tape.</i>";
                 category = "whale";
                 break;
-
-            // Phase 2 Advanced
             case 'market_context_summary':
                 title = `[BTCUSDT] 🧭 Market Context Summary`;
                 message = "<b>Regime:</b> Trending Up (Strong)\n<b>Volatility:</b> Expansion (High Risk)\n<b>Positioning:</b> Active Long Building (OI +1.2%)\n<b>Execution:</b> Spread Tight\n\n<i>Macro conditions support trend-following strategies.</i>";
@@ -134,7 +140,6 @@ export default function TelegramSettings() {
                 message = "<b>Closing Price:</b> $64,500\n<b>Net Whale Flow (24h):</b> +$15.2M\n<b>Net OI Change (24h):</b> +$42.1M\n<b>Current Funding:</b> 0.0125%\n\n<i>Session closed, data reset for the new day.</i>";
                 category = "market_context";
                 break;
-
             default:
                 title = `[SYSTEM] Diagnostic Ping`;
                 message = "This is a manual test from the ops console.";
@@ -156,7 +161,6 @@ export default function TelegramSettings() {
                     category: category
                 })
             });
-            // Re-fetch history immediately
             const res = await fetch('/api/bot/history');
             if (res.ok) {
                 const data = await res.json();
@@ -226,6 +230,47 @@ export default function TelegramSettings() {
                                     <div className="flex justify-between items-center border-t border-slate-800 pt-3">
                                         <span className="text-slate-500">Chat ID</span>
                                         <span className="text-slate-300 font-medium">{status.target_chat_id || '---'}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Symbol Manager */}
+                            <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-5">
+                                <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center">
+                                    <Layers className="w-4 h-4 mr-2" /> Monitored Assets
+                                </h2>
+                                <div className="space-y-4">
+                                    <div className="flex space-x-2">
+                                        <input
+                                            type="text"
+                                            value={newSymbol}
+                                            onChange={(e) => setNewSymbol(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && addSymbol()}
+                                            placeholder="ETHUSDT..."
+                                            className="flex-1 bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-300 focus:border-indigo-500 focus:outline-none"
+                                        />
+                                        <button
+                                            onClick={addSymbol}
+                                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold rounded transition-colors"
+                                        >
+                                            ADD
+                                        </button>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {config.monitoredSymbols.length === 0 ? (
+                                            <div className="w-full py-4 text-center border border-dashed border-slate-800 rounded-lg">
+                                                <span className="text-[10px] text-slate-500 italic">No assets monitored. Add one above (e.g. BTCUSDT)</span>
+                                            </div>
+                                        ) : (
+                                            config.monitoredSymbols.map(s => (
+                                                <div key={s} className="flex items-center space-x-1.5 bg-slate-800 border border-slate-700 px-2 py-1 rounded text-[10px] text-slate-300 group/tag">
+                                                    <span>{s}</span>
+                                                    <button onClick={() => removeSymbol(s)} className="text-slate-500 hover:text-red-400 transition-colors">
+                                                        <Trash2 className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            ))
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -312,9 +357,21 @@ export default function TelegramSettings() {
 
                             {/* Dynamic Thresholds */}
                             <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-5">
-                                <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center">
-                                    <Sliders className="w-4 h-4 mr-2" /> Dynamic Thresholds
-                                </h2>
+                                <div className="flex items-center justify-between mb-4">
+                                    <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center">
+                                        <Sliders className="w-4 h-4 mr-2" /> Thresholds
+                                    </h2>
+                                    <select
+                                        value={editingSymbol}
+                                        onChange={(e) => setEditingSymbol(e.target.value)}
+                                        className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[10px] text-indigo-400 font-bold focus:outline-none"
+                                    >
+                                        <option value="global">GLOBAL DEFAULTS</option>
+                                        {config.monitoredSymbols.map(s => (
+                                            <option key={s} value={s}>{s} OVERRIDE</option>
+                                        ))}
+                                    </select>
+                                </div>
                                 <div className="space-y-4">
                                     {[
                                         { id: 'whaleMinAmount', label: 'Whale Min ($)', step: 50000, min: 100000, max: 10000000 },
@@ -325,7 +382,9 @@ export default function TelegramSettings() {
                                         { id: 'rsiOverbought', label: 'RSI Overbought', step: 1, min: 60, max: 90 },
                                         { id: 'rsiOversold', label: 'RSI Oversold', step: 1, min: 10, max: 40 },
                                     ].map(t => {
-                                        const value = config.thresholds ? (config.thresholds as any)[t.id] : 0;
+                                        const symbolThresholds = config.thresholds[editingSymbol] || config.thresholds.global;
+                                        const value = (symbolThresholds as any)[t.id];
+
                                         const formatValue = (val: number, id: string) => {
                                             if (id.includes('Amount')) {
                                                 if (val >= 1000000) return `$${(val / 1000000).toFixed(2)}M`;
@@ -349,7 +408,14 @@ export default function TelegramSettings() {
                                                     max={t.max}
                                                     step={t.step}
                                                     value={value}
-                                                    onChange={(e) => updateConfig({ thresholds: { [t.id]: parseFloat(e.target.value) } } as any)}
+                                                    onChange={(e) => {
+                                                        const nextThresholds = { ...config.thresholds };
+                                                        nextThresholds[editingSymbol] = {
+                                                            ...(nextThresholds[editingSymbol] || config.thresholds.global),
+                                                            [t.id]: parseFloat(e.target.value)
+                                                        };
+                                                        updateConfig({ thresholds: nextThresholds });
+                                                    }}
                                                     className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-400 transition-all"
                                                 />
                                             </div>
