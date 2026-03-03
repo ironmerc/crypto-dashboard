@@ -33,7 +33,6 @@ CONFIG_FILE = "config.json"
 DEFAULT_CONFIG = {
     "globalEnabled": True,
     "activeSessions": ["London", "US", "Asia"],
-    "monitoredTimeframes": ["15m", "1h", "4h"],
     "alertOnStateChange": True,
     "quietHours": {"enabled": False, "start": "22:00", "end": "06:00"},
     "categories": {},

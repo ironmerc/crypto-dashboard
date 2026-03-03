@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTerminalStore } from '../store/useTerminalStore';
-import { ShieldAlert, ArrowLeft, Send, Activity, Clock, Bell, Settings, Shield, Trash2, Sliders, Globe, Zap } from 'lucide-react';
+import { ShieldAlert, ArrowLeft, Activity, Clock, Bell, Settings, Shield, Trash2, Sliders, Zap, Layers } from 'lucide-react';
 import { fetchConfigFromBot } from '../utils/syncConfig';
 
 interface BotStatus {
@@ -20,7 +20,7 @@ export default function TelegramSettings() {
     const [status, setStatus] = useState<BotStatus>({ status: 'unreachable' });
     const [history, setHistory] = useState<{ timestamp: string; symbol: string; category: string; severity: string; message: string; }[]>([]);
 
-    const [testMessage, setTestMessage] = useState('This is a manual test from the ops console.');
+
 
     // 2. Fetch Data (Status & Ledger) - explicitly inside useEffect to avoid exhaustive-deps
     useEffect(() => {
@@ -136,7 +136,7 @@ export default function TelegramSettings() {
 
             default:
                 title = `[SYSTEM] Diagnostic Ping`;
-                message = testMessage;
+                message = "This is a manual test from the ops console.";
                 category = "test_ping";
                 break;
         }
@@ -198,7 +198,7 @@ export default function TelegramSettings() {
                 ) : (
                     <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-                        {/* Left Column: Status & Manual Testing */}
+                        {/* Left Column: Status & Global Config */}
                         <div className="space-y-6">
                             {/* System Status */}
                             <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-5">
@@ -226,402 +226,313 @@ export default function TelegramSettings() {
                                         <span className="text-slate-500">Chat ID</span>
                                         <span className="text-slate-300 font-medium">{status.target_chat_id || '---'}</span>
                                     </div>
-                                    <div className="flex justify-between items-center border-t border-slate-800 pt-3">
-                                        <span className="text-slate-500">Last Message (UTC)</span>
-                                        <span className="text-slate-300 text-xs">{status.last_message_timestamp || 'Never'}</span>
+                                </div>
+                            </div>
+
+                            {/* Global Routing Rules */}
+                            <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-5">
+                                <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center">
+                                    <Settings className="w-4 h-4 mr-2" /> Global Routing
+                                </h2>
+                                <div className="space-y-5">
+                                    <div className="flex items-center justify-between p-3 bg-slate-950 border border-slate-800 rounded">
+                                        <div className="flex items-center space-x-3">
+                                            <div className={`w-2 h-2 rounded-full ${config.globalEnabled ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-slate-600'}`}></div>
+                                            <span className="text-xs font-bold text-slate-200">MASTER TOGGLE</span>
+                                        </div>
+                                        <label className="relative inline-flex items-center cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                className="sr-only peer"
+                                                checked={config.globalEnabled}
+                                                onChange={(e) => updateConfig({ globalEnabled: e.target.checked })}
+                                            />
+                                            <div className="w-10 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                                        </label>
+                                    </div>
+
+
+
+                                    <div className="pt-2 border-t border-slate-800/50 flex items-center justify-between">
+                                        <span className="text-xs text-slate-400">Alert on State Change</span>
+                                        <label className="relative inline-flex items-center cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                className="sr-only peer"
+                                                checked={config.alertOnStateChange}
+                                                onChange={(e) => updateConfig({ alertOnStateChange: e.target.checked })}
+                                            />
+                                            <div className="w-8 h-4 bg-slate-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-500"></div>
+                                        </label>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Alert Test Suite */}
+                            {/* Quiet Hours */}
+                            <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-5">
+                                <div className="flex items-center justify-between mb-2">
+                                    <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center">
+                                        <Clock className="w-4 h-4 mr-2 text-indigo-400" /> Quiet Hours
+                                    </h2>
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            className="sr-only peer"
+                                            checked={config.quietHours?.enabled || false}
+                                            onChange={(e) => updateConfig({ quietHours: { ...config.quietHours, enabled: e.target.checked } })}
+                                        />
+                                        <div className="w-8 h-4 bg-slate-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-500"></div>
+                                    </label>
+                                </div>
+                                <p className="text-[10px] text-slate-500 mb-4 leading-relaxed italic">Suppresses non-critical alerts based on local time.</p>
+                                {config.quietHours?.enabled && (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Start</label>
+                                            <input
+                                                type="time"
+                                                value={config.quietHours?.start || "22:00"}
+                                                onChange={(e) => updateConfig({ quietHours: { ...config.quietHours, start: e.target.value } })}
+                                                className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-300 focus:border-indigo-500 focus:outline-none"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">End</label>
+                                            <input
+                                                type="time"
+                                                value={config.quietHours?.end || "06:00"}
+                                                onChange={(e) => updateConfig({ quietHours: { ...config.quietHours, end: e.target.value } })}
+                                                className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-300 focus:border-indigo-500 focus:outline-none"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Dynamic Thresholds */}
                             <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-5">
                                 <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center">
-                                    <ShieldAlert className="w-4 h-4 mr-2" /> Alert Validation Suite
+                                    <Sliders className="w-4 h-4 mr-2" /> Dynamic Thresholds
                                 </h2>
                                 <div className="space-y-4">
-                                    <div className="text-xs text-slate-500 mb-2">Click to fire a simulated alert to Telegram (bypasses cooldowns).</div>
+                                    {[
+                                        { id: 'whaleMinAmount', label: 'Whale Min ($)', step: 50000, min: 100000, max: 10000000 },
+                                        { id: 'liquidationMinAmount', label: 'Liq Min ($)', step: 100000, min: 100000, max: 10000000 },
+                                        { id: 'oiSpikePercentage', label: 'OI Spike (%)', step: 0.1, min: 0.5, max: 5 },
+                                        { id: 'atrExpansionRatio', label: 'ATR Expansion (x)', step: 0.1, min: 1.1, max: 3.0 },
+                                        { id: 'rvolMultiplier', label: 'RVOL Multiplier (x)', step: 0.5, min: 1.5, max: 10 },
+                                        { id: 'rsiOverbought', label: 'RSI Overbought', step: 1, min: 60, max: 90 },
+                                        { id: 'rsiOversold', label: 'RSI Oversold', step: 1, min: 10, max: 40 },
+                                    ].map(t => {
+                                        const value = config.thresholds ? (config.thresholds as any)[t.id] : 0;
+                                        const formatValue = (val: number, id: string) => {
+                                            if (id.includes('Amount')) {
+                                                if (val >= 1000000) return `$${(val / 1000000).toFixed(2)}M`;
+                                                if (val >= 1000) return `$${(val / 1000).toFixed(0)}K`;
+                                                return `$${val}`;
+                                            }
+                                            if (id.includes('Percentage')) return `${val}%`;
+                                            if (id.includes('Ratio') || id.includes('Multiplier')) return `${val}x`;
+                                            return val;
+                                        };
 
-                                    <div>
-                                        <h3 className="text-xs font-semibold text-indigo-400 mb-2 border-b border-slate-800 pb-1">Legacy Alerts (Phase 1)</h3>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <button onClick={() => fireMockAlert('oi_spike')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">OI Spikes/Flushes</button>
-                                            <button onClick={() => fireMockAlert('atr_expand')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">ATR Expansion</button>
-                                            <button onClick={() => fireMockAlert('liquidation')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">Major Liquidations</button>
-                                            <button onClick={() => fireMockAlert('whale')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors col-span-2">Whale Executions</button>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <h3 className="text-xs font-semibold text-emerald-400 mb-2 border-b border-slate-800 pb-1 mt-4">Advanced Context (Phase 2)</h3>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <button onClick={() => fireMockAlert('market_context_summary')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">4H Context Summary</button>
-                                            <button onClick={() => fireMockAlert('funding_extreme')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">Funding Extremes</button>
-                                            <button onClick={() => fireMockAlert('va_breakout')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">Value Area Breakout</button>
-                                            <button onClick={() => fireMockAlert('whale_momentum')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">Whale Net Momentum</button>
-                                            <button onClick={() => fireMockAlert('rvol')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">RVOL Anomaly</button>
-                                            <button onClick={() => fireMockAlert('daily_wrap')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 text-left truncate transition-colors">Daily Wrap-Up</button>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <h3 className="text-xs font-semibold text-slate-400 mb-2 border-b border-slate-800 pb-1 mt-4">Custom Payload</h3>
-                                        <textarea
-                                            value={testMessage}
-                                            onChange={e => setTestMessage(e.target.value)}
-                                            rows={2}
-                                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500 font-mono text-xs mb-2"
-                                        />
-                                        <button
-                                            onClick={() => fireMockAlert('custom')}
-                                            disabled={!config.globalEnabled}
-                                            className={`w-full flex items-center justify-center space-x-2 p-1.5 rounded text-xs transition-all ${config.globalEnabled
-                                                ? "bg-indigo-600 hover:bg-indigo-500 text-white"
-                                                : "bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700"
-                                                }`}
-                                        >
-                                            <Send className={`w-3 h-3 ${!config.globalEnabled && "opacity-50"}`} />
-                                            <span>Send Custom Ping</span>
-                                        </button>
-                                    </div>
+                                        return (
+                                            <div key={t.id} className="group">
+                                                <div className="flex justify-between text-[10px] mb-1">
+                                                    <span className="text-slate-500 group-hover:text-slate-300 transition-colors uppercase tracking-tighter">{t.label}</span>
+                                                    <span className="text-indigo-400 font-bold font-mono">{formatValue(value, t.id)}</span>
+                                                </div>
+                                                <input
+                                                    type="range"
+                                                    min={t.min}
+                                                    max={t.max}
+                                                    step={t.step}
+                                                    value={value}
+                                                    onChange={(e) => updateConfig({ thresholds: { [t.id]: parseFloat(e.target.value) } } as any)}
+                                                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-400 transition-all"
+                                                />
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>
 
-                        {/* Middle Column: Configuration */}
+                        {/* Middle Column: Subscriptions */}
                         <div className="space-y-6">
-                            <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-5">
-                                <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center">
-                                    <Settings className="w-4 h-4 mr-2" /> Global Routing Rules
-                                </h2>
-
-                                {config ? (
-                                    <>
-                                        {/* Master Toggle */}
-                                        <div className="flex items-center justify-between p-4 bg-slate-950 border border-slate-800 rounded mb-6">
-                                            <div>
-                                                <div className="font-semibold text-white">Master Egress Toggle</div>
-                                                <div className="text-xs text-slate-500 mt-1">Halt all outbound Telegram traffic globally.</div>
-                                            </div>
-                                            <label className="relative inline-flex items-center cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    className="sr-only peer"
-                                                    checked={config.globalEnabled}
-                                                    onChange={(e) => updateConfig({ globalEnabled: e.target.checked })}
-                                                />
-                                                <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-500"></div>
-                                            </label>
-                                        </div>
-
-                                        {/* Sessions & Timeframes */}
-                                        <div className="border border-slate-800 rounded p-4 space-y-4">
-                                            <div className="flex items-center space-x-2 mb-2">
-                                                <Globe className="w-4 h-4 text-slate-400" />
-                                                <span className="font-semibold text-white">Active Sessions & MTF</span>
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div>
-                                                    <label className="block text-[10px] text-slate-500 uppercase mb-2">Sessions</label>
-                                                    <div className="flex flex-wrap gap-2">
-                                                        {['London', 'US', 'Asia'].map(s => (
-                                                            <button
-                                                                key={s}
-                                                                onClick={() => {
-                                                                    const current = config.activeSessions || [];
-                                                                    const next = current.includes(s) ? current.filter(x => x !== s) : [...current, s];
-                                                                    updateConfig({ activeSessions: next });
-                                                                }}
-                                                                className={`px-2 py-1 text-[10px] rounded border transition-colors ${config.activeSessions?.includes(s) ? 'bg-indigo-500/20 border-indigo-500 text-indigo-400' : 'bg-slate-900 border-slate-700 text-slate-500'}`}
-                                                            >
-                                                                {s}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <label className="block text-[10px] text-slate-500 uppercase mb-2">Timeframes</label>
-                                                    <div className="flex flex-wrap gap-2">
-                                                        {['15m', '1h', '4h'].map(tf => (
-                                                            <button
-                                                                key={tf}
-                                                                onClick={() => {
-                                                                    const current = config.monitoredTimeframes || [];
-                                                                    const next = current.includes(tf) ? current.filter(x => x !== tf) : [...current, tf];
-                                                                    updateConfig({ monitoredTimeframes: next });
-                                                                }}
-                                                                className={`px-2 py-1 text-[10px] rounded border transition-colors ${config.monitoredTimeframes?.includes(tf) ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-900 border-slate-700 text-slate-500'}`}
-                                                            >
-                                                                {tf}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="pt-2 border-t border-slate-800/50 flex items-center justify-between">
-                                                <div className="flex items-center space-x-2">
-                                                    <Zap className="w-3.5 h-3.5 text-yellow-500" />
-                                                    <span className="text-xs text-slate-300">Alert on State Change (Regime Shift)</span>
-                                                </div>
-                                                <label className="relative inline-flex items-center cursor-pointer">
-                                                    <input
-                                                        type="checkbox"
-                                                        className="sr-only peer"
-                                                        checked={config.alertOnStateChange}
-                                                        onChange={(e) => updateConfig({ alertOnStateChange: e.target.checked })}
-                                                    />
-                                                    <div className="w-7 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-yellow-500"></div>
-                                                </label>
-                                            </div>
-                                        </div>
-
-                                        {/* Quiet Hours */}
-                                        <div className="border border-slate-800 rounded p-4 space-y-4">
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center space-x-2">
-                                                    <Clock className="w-4 h-4 text-slate-400" />
-                                                    <span className="font-semibold text-white">Quiet Hours (Local Time)</span>
-                                                </div>
-                                                <label className="relative inline-flex items-center cursor-pointer">
-                                                    <input
-                                                        type="checkbox"
-                                                        className="sr-only peer"
-                                                        checked={config.quietHours?.enabled || false}
-                                                        onChange={(e) => updateConfig({ quietHours: { ...config.quietHours, enabled: e.target.checked } })}
-                                                    />
-                                                    <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
-                                                </label>
-                                            </div>
-                                            <div className="text-xs text-slate-500">Evaluates against your local browser time to suppress non-critical alerts, even across midnight wrappers (e.g. 22:00 -&gt; 06:00).</div>
-
-                                            {config.quietHours?.enabled && (
-                                                <div className="flex space-x-4 pt-2">
-                                                    <div className="flex-1">
-                                                        <label className="block text-xs text-slate-500 mb-1">Halt Traffic At</label>
-                                                        <input
-                                                            type="time"
-                                                            value={config.quietHours?.start || "22:00"}
-                                                            onChange={(e) => updateConfig({ quietHours: { ...config.quietHours, start: e.target.value } })}
-                                                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm focus:border-indigo-500"
-                                                        />
-                                                    </div>
-                                                    <div className="flex-1">
-                                                        <label className="block text-xs text-slate-500 mb-1">Resume Traffic At</label>
-                                                        <input
-                                                            type="time"
-                                                            value={config.quietHours?.end || "06:00"}
-                                                            onChange={(e) => updateConfig({ quietHours: { ...config.quietHours, end: e.target.value } })}
-                                                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm focus:border-indigo-500"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div className="text-sm text-slate-500 p-4">Loading configuration...</div>
-                                )}
-                            </div>
-
-                            {/* Subscriptions */}
                             <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-5">
                                 <div className="flex items-center justify-between mb-4">
                                     <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center">
                                         <Bell className="w-4 h-4 mr-2" /> Subscription Channels
                                     </h2>
-                                    {config && (
-                                        <div className="flex items-center space-x-2">
-                                            <span className="text-[10px] text-slate-500 uppercase font-bold">Toggle All</span>
-                                            <input
-                                                type="checkbox"
-                                                checked={Object.values(config.categories || {}).every(v => v === true)}
-                                                onChange={(e) => {
-                                                    const mtfCategories = ['regime_shift', 'volatility_state', 'order_flow', 'level_testing'];
-                                                    const timeframes = ['15m', '1h', '4h'];
-                                                    const categories = [
-                                                        'oi_spike', 'atr_expand', 'liquidation', 'whale',
-                                                        'funding', 'value_area', 'rvol', 'execution_quality',
-                                                        ...mtfCategories.flatMap(cat => timeframes.map(tf => `${cat}_${tf}`))
-                                                    ];
-                                                    const nextCats: Record<string, boolean> = {};
-                                                    categories.forEach(c => nextCats[c] = e.target.checked);
-                                                    updateConfig({ categories: nextCats });
-                                                }}
-                                                className="w-4 h-4 rounded border-slate-700 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-slate-900 bg-slate-900"
-                                            />
-                                        </div>
-                                    )}
+                                    <div className="flex items-center space-x-2">
+                                        <span className="text-[10px] text-slate-500 uppercase font-bold">Toggle All</span>
+                                        <input
+                                            type="checkbox"
+                                            checked={Object.values(config.categories || {}).every(v => v === true)}
+                                            onChange={(e) => {
+                                                const categories = [
+                                                    'oi_spike', 'atr_expand', 'liquidation', 'whale',
+                                                    'funding', 'value_area', 'rvol', 'execution_quality',
+                                                    'regime_shift', 'volatility_state', 'order_flow', 'level_testing'
+                                                ];
+                                                const nextCats: Record<string, boolean> = {};
+                                                categories.forEach(c => nextCats[c] = e.target.checked);
+                                                updateConfig({ categories: nextCats });
+                                            }}
+                                            className="w-4 h-4 rounded border-slate-700 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-slate-900 bg-slate-900"
+                                        />
+                                    </div>
                                 </div>
-                                {config ? (
-                                    <div className="space-y-2">
-                                        {[
-                                            // Core Alerts
-                                            { id: 'oi_spike', label: 'Open Interest Spikes/Flushes', defaultCd: 600 },
-                                            { id: 'atr_expand', label: 'ATR Volatility Expansion', defaultCd: 300 },
-                                            { id: 'liquidation', label: 'Major Liquidations', defaultCd: 60 },
-                                            { id: 'whale', label: 'Whale Activity', defaultCd: 60 },
-                                            { id: 'funding', label: 'Funding Extremes', defaultCd: 3600 },
-                                            { id: 'execution_quality', label: '⚡ Execution Context', defaultCd: 300 },
 
-                                            // MTF Alerts with Per-Timeframe Toggles
-                                            { id: 'regime_shift', label: '🧭 Regime Shifts', defaultCd: 900, isMTF: true },
-                                            { id: 'volatility_state', label: '🌊 Volatility Transitions', defaultCd: 300, isMTF: true },
-                                            { id: 'order_flow', label: '📊 Flow Anomalies', defaultCd: 300, isMTF: true },
-                                            { id: 'level_testing', label: '🎯 Level Interactions', defaultCd: 600, isMTF: true },
-                                        ].map(cat => (
-                                            <div key={cat.id} className="p-3 border border-slate-800/50 hover:bg-slate-800/20 rounded transition-colors group">
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <div className="flex items-center space-x-2">
-                                                        {!cat.isMTF && (
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={config.categories?.[cat.id] ?? true}
-                                                                onChange={(e) => updateConfig({ categories: { [cat.id]: e.target.checked } })}
-                                                                className="w-4 h-4 rounded border-slate-700 text-indigo-500 focus:ring-indigo-500 bg-slate-900"
-                                                            />
-                                                        )}
-                                                        <span className="text-sm font-medium text-slate-300">{cat.label}</span>
-                                                    </div>
-                                                    <div className="flex items-center space-x-2 shrink-0">
-                                                        <span className="text-[10px] text-slate-500 uppercase tracking-wide">Cooldown</span>
-                                                        <select
-                                                            value={config.cooldowns?.[cat.id] || cat.defaultCd}
-                                                            onChange={(e) => updateConfig({ cooldowns: { [cat.id]: parseInt(e.target.value) } })}
-                                                            className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300 focus:outline-none h-7"
-                                                        >
-                                                            <option value="60">1m</option>
-                                                            <option value="300">5m</option>
-                                                            <option value="600">10m</option>
-                                                            <option value="900">15m</option>
-                                                            <option value="3600">1h</option>
-                                                            <option value="14400">4h</option>
-                                                        </select>
-                                                    </div>
-                                                </div>
-
-                                                {cat.isMTF && (
-                                                    <div className="flex items-center space-x-4 pl-6">
-                                                        {['15m', '1h', '4h'].map(tf => (
-                                                            <label key={tf} className="flex items-center space-x-2 cursor-pointer group/tf">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={config.categories?.[`${cat.id}_${tf}`] ?? true}
-                                                                    onChange={(e) => updateConfig({ categories: { [`${cat.id}_${tf}`]: e.target.checked } })}
-                                                                    className="w-3.5 h-3.5 rounded border-slate-700 text-indigo-500 focus:ring-indigo-500 bg-slate-900"
-                                                                />
-                                                                <span className="text-[11px] font-bold text-slate-500 group-hover/tf:text-slate-300 transition-colors uppercase">{tf}</span>
-                                                            </label>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ))}
-                                        {/* Smart Alert Thresholds */}
-                                        <div className="mt-4 border-t border-slate-800 pt-4">
-                                            <div className="flex items-center space-x-2 mb-4">
-                                                <Sliders className="w-4 h-4 text-indigo-400" />
-                                                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Dynamic Thresholds</span>
-                                            </div>
-
-                                            <div className="space-y-3">
-                                                {[
-                                                    { id: 'whaleMinAmount', label: 'Whale Min ($)', step: 50000, min: 100000, max: 10000000 },
-                                                    { id: 'liquidationMinAmount', label: 'Liq Min ($)', step: 100000, min: 100000, max: 10000000 },
-                                                    { id: 'oiSpikePercentage', label: 'OI Spike (%)', step: 0.1, min: 0.5, max: 5 },
-                                                    { id: 'atrExpansionRatio', label: 'ATR Expansion (x)', step: 0.1, min: 1.1, max: 3.0 },
-                                                    { id: 'rvolMultiplier', label: 'RVOL Multiplier (x)', step: 0.5, min: 1.5, max: 10 },
-                                                    { id: 'rsiOverbought', label: 'RSI Overbought', step: 1, min: 60, max: 90 },
-                                                    { id: 'rsiOversold', label: 'RSI Oversold', step: 1, min: 10, max: 40 },
-                                                ].map(t => {
-                                                    const value = config.thresholds ? (config.thresholds as any)[t.id] : 0;
-                                                    const formatValue = (val: number, id: string) => {
-                                                        if (id.includes('Amount')) {
-                                                            if (val >= 1000000) return `$${(val / 1000000).toFixed(2)}M`;
-                                                            if (val >= 1000) return `$${(val / 1000).toFixed(0)}K`;
-                                                            return `$${val}`;
-                                                        }
-                                                        if (id.includes('Percentage')) return `${val}%`;
-                                                        if (id.includes('Ratio') || id.includes('Multiplier')) return `${val}x`;
-                                                        return val;
-                                                    };
-
-                                                    return (
-                                                        <div key={t.id} className="group">
-                                                            <div className="flex justify-between text-[10px] mb-1">
-                                                                <span className="text-slate-500 group-hover:text-slate-300 transition-colors uppercase tracking-tighter">{t.label}</span>
-                                                                <span className="text-indigo-400 font-bold font-mono">{formatValue(value, t.id)}</span>
-                                                            </div>
-                                                            <input
-                                                                type="range"
-                                                                min={t.min}
-                                                                max={t.max}
-                                                                step={t.step}
-                                                                value={value}
-                                                                onChange={(e) => updateConfig({ thresholds: { [t.id]: parseFloat(e.target.value) } } as any)}
-                                                                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-400 transition-all"
-                                                            />
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="text-sm text-slate-500 p-4">Loading configuration...</div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Right Column: Alert Ledger */}
-                        <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-5 flex flex-col h-[800px]">
-                            <div className="flex justify-between items-center mb-4">
-                                <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center">
-                                    <Shield className="w-4 h-4 mr-2" /> Egress Ledger
-                                </h2>
-                                <span className="text-xs text-slate-500 bg-slate-800 px-2 py-1 rounded">Latest 50</span>
-                            </div>
-
-                            <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-                                {history.length === 0 ? (
-                                    <div className="h-full flex flex-col items-center justify-center text-slate-600 text-sm">
-                                        <Trash2 className="w-8 h-8 mb-2 opacity-50" />
-                                        <span>No egress logs found</span>
-                                    </div>
-                                ) : (
-                                    history.map((item, i) => {
-                                        // Localize the backend's explicit UTC time
-                                        const d = new Date(item.timestamp);
-                                        const timeStr = d.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                                        const dateStr = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-
-                                        let badgeColor = "bg-slate-500/20 text-slate-400 border-slate-500/30";
-                                        if (item.category === 'oi_spike') badgeColor = "bg-cyan-500/20 text-cyan-400 border-cyan-500/30";
-                                        if (item.category === 'atr_expand') badgeColor = "bg-amber-500/20 text-amber-400 border-amber-500/30";
-                                        if (item.severity === 'critical') badgeColor = "bg-red-500/20 text-red-400 border-red-500/30";
+                                <div className="space-y-6">
+                                    {(() => {
+                                        const alertGroups = [
+                                            {
+                                                title: 'Core Activity',
+                                                icon: <Activity className="w-4 h-4 text-emerald-400" />,
+                                                items: [
+                                                    { id: 'oi_spike', label: 'OI Spikes/Flushes', defaultCd: 600, icon: '📊' },
+                                                    { id: 'atr_expand', label: 'Volatility Expansion', defaultCd: 300, icon: '📈' },
+                                                    { id: 'liquidation', label: 'Major Liquidations', defaultCd: 60, icon: '💀' },
+                                                    { id: 'whale', label: 'Whale Activity', defaultCd: 60, icon: '🐋' },
+                                                ]
+                                            },
+                                            {
+                                                title: 'Market Dynamics',
+                                                icon: <Layers className="w-4 h-4 text-blue-400" />,
+                                                items: [
+                                                    { id: 'regime_shift', label: 'Regime Shifts (MTF)', defaultCd: 900, icon: '🧭' },
+                                                    { id: 'volatility_state', label: 'Volatility States (MTF)', defaultCd: 300, icon: '🌊' },
+                                                    { id: 'order_flow', label: 'Flow Anomalies (MTF)', defaultCd: 300, icon: '⚡' },
+                                                    { id: 'level_testing', label: 'Level Interactions (MTF)', defaultCd: 600, icon: '🎯' },
+                                                ]
+                                            },
+                                            {
+                                                title: 'Context & Alpha',
+                                                icon: <Zap className="w-4 h-4 text-amber-400" />,
+                                                items: [
+                                                    { id: 'funding', label: 'Funding Extremes', defaultCd: 3600, icon: '💰' },
+                                                    { id: 'value_area', label: 'Value Area Breaks', defaultCd: 300, icon: '📦' },
+                                                    { id: 'rvol', label: 'RVOL Anomalies', defaultCd: 300, icon: '🔥' },
+                                                    { id: 'execution_quality', label: 'Execution Quality', defaultCd: 300, icon: '💎' },
+                                                ]
+                                            }
+                                        ];
 
                                         return (
-                                            <div key={i} className="bg-slate-950 border border-slate-800 rounded p-3 text-sm hover:border-slate-700 transition-colors">
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <div className="flex items-center space-x-2">
-                                                        <span className={`text-[10px] px-1.5 py-0.5 rounded border uppercase font-bold ${badgeColor}`}>
-                                                            {item.category}
-                                                        </span>
-                                                        <span className="font-bold text-slate-300">{item.symbol}</span>
+                                            <div className="space-y-6">
+                                                {alertGroups.map(group => (
+                                                    <div key={group.title} className="space-y-3">
+                                                        <div className="flex items-center space-x-2 px-1">
+                                                            {group.icon}
+                                                            <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{group.title}</h4>
+                                                        </div>
+                                                        <div className="grid grid-cols-1 gap-2.5">
+                                                            {group.items.map(cat => (
+                                                                <div key={cat.id} className="flex items-center justify-between p-3 bg-slate-900/40 border border-slate-800/60 hover:border-slate-700/60 hover:bg-slate-800/30 rounded-lg transition-all group/card">
+                                                                    <div className="flex items-center space-x-3 min-w-0 flex-1">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={config.categories?.[cat.id] ?? true}
+                                                                            onChange={(e) => updateConfig({ categories: { [cat.id]: e.target.checked } })}
+                                                                            className="w-4 h-4 rounded border-slate-700 text-indigo-500 focus:ring-indigo-500 bg-slate-950 cursor-pointer shrink-0"
+                                                                        />
+                                                                        <div className="flex items-center min-w-0 space-x-2">
+                                                                            <span className="text-sm shrink-0">{cat.icon}</span>
+                                                                            <span className="text-sm font-medium text-slate-200">{cat.label}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex items-center pl-2 shrink-0">
+                                                                        <select
+                                                                            value={config.cooldowns?.[cat.id] || cat.defaultCd}
+                                                                            onChange={(e) => updateConfig({ cooldowns: { [cat.id]: parseInt(e.target.value) } })}
+                                                                            className="bg-slate-950 border border-slate-700/50 rounded-md px-1.5 py-0.5 text-[10px] text-slate-400 focus:outline-none hover:border-slate-600 transition-colors h-6"
+                                                                        >
+                                                                            <option value="60">1m CD</option>
+                                                                            <option value="300">5m CD</option>
+                                                                            <option value="600">10m CD</option>
+                                                                            <option value="900">15m CD</option>
+                                                                            <option value="3600">1h CD</option>
+                                                                            <option value="14400">4h CD</option>
+                                                                        </select>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
                                                     </div>
-                                                    <span className="text-xs text-slate-500 font-mono" title={item.timestamp}>
-                                                        {dateStr} {timeStr}
-                                                    </span>
-                                                </div>
-                                                <div className="text-slate-400 text-xs leading-relaxed whitespace-pre-wrap">
-                                                    {item.message}
-                                                </div>
+                                                ))}
                                             </div>
-                                        )
-                                    })
-                                )}
+                                        );
+                                    })()}
+                                </div>
                             </div>
                         </div>
 
+                        {/* Right Column: Ledger & Validation */}
+                        <div className="space-y-6">
+                            {/* Alert Test Suite */}
+                            <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-5">
+                                <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center">
+                                    <ShieldAlert className="w-4 h-4 mr-2 text-indigo-400" /> Validation Suite
+                                </h2>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button onClick={() => fireMockAlert('oi_spike')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 transition-colors">OI Spike</button>
+                                    <button onClick={() => fireMockAlert('atr_expand')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 transition-colors">ATR Expand</button>
+                                    <button onClick={() => fireMockAlert('liquidation')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 transition-colors">Liq Event</button>
+                                    <button onClick={() => fireMockAlert('whale')} disabled={!config.globalEnabled} className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-[10px] py-1.5 px-2 rounded border border-slate-700 transition-colors">Whale Trade</button>
+                                </div>
+                            </div>
+
+                            {/* Egress Ledger */}
+                            <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-5 flex flex-col h-[500px]">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center">
+                                        <Shield className="w-4 h-4 mr-2" /> Egress Ledger
+                                    </h2>
+                                    <span className="text-xs text-slate-500 bg-slate-800 px-2 py-1 rounded">Latest 50</span>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                                    {history.length === 0 ? (
+                                        <div className="h-full flex flex-col items-center justify-center text-slate-600 text-sm">
+                                            <Trash2 className="w-8 h-8 mb-2 opacity-50" />
+                                            <span>No egress logs found</span>
+                                        </div>
+                                    ) : (
+                                        history.map((item, i) => {
+                                            const d = new Date(item.timestamp);
+                                            const timeStr = d.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                                            const dateStr = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+
+                                            let badgeColor = "bg-slate-500/20 text-slate-400 border-slate-500/30";
+                                            if (item.category === 'oi_spike') badgeColor = "bg-cyan-500/20 text-cyan-400 border-cyan-500/30";
+                                            if (item.category === 'atr_expand') badgeColor = "bg-amber-500/20 text-amber-400 border-amber-500/30";
+                                            if (item.severity === 'critical') badgeColor = "bg-red-500/20 text-red-400 border-red-500/30";
+
+                                            return (
+                                                <div key={i} className="bg-slate-950 border border-slate-800 rounded p-3 text-sm hover:border-slate-700 transition-colors">
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <div className="flex items-center space-x-2">
+                                                            <span className={`text-[10px] px-1.5 py-0.5 rounded border uppercase font-bold ${badgeColor}`}>
+                                                                {item.category}
+                                                            </span>
+                                                            <span className="font-bold text-slate-300">{item.symbol}</span>
+                                                        </div>
+                                                        <span className="text-xs text-slate-500 font-mono">
+                                                            {dateStr} {timeStr}
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-slate-400 text-xs leading-relaxed whitespace-pre-wrap">
+                                                        {item.message}
+                                                    </div>
+                                                </div>
+                                            )
+                                        })
+                                    )}
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>
@@ -638,6 +549,6 @@ export default function TelegramSettings() {
                     border-radius: 10px;
                 }
             `}</style>
-        </div>
+        </div >
     );
 }

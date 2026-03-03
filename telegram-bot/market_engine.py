@@ -232,7 +232,7 @@ class MarketEngine:
                     await self.send_alert(
                         f"[{symbol}] {color} Volatility Shift ({tf})",
                         f"<b>State:</b> {old_vol} → {vol_state}\n<b>ATR Ratio:</b> {atr_ratio:.2f}x\n<b>Risk:</b> {'High' if vol_state != 'Normal' else 'Low'}",
-                        f"volatility_state_{tf}", symbol, "info", 300
+                        "volatility_state", symbol, "info", 300
                     )
                 self.state[symbol]["volatility"][tf] = vol_state
 
@@ -251,7 +251,7 @@ class MarketEngine:
                     await self.send_alert(
                         f"[{symbol}] {icon} Regime Shift ({tf})",
                         f"<b>Bias:</b> {old_regime} → {new_regime}\n<b>RSI:</b> {rsi:.1f}\n<b>EMA Sep:</b> {sep:.2f}%",
-                        f"regime_shift_{tf}", symbol, "info", 900
+                        "regime_shift", symbol, "info", 900
                     )
                 self.state[symbol]["regime"][tf] = new_regime
 
@@ -273,7 +273,7 @@ class MarketEngine:
                         await self.send_alert(
                             f"[{symbol}] 📊 Flow Shift",
                             f"<b>Dynamics:</b> {flow}\n<b>OI Delta:</b> {oi_delta:+.2f}%\n<b>Price Delta:</b> {price_delta:+.2f}%",
-                            f"order_flow_{tf}", symbol, "info", 900
+                            "order_flow", symbol, "info", 900
                         )
                     self.state[symbol]["flow"][tf] = flow
 
@@ -294,7 +294,7 @@ class MarketEngine:
                     await self.send_alert(
                         f"[{symbol}] 🎯 Level Interaction ({tf})",
                         f"<b>Status:</b> {active_level}\n<b>Price:</b> ${price:,.2f}",
-                        f"level_testing_{tf}", symbol, "info", 600
+                        "level_testing", symbol, "info", 600
                     )
                 self.state[symbol]["levels"][tf] = active_level
 

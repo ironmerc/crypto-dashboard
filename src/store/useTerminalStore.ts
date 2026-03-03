@@ -46,7 +46,7 @@ export interface VolumeDelta {
 export interface TelegramConfig {
     globalEnabled: boolean;
     activeSessions: string[]; // e.g., ['London', 'US', 'Asia']
-    monitoredTimeframes: string[]; // e.g., ['15m', '1h', '4h']
+
     alertOnStateChange: boolean;
     quietHours: {
         enabled: boolean;
@@ -309,7 +309,7 @@ export const useTerminalStore = create<TerminalState>()(
             telegramConfig: {
                 globalEnabled: true,
                 activeSessions: ['London', 'US', 'Asia'],
-                monitoredTimeframes: ['15m', '1h', '4h'],
+
                 alertOnStateChange: true,
                 quietHours: {
                     enabled: false,
