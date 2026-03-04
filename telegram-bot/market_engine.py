@@ -132,7 +132,9 @@ class MarketEngine:
                         "klines": {tf: [] for tf in ALL_TIMEFRAMES},
                         "rsi": {tf: 50 for tf in ALL_TIMEFRAMES},
                         "oi_history": [], "spread_history": [],
-                        "summary_hash": {}
+                        "whale_delta": 0, "funding_rate": 0,
+                        "volume_profile": {}, "last_vah": 0, "last_val": 0,
+                        "summary_hash": {}, "last_daily_wrap": 0
                     }
 
             streams = []
@@ -142,7 +144,8 @@ class MarketEngine:
                     f"{sym}@aggTrade",
                     f"{sym}@forceOrder",
                     f"{sym}@bookTicker",
-                    f"{sym}@openInterest"
+                    f"{sym}@openInterest",
+                    f"{sym}@markPrice"
                 ])
                 # Add all 12 kline intervals
                 for tf in ALL_TIMEFRAMES:
@@ -196,11 +199,66 @@ class MarketEngine:
             
             if amount >= threshold:
                 side = "🔴 SELL" if data['m'] else "🟢 BUY"
+                
+                # Update Whale Delta
+                delta_change = -amount if data['m'] else amount
+                old_delta = self.state[symbol]["whale_delta"]
+                self.state[symbol]["whale_delta"] += delta_change
+                
+                # Check for Momentum Shift ($5M swing)
+                momentum_threshold = float(thresholds.get("whaleMomentumDelta", 5000000))
+                if abs(self.state[symbol]["whale_delta"] - (old_delta // momentum_threshold * momentum_threshold)) >= momentum_threshold:
+                     await self.send_alert(
+                        f"[{symbol}] 🐋💨 Whale Momentum Shift",
+                        f"<b>Net Flow:</b> ${self.state[symbol]['whale_delta']/1e6:+.2f}M\n<b>Dynamics:</b> {'Massive Accumulation' if delta_change > 0 else 'Massive Distribution'}",
+                        "whale", symbol, "info", 900
+                    )
+
                 await self.send_alert(
                     f"[{symbol}] 🐋 Whale Trade",
                     f"<b>Direction:</b> {side}\n<b>Size:</b> ${amount/1e6:.2f}M\n<b>Price:</b> ${price:,.2f}",
                     "whale", symbol, "info", 60
                 )
+            
+            # Update Volume Profile & VA
+            profile = self.state[symbol]["volume_profile"]
+            bucket_size = 10 if price > 1000 else (0.1 if price > 10 else 0.001)
+            bucket = round(price / bucket_size) * bucket_size
+            profile[bucket] = profile.get(bucket, 0) + amount
+            
+            # Simple VAH/VAL check if we have enough data (approx 100 buckets)
+            if len(profile) > 100:
+                # Calculate VAH/VAL (70% volume)
+                sorted_prices = sorted(profile.keys())
+                total_vol = sum(profile.values())
+                target = total_vol * 0.7
+                
+                poc = max(profile, key=profile.get)
+                poc_idx = sorted_prices.index(poc)
+                
+                acc_vol = profile[poc]
+                up = poc_idx + 1
+                down = poc_idx - 1
+                while acc_vol < target and (up < len(sorted_prices) or down >= 0):
+                    u_v = profile[sorted_prices[up]] if up < len(sorted_prices) else -1
+                    d_v = profile[sorted_prices[down]] if down >= 0 else -1
+                    if u_v > d_v: acc_vol += u_v; up += 1
+                    else: acc_vol += d_v; down -= 1
+                
+                vah = sorted_prices[min(up, len(sorted_prices)-1)]
+                val = sorted_prices[max(down, 0)]
+                
+                # Alert on breakout
+                old_vah = self.state[symbol]["last_vah"]
+                old_val = self.state[symbol]["last_val"]
+                if old_vah > 0:
+                    if price > vah and self.state[symbol]["last_price"] <= vah:
+                        await self.send_alert(f"[{symbol}] 📈 VA Breakout (High)", f"Price ${price:,.2f} breaking above VAH ${vah:,.2f}", "level_testing", symbol, "info", 3600)
+                    elif price < val and self.state[symbol]["last_price"] >= val:
+                        await self.send_alert(f"[{symbol}] 📉 VA Breakout (Low)", f"Price ${price:,.2f} breaking below VAL ${val:,.2f}", "level_testing", symbol, "info", 3600)
+                
+                self.state[symbol]["last_vah"] = vah
+                self.state[symbol]["last_val"] = val
 
         # 2. Execution Context (Spread)
         elif stream == "bookTicker":
@@ -224,11 +282,26 @@ class MarketEngine:
 
         # 3. Open Interest Flow History
         elif stream == "openInterestUpdate": # Stream name is openInterestUpdate
-            oi = float(data['o'])
-            self.state[symbol]["oi_history"].append({"t": time.time(), "v": oi})
-            # Keep 30m window
             now = time.time()
             self.state[symbol]["oi_history"] = [h for h in self.state[symbol]["oi_history"] if now - h['t'] <= 1800]
+
+        # 4. Funding Rate
+        elif stream == "markPriceUpdate":
+            rate = float(data['r'])
+            old_rate = self.state[symbol]["funding_rate"]
+            self.state[symbol]["funding_rate"] = rate
+            
+            thresholds = self.config.get("thresholds", {}).get(symbol, 
+                         self.config.get("thresholds", {}).get("global", {}))
+            extreme = float(thresholds.get("fundingExtremeRate", 0.05)) / 100 # Frontend sends 0.05 for 0.05%
+            
+            if abs(rate) >= extreme and abs(old_rate) < extreme:
+                direction = "🟢 POSITIVE" if rate > 0 else "🔴 NEGATIVE"
+                await self.send_alert(
+                    f"[{symbol}] 🚨 Funding Extreme",
+                    f"<b>Direction:</b> {direction}\n<b>Rate:</b> {rate*100:.4f}%\n<b>Context:</b> Leverage becoming unbalanced.",
+                    "funding", symbol, "warning", 14400
+                )
 
         # 4. Liquidations
         elif stream == "forceOrder":
@@ -379,6 +452,20 @@ class MarketEngine:
                             "context_summary", symbol, "info", 900, tf=tf
                         )
                     self.state[symbol]["summary_hash"][tf] = new_summary_hash
+            
+            # F. Daily Wrap-Up (Check once per minute)
+            now_dt = datetime.now(timezone.utc)
+            if now_dt.hour == 0 and now_dt.minute == 0:
+                last_wrap = self.state[symbol].get("last_daily_wrap", 0)
+                if time.time() - last_wrap > 80000: # Ensure only once per day
+                    price = self.state[symbol]["last_price"]
+                    whale_flow = self.state[symbol]["whale_delta"]
+                    await self.send_alert(
+                        f"[{symbol}] 📅 Daily Market Wrap",
+                        f"<b>Closing Price:</b> ${price:,.2f}\n<b>Whale Net Flow:</b> ${whale_flow/1e6:+.2f}M\n<b>Funding Rate:</b> {self.state[symbol]['funding_rate']*100:.4f}%",
+                        "market_context", symbol, "info", 3600
+                    )
+                    self.state[symbol]["last_daily_wrap"] = time.time()
 
     async def run(self):
         """Starts the engine tasks."""
