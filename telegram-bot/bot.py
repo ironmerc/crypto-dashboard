@@ -53,7 +53,8 @@ DEFAULT_CONFIG = {
         }
     },
     "monitoredTimeframes": ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d"],
-    "timeframes": {}
+    "timeframes": {},
+    "priceAlerts": [] # List of {id, symbol, price, side, createdAt}
 }
 
 bot_config = DEFAULT_CONFIG.copy()
@@ -241,6 +242,23 @@ async def handle_post_config(request):
         logger.error(f"Failed to update config: {e}")
         return web.json_response({"error": str(e)}, status=400)
 
+@web.middleware
+async def cors_middleware(request, handler):
+    if request.method == "OPTIONS":
+        return web.Response(status=204, headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS, DELETE",
+            "Access-Control-Allow-Headers": "Content-Type"
+        })
+    
+    try:
+        response = await handler(request)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        return response
+    except web.HTTPException as ex:
+        ex.headers["Access-Control-Allow-Origin"] = "*"
+        raise ex
+
 async def handle_health(request):
     """Simple health check endpoint."""
     return web.json_response({"status": "ok"}, status=200)
@@ -259,15 +277,48 @@ async def handle_history(request):
     """Ops endpoint returning bounded deque of alerting history."""
     return web.json_response(list(alert_history), status=200)
 
+async def handle_get_price_alerts(request):
+    """Returns all active price alerts."""
+    return web.json_response(bot_config.get("priceAlerts", []))
+
+async def handle_post_price_alert(request):
+    """Adds or removes a price alert."""
+    global bot_config
+    try:
+        data = await request.json()
+        action = data.get("action", "add")
+        
+        if action == "add":
+            alert = data.get("alert")
+            if not alert: return web.json_response({"error": "Missing alert object"}, status=400)
+            if "priceAlerts" not in bot_config: bot_config["priceAlerts"] = []
+            bot_config["priceAlerts"].append(alert)
+        elif action == "remove":
+            alert_id = data.get("id")
+            if not alert_id: return web.json_response({"error": "Missing alert id"}, status=400)
+            bot_config["priceAlerts"] = [a for a in bot_config.get("priceAlerts", []) if a.get("id") != alert_id]
+            
+        save_config()
+        # Signal market engine to reload
+        try:
+            with open("reload.flag", "w") as f: f.write("1")
+        except: pass
+        
+        return web.json_response({"status": "success", "priceAlerts": bot_config["priceAlerts"]})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=400)
+
 async def init_app():
     """Initialize the aiohttp web application."""
-    app = web.Application()
+    app = web.Application(middlewares=[cors_middleware])
     app.router.add_post('/alert', handle_alert)
     app.router.add_get('/health', handle_health)
     app.router.add_get('/status', handle_status)
     app.router.add_get('/history', handle_history)
     app.router.add_get('/config', handle_get_config)
     app.router.add_post('/config', handle_post_config)
+    app.router.add_get('/alerts/price', handle_get_price_alerts)
+    app.router.add_post('/alerts/price', handle_post_price_alert)
     
     # Load persistence
     load_config()

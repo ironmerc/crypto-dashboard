@@ -18,6 +18,7 @@ export function CandleChart({ symbol }: CandleChartProps) {
     const vahLineRef = useRef<any>(null);
     const valLineRef = useRef<any>(null);
     const liqLinesRef = useRef<any[]>([]);
+    const alertLinesRef = useRef<any[]>([]);
 
     // Indicator Series Refs
     const ema21SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
@@ -28,6 +29,13 @@ export function CandleChart({ symbol }: CandleChartProps) {
 
     // Indicator States for HUD
     const [latestAtr, setLatestAtr] = useState<number | null>(null);
+    const [isSettingAlert, setIsSettingAlert] = useState(false);
+    const [manualAlertPrice, setManualAlertPrice] = useState('');
+    const isSettingAlertRef = useRef(false);
+
+    useEffect(() => {
+        isSettingAlertRef.current = isSettingAlert;
+    }, [isSettingAlert]);
 
     const fundingRate = useTerminalStore(state => state.fundingRate[symbol]);
     const openInterest = useTerminalStore(state => state.openInterest[symbol]);
@@ -44,6 +52,11 @@ export function CandleChart({ symbol }: CandleChartProps) {
         events.filter(e => e.type === 'Liquidation' && e.symbol === symbol),
         [events, symbol]
     );
+
+    const priceAlerts = useTerminalStore(state => state.priceAlerts);
+    const addPriceAlert = useTerminalStore(state => state.addPriceAlert);
+    const removePriceAlert = useTerminalStore(state => state.removePriceAlert);
+    const fetchPriceAlerts = useTerminalStore(state => state.fetchPriceAlerts);
 
     // 1. Initialize Chart
     useEffect(() => {
@@ -185,7 +198,50 @@ export function CandleChart({ symbol }: CandleChartProps) {
             })
             .catch(err => console.error("Failed to fetch historical klines", err));
 
+        // 1.5 Click to set Alert
+        const handleChartClick = (param: any) => {
+            // Support both Shift+Click and the dedicated toggle
+            const isManualTrigger = isSettingAlertRef.current;
+            // Lightweight charts might use sourceEvent or originalEvent depending on version/environment
+            const ev = param.sourceEvent || param.originalEvent;
+            const isShiftTrigger = ev?.shiftKey;
+
+            if (param.point && (isManualTrigger || isShiftTrigger) && seriesRef.current) {
+                const price = seriesRef.current.coordinateToPrice(param.point.y);
+                if (price) {
+                    const newAlert = {
+                        id: Math.random().toString(36).substr(2, 9),
+                        symbol: symbol,
+                        price: Number(price.toFixed(2)),
+                        side: 'NEUTRAL',
+                        createdAt: Date.now()
+                    };
+                    addPriceAlert(newAlert);
+                    if (isManualTrigger) setIsSettingAlert(false); // Reset toggle after clicking
+                }
+            }
+        };
+
+        // Escape to cancel setting alert
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && isSettingAlert) {
+                setIsSettingAlert(false);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+
+        chart.subscribeClick(handleChartClick);
+        fetchPriceAlerts(); // Initial fetch
+
+        // Poll for alerts every 3 seconds to sync with backend removal
+        const pollInterval = setInterval(() => {
+            fetchPriceAlerts();
+        }, 3000);
+
         return () => {
+            clearInterval(pollInterval);
+            window.removeEventListener('keydown', handleKeyDown);
+            chart.unsubscribeClick(handleChartClick);
             chart.remove();
             pocLineRef.current = null;
             vahLineRef.current = null;
@@ -350,7 +406,7 @@ export function CandleChart({ symbol }: CandleChartProps) {
                 price: liq.price,
                 color: isShortLiq ? 'rgba(0, 204, 51, 0.8)' : 'rgba(255, 51, 51, 0.8)',
                 lineWidth: 2,
-                lineStyle: 1, // Solid
+                lineStyle: 0, // Solid (0 is Solid)
                 axisLabelVisible: true,
                 title: isShortLiq ? '💦 SHORT LIQ' : '💦 LONG LIQ',
             });
@@ -359,8 +415,49 @@ export function CandleChart({ symbol }: CandleChartProps) {
 
     }, [liquidations]);
 
+    // 5. Draw Custom Price Alerts
+    useEffect(() => {
+        if (!seriesRef.current || !chartRef.current) return;
+
+        // Clear old alert lines from the CURRENT series
+        alertLinesRef.current.forEach(line => {
+            try { seriesRef.current?.removePriceLine(line); } catch (e) { }
+        });
+        alertLinesRef.current = [];
+
+        // Case-insensitive symbol matching for robustness
+        const currentSymbol = symbol.toUpperCase();
+        const myAlerts = priceAlerts.filter(a => a.symbol.toUpperCase() === currentSymbol);
+
+        myAlerts.forEach(alert => {
+            const line = seriesRef.current?.createPriceLine({
+                price: alert.price,
+                color: '#E040FB', // Purple for alerts
+                lineWidth: 2,
+                lineStyle: 0, // Solid (0 is Solid in Lightweight Charts)
+                axisLabelVisible: true,
+                title: `🔔 ALERT: $${alert.price.toLocaleString()}`,
+            });
+            if (line) alertLinesRef.current.push(line);
+        });
+    }, [priceAlerts, symbol]);
+
     // For HUD context
     const activeTicker = useTerminalStore(state => state.prices[symbol]);
+
+    const handleAddManualAlert = () => {
+        const p = parseFloat(manualAlertPrice);
+        if (!isNaN(p) && p > 0) {
+            addPriceAlert({
+                id: Math.random().toString(36).substr(2, 9),
+                symbol: symbol,
+                price: p,
+                side: 'NEUTRAL',
+                createdAt: Date.now()
+            });
+            setManualAlertPrice('');
+        }
+    };
 
     return (
         <div className="relative w-full h-full group">
@@ -397,9 +494,78 @@ export function CandleChart({ symbol }: CandleChartProps) {
                     <span className="text-[#FDD835] font-mono text-[9px] font-bold">VWAP</span>
                     <span className="text-[#E040FB] font-mono text-[9px] font-bold">RSI(14)</span>
                 </div>
+
+                {/* Alerts Indicator & Controls */}
+                <div className="mt-2 flex gap-2 pointer-events-auto">
+                    <div className="flex bg-[#18042B]/80 border border-purple-500/50 rounded overflow-hidden backdrop-blur-sm">
+                        <button
+                            onClick={() => setIsSettingAlert(!isSettingAlert)}
+                            className={`flex items-center gap-2 px-2 py-1 transition-all ${isSettingAlert ? 'bg-purple-500 text-white shadow-[0_0_10px_rgba(168,85,247,0.5)]' : 'text-purple-400 hover:bg-purple-500/20'}`}
+                            title="Click button then click on chart to set alert"
+                        >
+                            <span>{isSettingAlert ? '📍' : '➕'}</span>
+                            <span className="font-bold text-[10px]">{isSettingAlert ? 'CLICK ON CHART' : 'ADD ALERT'}</span>
+                        </button>
+
+                        <div className="w-px bg-purple-500/30"></div>
+
+                        <div className="flex items-center px-1">
+                            <input
+                                type="text"
+                                placeholder="Manual Price..."
+                                value={manualAlertPrice}
+                                onChange={(e) => setManualAlertPrice(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleAddManualAlert()}
+                                className="bg-transparent border-none outline-none text-terminal-fg font-mono text-[10px] w-24 placeholder:text-terminal-muted/40"
+                            />
+                            {manualAlertPrice && (
+                                <button
+                                    onClick={handleAddManualAlert}
+                                    className="bg-purple-500/30 hover:bg-purple-500/50 text-purple-200 px-1.5 py-0.5 rounded text-[9px] font-bold transition-colors"
+                                >
+                                    SAVE
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {priceAlerts.filter(a => a.symbol === symbol).length > 0 && (
+                        <div className="group/alerts relative">
+                            <button className="flex items-center gap-2 bg-purple-500/20 hover:bg-purple-500/40 border border-purple-500/50 px-2 py-1 rounded transition-colors backdrop-blur-sm">
+                                <span className="text-purple-400">🔔</span>
+                                <span className="text-purple-300 font-bold text-[10px]">
+                                    {priceAlerts.filter(a => a.symbol === symbol).length} ACTIVE
+                                </span>
+                            </button>
+
+                            {/* Management Menu */}
+                            <div className="absolute top-full left-0 mt-2 bg-[#18042B]/95 border border-purple-500/30 rounded shadow-2xl overflow-hidden opacity-0 group-hover/alerts:opacity-100 transition-opacity min-w-[180px] z-20 backdrop-blur-md">
+                                <div className="bg-purple-900/40 px-3 py-2 border-b border-purple-500/20 text-[10px] uppercase font-bold text-purple-200">
+                                    Manage Alerts
+                                </div>
+                                <div className="max-h-[200px] overflow-y-auto">
+                                    {priceAlerts.filter(a => a.symbol === symbol).map(alert => (
+                                        <div key={alert.id} className="flex items-center justify-between px-3 py-2 border-b border-purple-500/10 hover:bg-white/5 transition-colors">
+                                            <div className="flex flex-col">
+                                                <span className="text-terminal-fg font-mono font-bold">${alert.price.toLocaleString()}</span>
+                                                <span className="text-[9px] text-terminal-muted opacity-60">{new Date(alert.createdAt).toLocaleTimeString()}</span>
+                                            </div>
+                                            <button
+                                                onClick={() => removePriceAlert(alert.id)}
+                                                className="text-terminal-red hover:bg-red-500/20 p-1 rounded transition-colors text-[10px]"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
 
-            <div ref={chartContainerRef} className="absolute inset-0" />
+            <div ref={chartContainerRef} className={`absolute inset-0 ${isSettingAlert ? 'cursor-crosshair' : ''}`} />
         </div>
     );
 }

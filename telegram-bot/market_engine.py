@@ -260,6 +260,40 @@ class MarketEngine:
                 self.state[symbol]["last_vah"] = vah
                 self.state[symbol]["last_val"] = val
 
+            # 3. Custom Price Alerts
+            price_alerts = self.config.get("priceAlerts", [])
+            active_alerts = [a for a in price_alerts if a.get("symbol") == symbol]
+            
+            for alert in active_alerts:
+                alert_price = float(alert.get("price"))
+                alert_id = alert.get("id")
+                last_price = self.state[symbol].get("last_price_for_alerts", price)
+                
+                # Check for crossing (Upwards or Downwards)
+                hit = False
+                if last_price < alert_price <= price: hit = True # Cross up
+                elif last_price > alert_price >= price: hit = True # Cross down
+                
+                if hit:
+                    logger.info(f"🔔 ALERT HIT: {symbol} at ${price:,.2f} (Target: ${alert_price:,.2f})")
+                    await self.send_alert(
+                        f"[{symbol}] 🔔 PRICE ALERT HIT",
+                        f"<b>Target:</b> ${alert_price:,.2f}\n<b>Current:</b> ${price:,.2f}\n<b>Status:</b> Level reached.",
+                        "price_alert", symbol, "warning", 10 # Short cooldown
+                    )
+                    # Trigger removal of the alert from bot.py
+                    async with ClientSession() as session:
+                        try:
+                            async with session.post(f"{self.bot_url}/alerts/price", json={"action": "remove", "id": alert_id}) as resp:
+                                if resp.status == 200:
+                                    logger.info(f"Successfully removed alert {alert_id} from backend.")
+                                else:
+                                    logger.error(f"Failed to remove alert {alert_id}: Status {resp.status}")
+                        except Exception as e:
+                            logger.error(f"Error requesting alert removal: {e}")
+            
+            self.state[symbol]["last_price_for_alerts"] = price
+
         # 2. Execution Context (Spread)
         elif stream == "bookTicker":
             bids = float(data['b'])

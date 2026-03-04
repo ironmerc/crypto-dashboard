@@ -129,11 +129,18 @@ interface TerminalState {
     updateTelegramConfig: (updates: Partial<TelegramConfig>, skipSync?: boolean) => void;
     addMonitoredSymbol: (symbol: string) => void;
     removeMonitoredSymbol: (symbol: string) => void;
+
+    // Custom Price Alerts
+    priceAlerts: any[];
+    setPriceAlerts: (alerts: any[]) => void;
+    addPriceAlert: (alert: any) => Promise<void>;
+    removePriceAlert: (id: string) => Promise<void>;
+    fetchPriceAlerts: () => Promise<void>;
 }
 
 export const useTerminalStore = create<TerminalState>()(
     persist(
-        (set) => ({
+        (set, get) => ({
             globalInterval: '5m', // Default to 5m
             setGlobalInterval: (interval) => set({
                 globalInterval: interval,
@@ -311,6 +318,58 @@ export const useTerminalStore = create<TerminalState>()(
                 currentAtrSma: indicators.atrSma !== undefined ? { ...state.currentAtrSma, [symbol]: indicators.atrSma } : state.currentAtrSma,
                 currentRSI: indicators.rsi !== undefined ? { ...state.currentRSI, [symbol]: indicators.rsi } : state.currentRSI,
             })),
+
+            priceAlerts: [],
+            setPriceAlerts: (alerts) => set({ priceAlerts: alerts }),
+            addPriceAlert: async (alert) => {
+                try {
+                    const resp = await fetch(`/api/bot/alerts/price`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'add', alert })
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        set({ priceAlerts: data.priceAlerts });
+                    }
+                } catch (e) {
+                    console.error("Failed to add price alert:", e);
+                }
+            },
+            removePriceAlert: async (id: string) => {
+                const previousAlerts = get().priceAlerts;
+                // Optimistic Update
+                set({ priceAlerts: previousAlerts.filter((a: any) => a.id !== id) });
+
+                try {
+                    const resp = await fetch(`/api/bot/alerts/price`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'remove', id })
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        set({ priceAlerts: data.priceAlerts });
+                    } else {
+                        // Rollback on failure
+                        set({ priceAlerts: previousAlerts });
+                    }
+                } catch (e) {
+                    console.error("Failed to remove price alert:", e);
+                    set({ priceAlerts: previousAlerts });
+                }
+            },
+            fetchPriceAlerts: async () => {
+                try {
+                    const resp = await fetch(`/api/bot/alerts/price`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        set({ priceAlerts: data });
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch price alerts:", e);
+                }
+            },
             telegramConfig: {
                 globalEnabled: true,
                 activeSessions: ['London', 'US', 'Asia'],
