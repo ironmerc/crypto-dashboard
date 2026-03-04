@@ -49,7 +49,7 @@ class MarketEngine:
         allowed = self.config.get("activeSessions", ["London", "US", "Asia"])
         return current in allowed
 
-    async def send_alert(self, title, message, category, symbol, severity="info", cooldown=60):
+    async def send_alert(self, title, message, category, symbol, severity="info", cooldown=60, tf=None):
         """Proxies alerts to the bot API if sessions and global toggles allow."""
         if not self.config.get("globalEnabled", True): return
         if not self.is_session_active(): return
@@ -57,9 +57,12 @@ class MarketEngine:
         # Check category toggle
         if not self.config.get("categories", {}).get(category, True): return
 
-        # Resolve threshold if applicable (caller should pass the value to check)
-        # This is primarily for the handle_message checks
-        
+        # Check timeframe toggle if applicable
+        if tf:
+            enabled_tfs = self.config.get("timeframes", {}).get(category, ["5m", "15m", "1h", "4h"])
+            if tf not in enabled_tfs:
+                return
+
         session_name = self.get_active_session()
         payload = {
             "message": f"<b>🚨 {title}</b>\n\n{message}\n\n<i>Session: {session_name}</i>",
@@ -187,7 +190,7 @@ class MarketEngine:
             # Hierarchical threshold resolution
             thresholds = self.config.get("thresholds", {}).get(symbol, 
                          self.config.get("thresholds", {}).get("global", {}))
-            threshold = thresholds.get("whaleMinAmount", 500000)
+            threshold = float(thresholds.get("whaleMinAmount", 500000))
             
             if amount >= threshold:
                 side = "🔴 SELL" if data['m'] else "🟢 BUY"
@@ -231,7 +234,7 @@ class MarketEngine:
             amount = float(o['p']) * float(o['q'])
             thresholds = self.config.get("thresholds", {}).get(symbol, 
                          self.config.get("thresholds", {}).get("global", {}))
-            threshold = thresholds.get("liquidationMinAmount", 1000000)
+            threshold = float(thresholds.get("liquidationMinAmount", 1000000))
             
             if amount >= threshold:
                 side = o['S']
@@ -261,7 +264,7 @@ class MarketEngine:
                 thresholds = self.config.get("thresholds", {}).get(symbol, 
                              self.config.get("thresholds", {}).get("global", {}))
                 
-                exp_ratio = thresholds.get("atrExpansionRatio", 1.3)
+                exp_ratio = float(thresholds.get("atrExpansionRatio", 1.3))
                 if atr_ratio > exp_ratio * 1.25: vol_state = "Extreme"
                 elif atr_ratio > exp_ratio: vol_state = "Expanding"
                 elif atr_ratio < 0.75: vol_state = "Squeeze/Compacting"
@@ -272,7 +275,7 @@ class MarketEngine:
                     await self.send_alert(
                         f"[{symbol}] {color} Volatility Shift ({tf})",
                         f"<b>State:</b> {old_vol} → {vol_state}\n<b>ATR Ratio:</b> {atr_ratio:.2f}x\n<b>Risk:</b> {'High' if vol_state != 'Normal' else 'Low'}",
-                        "volatility_state", symbol, "info", 300
+                        "volatility_state", symbol, "info", 300, tf=tf
                     )
                 self.state[symbol]["volatility"][tf] = vol_state
 
@@ -281,7 +284,7 @@ class MarketEngine:
                 sep = abs(ema21 - ema50) / ema50 * 100
                 thresholds = self.config.get("thresholds", {}).get(symbol, 
                              self.config.get("thresholds", {}).get("global", {}))
-                sep_threshold = thresholds.get("emaSeparationPct", 0.15)
+                sep_threshold = float(thresholds.get("emaSeparationPct", 0.15))
                 strength = "Strong" if sep > sep_threshold else "Weak"
                 
                 if price > ema21 > ema50: new_regime = f"Uptrend ({strength})"
@@ -293,7 +296,7 @@ class MarketEngine:
                     await self.send_alert(
                         f"[{symbol}] {icon} Regime Shift ({tf})",
                         f"<b>Bias:</b> {old_regime} → {new_regime}\n<b>RSI:</b> {rsi:.1f}\n<b>EMA Sep:</b> {sep:.2f}%",
-                        "regime_shift", symbol, "info", 900
+                        "regime_shift", symbol, "info", 900, tf=tf
                     )
                 self.state[symbol]["regime"][tf] = new_regime
 
@@ -305,7 +308,7 @@ class MarketEngine:
                     
                     thresholds = self.config.get("thresholds", {}).get(symbol, 
                                  self.config.get("thresholds", {}).get("global", {}))
-                    oi_threshold = thresholds.get("oiSpikePercentage", 0.4)
+                    oi_threshold = float(thresholds.get("oiSpikePercentage", 0.4))
                     
                     flow = "Neutral/Stable"
                     if abs(oi_delta) > oi_threshold:
@@ -317,9 +320,9 @@ class MarketEngine:
                     old_flow = self.state[symbol]["flow"].get(tf, "Unknown")
                     if flow != old_flow and flow != "Neutral/Stable":
                         await self.send_alert(
-                            f"[{symbol}] 📊 Flow Shift",
+                            f"[{symbol}] 📊 Flow Shift ({tf})",
                             f"<b>Dynamics:</b> {flow}\n<b>OI Delta:</b> {oi_delta:+.2f}%\n<b>Price Delta:</b> {price_delta:+.2f}%",
-                            "order_flow", symbol, "info", 900
+                            "order_flow", symbol, "info", 900, tf=tf
                         )
                     self.state[symbol]["flow"][tf] = flow
 
@@ -340,9 +343,40 @@ class MarketEngine:
                     await self.send_alert(
                         f"[{symbol}] 🎯 Level Interaction ({tf})",
                         f"<b>Status:</b> {active_level}\n<b>Price:</b> ${price:,.2f}",
-                        "level_testing", symbol, "info", 600
+                        "level_testing", symbol, "info", 600, tf=tf
                     )
                 self.state[symbol]["levels"][tf] = active_level
+
+                # E. Context Summary Shift Evaluator
+                if True: # Run for all TFs, but only alert if enabled in config for that TF
+                    st = self.state[symbol]
+                    regime = st.get("regime", {}).get(tf, "Unknown")
+                    flow = st.get("flow", {}).get(tf, "Unknown")
+                    volatility = st.get("volatility", {}).get(tf, "Unknown")
+                    execution = st.get("execution", "Unknown")
+                    
+                    new_summary_hash = f"{regime}|{flow}|{volatility}|{execution}"
+                    
+                    if "summary_hash" not in self.state[symbol]: 
+                        self.state[symbol]["summary_hash"] = {}
+                        
+                    old_summary_hash = self.state[symbol]["summary_hash"].get(tf, "Unknown")
+                    
+                    # Only alert if we actually have state built up and it changes
+                    if new_summary_hash != old_summary_hash and old_summary_hash != "Unknown" and regime != "Unknown":
+                        msg = (
+                            f"<b>{regime} → {flow}</b>\n\n"
+                            f"<b>Regime & Bias:</b> {regime}\n"
+                            f"<b>Volatility:</b> {volatility}\n"
+                            f"<b>Positioning:</b> {flow}\n"
+                            f"<b>Execution Context:</b> {execution}"
+                        )
+                        await self.send_alert(
+                            f"[{symbol}] ⚡ Context Summary Shift ({tf})",
+                            msg,
+                            "context_summary", symbol, "info", 900, tf=tf
+                        )
+                    self.state[symbol]["summary_hash"][tf] = new_summary_hash
 
     async def run(self):
         """Starts the engine tasks."""

@@ -443,7 +443,8 @@ export default function TelegramSettings() {
                                                 const categories = [
                                                     'oi_spike', 'atr_expand', 'liquidation', 'whale',
                                                     'funding', 'value_area', 'rvol', 'execution_quality',
-                                                    'regime_shift', 'volatility_state', 'order_flow', 'level_testing'
+                                                    'regime_shift', 'volatility_state', 'order_flow', 'level_testing',
+                                                    'context_summary'
                                                 ];
                                                 const nextCats: Record<string, boolean> = {};
                                                 categories.forEach(c => nextCats[c] = e.target.checked);
@@ -471,16 +472,17 @@ export default function TelegramSettings() {
                                                 title: 'Market Dynamics',
                                                 icon: <Layers className="w-4 h-4 text-blue-400" />,
                                                 items: [
-                                                    { id: 'regime_shift', label: 'Regime Shifts (MTF)', defaultCd: 900, icon: '🧭' },
-                                                    { id: 'volatility_state', label: 'Volatility States (MTF)', defaultCd: 300, icon: '🌊' },
-                                                    { id: 'order_flow', label: 'Flow Anomalies (MTF)', defaultCd: 300, icon: '⚡' },
-                                                    { id: 'level_testing', label: 'Level Interactions (MTF)', defaultCd: 600, icon: '🎯' },
+                                                    { id: 'regime_shift', label: 'Regime Shifts (MTF)', defaultCd: 900, icon: '🧭', hasTimeframes: true },
+                                                    { id: 'volatility_state', label: 'Volatility States (MTF)', defaultCd: 300, icon: '🌊', hasTimeframes: true },
+                                                    { id: 'order_flow', label: 'Flow Anomalies (MTF)', defaultCd: 300, icon: '⚡', hasTimeframes: true },
+                                                    { id: 'level_testing', label: 'Level Interactions (MTF)', defaultCd: 600, icon: '🎯', hasTimeframes: true },
                                                 ]
                                             },
                                             {
                                                 title: 'Context & Alpha',
                                                 icon: <Zap className="w-4 h-4 text-amber-400" />,
                                                 items: [
+                                                    { id: 'context_summary', label: 'Context Summary Shifts', defaultCd: 900, icon: '📝', hasTimeframes: true },
                                                     { id: 'funding', label: 'Funding Extremes', defaultCd: 3600, icon: '💰' },
                                                     { id: 'value_area', label: 'Value Area Breaks', defaultCd: 300, icon: '📦' },
                                                     { id: 'rvol', label: 'RVOL Anomalies', defaultCd: 300, icon: '🔥' },
@@ -499,33 +501,61 @@ export default function TelegramSettings() {
                                                         </div>
                                                         <div className="grid grid-cols-1 gap-2.5">
                                                             {group.items.map(cat => (
-                                                                <div key={cat.id} className="flex items-center justify-between p-2 sm:p-3 bg-slate-900/40 border border-slate-800/60 hover:border-slate-700/60 hover:bg-slate-800/30 rounded-lg transition-all group/card overflow-hidden">
-                                                                    <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1 mr-2">
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={config.categories?.[cat.id] ?? true}
-                                                                            onChange={(e) => updateConfig({ categories: { [cat.id]: e.target.checked } })}
-                                                                            className="w-4 h-4 rounded border-slate-700 text-indigo-500 focus:ring-indigo-500 bg-slate-950 cursor-pointer shrink-0"
-                                                                        />
-                                                                        <div className="flex items-center min-w-0 space-x-1 sm:space-x-2 overflow-hidden">
-                                                                            <span className="text-sm shrink-0">{cat.icon}</span>
-                                                                            <span className="text-[11px] sm:text-sm font-medium text-slate-200 truncate">{cat.label}</span>
+                                                                <div key={cat.id} className="flex flex-col space-y-2 p-2 sm:p-3 bg-slate-900/40 border border-slate-800/60 hover:border-slate-700/60 hover:bg-slate-800/30 rounded-lg transition-all group/card overflow-hidden">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1 mr-2">
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={config.categories?.[cat.id] ?? true}
+                                                                                onChange={(e) => updateConfig({ categories: { [cat.id]: e.target.checked } })}
+                                                                                className="w-4 h-4 rounded border-slate-700 text-indigo-500 focus:ring-indigo-500 bg-slate-950 cursor-pointer shrink-0"
+                                                                            />
+                                                                            <div className="flex items-center min-w-0 space-x-1 sm:space-x-2 overflow-hidden">
+                                                                                <span className="text-sm shrink-0">{cat.icon}</span>
+                                                                                <span className="text-[11px] sm:text-sm font-medium text-slate-200 truncate">{cat.label}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="flex items-center shrink-0">
+                                                                            <select
+                                                                                value={config.cooldowns?.[cat.id] || cat.defaultCd}
+                                                                                onChange={(e) => updateConfig({ cooldowns: { [cat.id]: parseInt(e.target.value) } })}
+                                                                                className="bg-slate-950 border border-slate-700/50 rounded-md px-1 sm:px-1.5 py-0.5 text-[10px] text-slate-400 focus:outline-none hover:border-slate-600 transition-colors h-6"
+                                                                            >
+                                                                                <option value="60">1m CD</option>
+                                                                                <option value="300">5m CD</option>
+                                                                                <option value="600">10m CD</option>
+                                                                                <option value="900">15m CD</option>
+                                                                                <option value="3600">1h CD</option>
+                                                                                <option value="14400">4h CD</option>
+                                                                            </select>
                                                                         </div>
                                                                     </div>
-                                                                    <div className="flex items-center shrink-0">
-                                                                        <select
-                                                                            value={config.cooldowns?.[cat.id] || cat.defaultCd}
-                                                                            onChange={(e) => updateConfig({ cooldowns: { [cat.id]: parseInt(e.target.value) } })}
-                                                                            className="bg-slate-950 border border-slate-700/50 rounded-md px-1 sm:px-1.5 py-0.5 text-[10px] text-slate-400 focus:outline-none hover:border-slate-600 transition-colors h-6"
-                                                                        >
-                                                                            <option value="60">1m CD</option>
-                                                                            <option value="300">5m CD</option>
-                                                                            <option value="600">10m CD</option>
-                                                                            <option value="900">15m CD</option>
-                                                                            <option value="3600">1h CD</option>
-                                                                            <option value="14400">4h CD</option>
-                                                                        </select>
-                                                                    </div>
+
+                                                                    {(cat as any).hasTimeframes && (config.categories?.[cat.id] ?? true) && (
+                                                                        <div className="flex flex-wrap items-center gap-1.5 pl-7">
+                                                                            {['5m', '15m', '1h', '4h'].map(tf => {
+                                                                                const enabledTfs = config.timeframes?.[cat.id] || ['5m', '15m', '1h', '4h'];
+                                                                                const isChecked = enabledTfs.includes(tf);
+                                                                                return (
+                                                                                    <button
+                                                                                        key={tf}
+                                                                                        onClick={() => {
+                                                                                            const nextTfs = isChecked
+                                                                                                ? enabledTfs.filter(t => t !== tf)
+                                                                                                : [...enabledTfs, tf];
+                                                                                            updateConfig({ timeframes: { [cat.id]: nextTfs } });
+                                                                                        }}
+                                                                                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all ${isChecked
+                                                                                                ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400'
+                                                                                                : 'bg-slate-950/40 border-slate-800 text-slate-600 underline decoration-slate-800'
+                                                                                            }`}
+                                                                                    >
+                                                                                        {tf.toUpperCase()}
+                                                                                    </button>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             ))}
                                                         </div>

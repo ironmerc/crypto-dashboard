@@ -69,6 +69,7 @@ export interface TelegramConfig {
     categories: Record<string, boolean>;
     cooldowns: Record<string, number>;
     thresholds: Record<string, TelegramThresholds>; // symbol -> thresholds, plus "global" key
+    timeframes: Record<string, string[]>; // category -> enabled timeframes, e.g. { 'regime_shift': ['15m', '1h'] }
 }
 
 interface TerminalState {
@@ -322,6 +323,7 @@ export const useTerminalStore = create<TerminalState>()(
                 },
                 categories: {},
                 cooldowns: {},
+                timeframes: {},
                 thresholds: {
                     global: {
                         whaleMinAmount: 500000,
@@ -348,6 +350,7 @@ export const useTerminalStore = create<TerminalState>()(
                             categories: updates.categories ? { ...(current.categories || {}), ...updates.categories } : (current.categories || {}),
                             quietHours: updates.quietHours ? { ...(current.quietHours || {}), ...updates.quietHours } : (current.quietHours || {}),
                             cooldowns: updates.cooldowns ? { ...(current.cooldowns || {}), ...updates.cooldowns } : (current.cooldowns || {}),
+                            timeframes: updates.timeframes ? { ...(current.timeframes || {}), ...updates.timeframes } : (current.timeframes || {}),
                             thresholds: updates.thresholds ? { ...(current.thresholds || {}), ...updates.thresholds } : (current.thresholds || {})
                         }
                     };
@@ -429,6 +432,7 @@ export const useTerminalStore = create<TerminalState>()(
                             quietHours: state.telegramConfig?.quietHours ?? { enabled: false, start: '22:00', end: '06:00' },
                             categories: state.telegramConfig?.categories ?? {},
                             cooldowns: state.telegramConfig?.cooldowns ?? {},
+                            timeframes: state.telegramConfig?.timeframes ?? {},
                             thresholds: state.telegramConfig?.thresholds ?? { global: { whaleMinAmount: 500000, liquidationMinAmount: 1000000, oiSpikePercentage: 1.5, fundingExtremeRate: 0.05, atrExpansionRatio: 1.3, whaleMomentumDelta: 5000000, rvolMultiplier: 3.0, rsiOverbought: 70, rsiOversold: 30, emaSeparationPct: 0.15 } },
                         };
                     }

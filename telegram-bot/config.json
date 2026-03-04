@@ -32,7 +32,11 @@
     "atr_expand": 60,
     "funding_extreme": 60,
     "test_ping": 5,
-    "market_context": 60
+    "market_context": 60,
+    "regime_shift": 60,
+    "volatility_state": 60,
+    "order_flow": 60,
+    "level_testing": 60
   },
   "thresholds": {
     "global": {
@@ -134,5 +138,6 @@
     "15m",
     "1h",
     "4h"
-  ]
+  ],
+  "timeframes": {}
 }
