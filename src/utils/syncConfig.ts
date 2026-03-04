@@ -14,7 +14,7 @@ export const fetchConfigFromBot = async () => {
             const botConfig = await response.json();
             console.log('[Sync] Received config from bot:', botConfig);
             // Update store with data from bot, merging with current state
-            useTerminalStore.getState().updateTelegramConfig(botConfig);
+            useTerminalStore.getState().updateTelegramConfig(botConfig, true);
         } else {
             console.warn('[Sync] Failed to fetch config from bot:', response.status);
         }

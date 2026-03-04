@@ -125,7 +125,8 @@ interface TerminalState {
 
     // Telegram Configurations (Persisted)
     telegramConfig: TelegramConfig;
-    updateTelegramConfig: (updates: Partial<TelegramConfig>) => void;
+    isConfigFetched: boolean;
+    updateTelegramConfig: (updates: Partial<TelegramConfig>, skipSync?: boolean) => void;
     addMonitoredSymbol: (symbol: string) => void;
     removeMonitoredSymbol: (symbol: string) => void;
 }
@@ -310,7 +311,6 @@ export const useTerminalStore = create<TerminalState>()(
                 currentAtrSma: indicators.atrSma !== undefined ? { ...state.currentAtrSma, [symbol]: indicators.atrSma } : state.currentAtrSma,
                 currentRSI: indicators.rsi !== undefined ? { ...state.currentRSI, [symbol]: indicators.rsi } : state.currentRSI,
             })),
-
             telegramConfig: {
                 globalEnabled: true,
                 activeSessions: ['London', 'US', 'Asia'],
@@ -339,7 +339,8 @@ export const useTerminalStore = create<TerminalState>()(
                     }
                 },
             },
-            updateTelegramConfig: (updates) => {
+            isConfigFetched: false,
+            updateTelegramConfig: (updates, skipSync = false) => {
                 set((state) => {
                     const current = state.telegramConfig || {};
                     return {
@@ -352,11 +353,18 @@ export const useTerminalStore = create<TerminalState>()(
                             cooldowns: updates.cooldowns ? { ...(current.cooldowns || {}), ...updates.cooldowns } : (current.cooldowns || {}),
                             timeframes: updates.timeframes ? { ...(current.timeframes || {}), ...updates.timeframes } : (current.timeframes || {}),
                             thresholds: updates.thresholds ? { ...(current.thresholds || {}), ...updates.thresholds } : (current.thresholds || {})
-                        }
+                        },
+                        isConfigFetched: updates.globalEnabled !== undefined || state.isConfigFetched // If we got a real config, mark as fetched
                     };
                 });
-                // Auto-sync with Python bot on every local update (debounced via utility)
-                import('../utils/syncConfig').then(m => m.syncConfigToBot());
+
+                // Only sync if this wasn't an initial load/fetch AND we've already fetched once
+                if (!skipSync) {
+                    const state = useTerminalStore.getState();
+                    if (state.isConfigFetched) {
+                        import('../utils/syncConfig').then(m => m.syncConfigToBot());
+                    }
+                }
             },
 
             addMonitoredSymbol: (symbol: string) => {
@@ -381,7 +389,9 @@ export const useTerminalStore = create<TerminalState>()(
 
                     return { telegramConfig: updatedConfig };
                 });
-                import('../utils/syncConfig').then(m => m.syncConfigToBot());
+                if (useTerminalStore.getState().isConfigFetched) {
+                    import('../utils/syncConfig').then(m => m.syncConfigToBot());
+                }
             },
 
             removeMonitoredSymbol: (symbol: string) => {
@@ -399,7 +409,9 @@ export const useTerminalStore = create<TerminalState>()(
 
                     return { telegramConfig: updatedConfig };
                 });
-                import('../utils/syncConfig').then(m => m.syncConfigToBot());
+                if (useTerminalStore.getState().isConfigFetched) {
+                    import('../utils/syncConfig').then(m => m.syncConfigToBot());
+                }
             }
         }),
         {
@@ -409,6 +421,7 @@ export const useTerminalStore = create<TerminalState>()(
                 telegramConfig: state.telegramConfig,
                 events: state.events,
                 whaleDelta: state.whaleDelta,
+                // Do NOT persist isConfigFetched - always re-fetch on page load
             }),
             // On rehydration, prune events older than 1 hour so the feed stays contextually fresh
             // Also migrate persisted state that may be missing fields (e.g. old deploy on RPi)
