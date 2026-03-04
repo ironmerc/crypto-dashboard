@@ -107,20 +107,22 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <div className={`dashboard-scale min-h-screen w-full bg-[#050505] text-terminal-text p-2 md:p-4 selection:bg-terminal-fg selection:text-black flex flex-col gap-4 ${isMobile ? 'overflow-y-auto' : 'h-screen overflow-hidden'}`}>
+    <div className={`dashboard-scale min-h-screen w-full bg-[#050505] text-terminal-text p-2 md:p-4 selection:bg-terminal-fg selection:text-black flex flex-col gap-4 ${isMobile ? 'overflow-x-hidden overflow-y-auto' : 'h-screen overflow-hidden'}`}>
 
       {/* HEADER */}
-      <header className="flex items-center gap-3 border-b border-terminal-border/50 pb-3 shrink-0">
-        <Terminal className="w-6 h-6 text-terminal-fg animate-pulse" />
-        <h1 className="text-xl font-bold uppercase tracking-widest glow-text">
-          Godmode Futures <span className="text-terminal-muted text-sm ml-2">v2.0</span>
-        </h1>
-        {/* Futures market badge */}
-        <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded border border-terminal-blue/40 bg-terminal-blue/5 text-terminal-blue text-[10px] uppercase tracking-widest font-bold">
-          <Zap size={10} />
-          USDT-M Perp
+      <header className="flex flex-col lg:flex-row lg:items-center gap-3 border-b border-terminal-border/50 pb-3 shrink-0">
+        <div className="flex items-center gap-3">
+          <Terminal className="w-6 h-6 text-terminal-fg animate-pulse shrink-0" />
+          <h1 className="text-xl font-bold uppercase tracking-widest glow-text truncate">
+            Godmode Futures <span className="text-terminal-muted text-sm ml-2 hidden sm:inline">v2.0</span>
+          </h1>
+          {/* Futures market badge */}
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded border border-terminal-blue/40 bg-terminal-blue/5 text-terminal-blue text-[10px] uppercase tracking-widest font-bold shrink-0">
+            <Zap size={10} />
+            USDT-M Perp
+          </div>
         </div>
-        <div className="ml-auto flex items-center gap-2 md:gap-4 text-xs text-terminal-muted font-mono">
+        <div className="lg:ml-auto flex flex-wrap items-center gap-2 md:gap-4 text-xs text-terminal-muted font-mono">
           {/* Telegram Egress Status */}
           <div className="hidden md:flex items-center gap-2 px-2 py-1 rounded bg-[#0a0a0a] border border-terminal-border/30" title="Master Telegram Egress Toggle Status">
             <span className={`w-2 h-2 rounded-full ${(telegramConfig && telegramConfig.globalEnabled) ? 'bg-terminal-green shadow-[0_0_8px_#00ff41]' : 'bg-red-500 shadow-[0_0_8px_#ef4444]'}`}></span>
@@ -148,22 +150,23 @@ export default function Dashboard() {
           </Link>
 
           {/* Global Timeframe Selector */}
-          <div className="flex bg-[#0a0a0a] border border-terminal-border/30 rounded overflow-hidden shadow-lg p-0.5">
+          <div className="flex flex-wrap bg-[#0a0a0a] border border-terminal-border/30 rounded shadow-lg p-0.5 max-w-full overflow-x-auto scrollbar-none">
             {['1m', '5m', '15m', '30m', '1h', '4h', '12h', '1d', '1w', '1M'].map(t => (
               <button
                 key={t}
                 onClick={() => useTerminalStore.getState().setGlobalInterval(t)}
-                className={`px-2 py-1 rounded transition-colors text-[10px] ${globalInterval === t ? 'bg-[#fbbf24] text-black font-bold shadow-[0_0_10px_rgba(251,191,36,0.5)]' : 'text-terminal-text/50 hover:text-white hover:bg-white/10'}`}
+                className={`px-2 py-1 rounded transition-colors text-[10px] shrink-0 ${globalInterval === t ? 'bg-[#fbbf24] text-black font-bold shadow-[0_0_10px_rgba(251,191,36,0.5)]' : 'text-terminal-text/50 hover:text-white hover:bg-white/10'}`}
               >
                 {t}
               </button>
             ))}
           </div>
-          <span className="flex items-center gap-2">
+          <span className="flex items-center gap-2 shrink-0">
             <span className="w-2 h-2 rounded-full bg-terminal-fg shadow-[0_0_8px_#00ff41]"></span>
-            DATALINK ENCRYPTED
+            <span className="hidden sm:inline">DATALINK ENCRYPTED</span>
+            <span className="sm:hidden">ENCRYPTED</span>
           </span>
-          <span className="border border-terminal-border/30 px-2 py-1 rounded bg-[#0a0a0a]">
+          <span className="border border-terminal-border/30 px-2 py-1 rounded bg-[#0a0a0a] shrink-0">
             {new Date().toISOString().split('T')[0]}
           </span>
         </div>

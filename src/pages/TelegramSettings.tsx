@@ -174,20 +174,21 @@ export default function TelegramSettings() {
     return (
         <div className="h-screen bg-slate-950 text-slate-300 font-mono flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="flex-none p-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center z-10">
-                <div className="flex items-center space-x-4">
-                    <ShieldAlert className="w-5 h-5 text-indigo-400" />
-                    <h1 className="text-xl font-bold text-white tracking-tight">Telegram Operations</h1>
+            <div className="flex-none p-4 border-b border-slate-800 bg-slate-900/50 flex flex-col sm:flex-row sm:justify-between items-start sm:items-center gap-4 sm:gap-0 z-10 w-full">
+                <div className="flex items-center space-x-3 w-full sm:w-auto">
+                    <ShieldAlert className="w-5 h-5 text-indigo-400 shrink-0" />
+                    <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight truncate">Telegram Operations</h1>
                 </div>
-                <div className="flex items-center space-x-4">
-                    <Link to="/" className="flex items-center space-x-2 text-slate-400 hover:text-white transition-colors text-sm bg-slate-800/50 px-3 py-1.5 rounded-md border border-slate-700 hover:border-slate-500">
-                        <ArrowLeft className="w-4 h-4" />
-                        <span>Back to Dashboard</span>
+                <div className="flex items-center w-full sm:w-auto justify-end">
+                    <Link to="/" className="flex items-center space-x-2 text-slate-400 hover:text-white transition-colors text-sm bg-slate-800/50 px-3 py-1.5 rounded-md border border-slate-700 hover:border-slate-500 whitespace-nowrap">
+                        <ArrowLeft className="w-4 h-4 shrink-0" />
+                        <span className="hidden sm:inline">Back to Dashboard</span>
+                        <span className="sm:hidden">Back</span>
                     </Link>
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-3 sm:p-6 w-full custom-scrollbar">
                 {!config || !config.thresholds ? (
                     <div className="max-w-6xl mx-auto flex flex-col items-center justify-center h-64 bg-slate-900/50 rounded-xl border border-dashed border-slate-800">
                         <ShieldAlert className="w-12 h-12 text-terminal-red mb-4 opacity-50" />
@@ -247,11 +248,11 @@ export default function TelegramSettings() {
                                             onChange={(e) => setNewSymbol(e.target.value)}
                                             onKeyDown={(e) => e.key === 'Enter' && addSymbol()}
                                             placeholder="ETHUSDT..."
-                                            className="flex-1 bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-300 focus:border-indigo-500 focus:outline-none"
+                                            className="flex-1 min-w-0 bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-300 focus:border-indigo-500 focus:outline-none"
                                         />
                                         <button
                                             onClick={addSymbol}
-                                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold rounded transition-colors"
+                                            className="px-3 py-1.5 shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold rounded transition-colors"
                                         >
                                             ADD
                                         </button>
@@ -263,9 +264,9 @@ export default function TelegramSettings() {
                                             </div>
                                         ) : (
                                             config.monitoredSymbols.map(s => (
-                                                <div key={s} className="flex items-center space-x-1.5 bg-slate-800 border border-slate-700 px-2 py-1 rounded text-[10px] text-slate-300 group/tag">
-                                                    <span>{s}</span>
-                                                    <button onClick={() => removeSymbol(s)} className="text-slate-500 hover:text-red-400 transition-colors">
+                                                <div key={s} className="flex items-center space-x-1.5 bg-slate-800 border border-slate-700 px-2 py-1 rounded text-[10px] text-slate-300 group/tag break-all max-w-full">
+                                                    <span className="truncate">{s}</span>
+                                                    <button onClick={() => removeSymbol(s)} className="text-slate-500 hover:text-red-400 transition-colors shrink-0">
                                                         <Trash2 className="w-3 h-3" />
                                                     </button>
                                                 </div>
@@ -281,12 +282,12 @@ export default function TelegramSettings() {
                                     <Settings className="w-4 h-4 mr-2" /> Global Routing
                                 </h2>
                                 <div className="space-y-5">
-                                    <div className="flex items-center justify-between p-3 bg-slate-950 border border-slate-800 rounded">
-                                        <div className="flex items-center space-x-3">
-                                            <div className={`w-2 h-2 rounded-full ${config.globalEnabled ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-slate-600'}`}></div>
-                                            <span className="text-xs font-bold text-slate-200">MASTER TOGGLE</span>
+                                    <div className="flex items-center justify-between p-3 bg-slate-950 border border-slate-800 rounded flex-wrap gap-3">
+                                        <div className="flex items-center space-x-3 min-w-0">
+                                            <div className={`w-2 h-2 shrink-0 rounded-full ${config.globalEnabled ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-slate-600'}`}></div>
+                                            <span className="text-xs font-bold text-slate-200 truncate">MASTER TOGGLE</span>
                                         </div>
-                                        <label className="relative inline-flex items-center cursor-pointer">
+                                        <label className="relative inline-flex items-center cursor-pointer shrink-0">
                                             <input
                                                 type="checkbox"
                                                 className="sr-only peer"
@@ -299,9 +300,9 @@ export default function TelegramSettings() {
 
 
 
-                                    <div className="pt-2 border-t border-slate-800/50 flex items-center justify-between">
-                                        <span className="text-xs text-slate-400">Alert on State Change</span>
-                                        <label className="relative inline-flex items-center cursor-pointer">
+                                    <div className="pt-2 border-t border-slate-800/50 flex items-center justify-between gap-3">
+                                        <span className="text-xs text-slate-400 break-words flex-1">Alert on State Change</span>
+                                        <label className="relative inline-flex items-center cursor-pointer shrink-0">
                                             <input
                                                 type="checkbox"
                                                 className="sr-only peer"
@@ -357,14 +358,14 @@ export default function TelegramSettings() {
 
                             {/* Dynamic Thresholds */}
                             <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-5">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
+                                    <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center shrink-0">
                                         <Sliders className="w-4 h-4 mr-2" /> Thresholds
                                     </h2>
                                     <select
                                         value={editingSymbol}
                                         onChange={(e) => setEditingSymbol(e.target.value)}
-                                        className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[10px] text-indigo-400 font-bold focus:outline-none"
+                                        className="bg-slate-950 border border-slate-800 rounded px-2 py-1.5 sm:py-1 text-[10px] sm:text-xs text-indigo-400 font-bold focus:outline-none w-full sm:w-auto overflow-hidden text-ellipsis"
                                     >
                                         <option value="global">GLOBAL DEFAULTS</option>
                                         {(config.monitoredSymbols || []).map(s => (
@@ -498,24 +499,24 @@ export default function TelegramSettings() {
                                                         </div>
                                                         <div className="grid grid-cols-1 gap-2.5">
                                                             {group.items.map(cat => (
-                                                                <div key={cat.id} className="flex items-center justify-between p-3 bg-slate-900/40 border border-slate-800/60 hover:border-slate-700/60 hover:bg-slate-800/30 rounded-lg transition-all group/card">
-                                                                    <div className="flex items-center space-x-3 min-w-0 flex-1">
+                                                                <div key={cat.id} className="flex items-center justify-between p-2 sm:p-3 bg-slate-900/40 border border-slate-800/60 hover:border-slate-700/60 hover:bg-slate-800/30 rounded-lg transition-all group/card overflow-hidden">
+                                                                    <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1 mr-2">
                                                                         <input
                                                                             type="checkbox"
                                                                             checked={config.categories?.[cat.id] ?? true}
                                                                             onChange={(e) => updateConfig({ categories: { [cat.id]: e.target.checked } })}
                                                                             className="w-4 h-4 rounded border-slate-700 text-indigo-500 focus:ring-indigo-500 bg-slate-950 cursor-pointer shrink-0"
                                                                         />
-                                                                        <div className="flex items-center min-w-0 space-x-2">
+                                                                        <div className="flex items-center min-w-0 space-x-1 sm:space-x-2 overflow-hidden">
                                                                             <span className="text-sm shrink-0">{cat.icon}</span>
-                                                                            <span className="text-sm font-medium text-slate-200">{cat.label}</span>
+                                                                            <span className="text-[11px] sm:text-sm font-medium text-slate-200 truncate">{cat.label}</span>
                                                                         </div>
                                                                     </div>
-                                                                    <div className="flex items-center pl-2 shrink-0">
+                                                                    <div className="flex items-center shrink-0">
                                                                         <select
                                                                             value={config.cooldowns?.[cat.id] || cat.defaultCd}
                                                                             onChange={(e) => updateConfig({ cooldowns: { [cat.id]: parseInt(e.target.value) } })}
-                                                                            className="bg-slate-950 border border-slate-700/50 rounded-md px-1.5 py-0.5 text-[10px] text-slate-400 focus:outline-none hover:border-slate-600 transition-colors h-6"
+                                                                            className="bg-slate-950 border border-slate-700/50 rounded-md px-1 sm:px-1.5 py-0.5 text-[10px] text-slate-400 focus:outline-none hover:border-slate-600 transition-colors h-6"
                                                                         >
                                                                             <option value="60">1m CD</option>
                                                                             <option value="300">5m CD</option>
@@ -610,14 +611,14 @@ export default function TelegramSettings() {
 
                                             return (
                                                 <div key={i} className="bg-slate-950 border border-slate-800 rounded p-3 text-sm hover:border-slate-700 transition-colors">
-                                                    <div className="flex justify-between items-start mb-2">
-                                                        <div className="flex items-center space-x-2">
-                                                            <span className={`text-[10px] px-1.5 py-0.5 rounded border uppercase font-bold ${badgeColor}`}>
+                                                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start mb-2 gap-2 sm:gap-0">
+                                                        <div className="flex items-center flex-wrap gap-2">
+                                                            <span className={`text-[10px] px-1.5 py-0.5 rounded border uppercase font-bold shrink-0 ${badgeColor}`}>
                                                                 {item.category}
                                                             </span>
-                                                            <span className="font-bold text-slate-300">{item.symbol}</span>
+                                                            <span className="font-bold text-slate-300 break-all">{item.symbol}</span>
                                                         </div>
-                                                        <span className="text-xs text-slate-500 font-mono">
+                                                        <span className="text-xs text-slate-500 font-mono whitespace-nowrap">
                                                             {dateStr} {timeStr}
                                                         </span>
                                                     </div>
@@ -637,7 +638,12 @@ export default function TelegramSettings() {
             {/* Scoped CSS for scrollbar inside the ledger */}
             <style>{`
                 .custom-scrollbar::-webkit-scrollbar {
-                    width: 6px;
+                    width: 4px;
+                }
+                @media (min-width: 640px) {
+                    .custom-scrollbar::-webkit-scrollbar {
+                        width: 6px;
+                    }
                 }
                 .custom-scrollbar::-webkit-scrollbar-track {
                     background: transparent;
