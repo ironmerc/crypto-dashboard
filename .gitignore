@@ -24,3 +24,4 @@ dist-ssr
 *.sw?
 .env
 .agents/rules/rules.md
+telegram-bot/config.json

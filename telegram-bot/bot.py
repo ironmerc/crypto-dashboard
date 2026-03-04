@@ -51,13 +51,30 @@ DEFAULT_CONFIG = {
             "rsiOversold": 30,
             "emaSeparationPct": 0.15
         }
-    }
+    },
+    "monitoredTimeframes": ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d"],
+    "timeframes": {}
 }
 
 bot_config = DEFAULT_CONFIG.copy()
 
 def load_config():
     global bot_config
+    
+    # If config.json doesn't exist, try to copy it from config.json.example
+    if not os.path.exists(CONFIG_FILE):
+        example_path = CONFIG_FILE + ".example"
+        if os.path.exists(example_path):
+            try:
+                import shutil
+                shutil.copyfile(example_path, CONFIG_FILE)
+                logger.info(f"Created {CONFIG_FILE} from {example_path}")
+            except Exception as e:
+                logger.error(f"Failed to copy config.json.example: {e}")
+        else:
+            logger.warning(f"Neither {CONFIG_FILE} nor {example_path} found. Using defaults.")
+            save_config() # Create initial config.json from DEFAULT_CONFIG
+
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, 'r') as f:
