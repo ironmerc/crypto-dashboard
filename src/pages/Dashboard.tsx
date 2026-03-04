@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels';
-import { Terminal, Activity, ArrowUpRight, ArrowDownRight, Layers, Settings } from 'lucide-react';
+import { Terminal, Activity, ArrowUpRight, ArrowDownRight, Layers, Settings, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useBinanceTickers } from '../hooks/useBinanceWebSocket';
 import { useFearGreedIndex } from '../hooks/useFearGreedIndex';
@@ -29,8 +29,6 @@ export default function Dashboard() {
     }
   }, [monitoredSymbols, localActiveSymbol]);
 
-  const addMonitoredSymbol = useTerminalStore((state) => state.addMonitoredSymbol);
-  const [quickAdd, setQuickAdd] = useState('');
 
   // Current Spot Tickers for WatchList
   const tickers = useBinanceTickers(monitoredSymbols);
@@ -117,12 +115,27 @@ export default function Dashboard() {
         <h1 className="text-xl font-bold uppercase tracking-widest glow-text">
           Godmode Futures <span className="text-terminal-muted text-sm ml-2">v2.0</span>
         </h1>
+        {/* Futures market badge */}
+        <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded border border-terminal-blue/40 bg-terminal-blue/5 text-terminal-blue text-[10px] uppercase tracking-widest font-bold">
+          <Zap size={10} />
+          USDT-M Perp
+        </div>
         <div className="ml-auto flex items-center gap-2 md:gap-4 text-xs text-terminal-muted font-mono">
           {/* Telegram Egress Status */}
           <div className="hidden md:flex items-center gap-2 px-2 py-1 rounded bg-[#0a0a0a] border border-terminal-border/30" title="Master Telegram Egress Toggle Status">
             <span className={`w-2 h-2 rounded-full ${(telegramConfig && telegramConfig.globalEnabled) ? 'bg-terminal-green shadow-[0_0_8px_#00ff41]' : 'bg-red-500 shadow-[0_0_8px_#ef4444]'}`}></span>
             <span className="font-bold tracking-wider text-[10px]">{(telegramConfig && telegramConfig.globalEnabled) ? 'TG: ON' : 'TG: OFF'}</span>
           </div>
+
+          {/* Dashboard Settings Link */}
+          <Link
+            to="/settings"
+            className="flex items-center gap-2 px-3 py-1 rounded bg-terminal-border/20 text-terminal-muted hover:text-terminal-green hover:bg-terminal-green/10 transition-all border border-terminal-border/30 hover:border-terminal-green/50 text-[10px] uppercase font-bold tracking-wider"
+            title="Dashboard Settings"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span>Settings</span>
+          </Link>
 
           {/* Telegram Bot Settings Link */}
           <Link
@@ -297,25 +310,8 @@ export default function Dashboard() {
                 </PanelResizeHandle>
 
                 <Panel defaultSize={45} minSize={20} className="panel flex flex-col overflow-hidden mb-4">
-                  <h2 className="text-[10px] uppercase text-terminal-muted font-bold tracking-widest mb-3 flex items-center justify-between border-b border-terminal-border/30 pb-2 shrink-0">
-                    <div className="flex items-center gap-2">
-                      <Layers className="w-3 h-3" /> Watchlist
-                    </div>
-                    <div className="flex items-center gap-1 group/add">
-                      <input
-                        type="text"
-                        placeholder="ADD..."
-                        value={quickAdd}
-                        onChange={(e) => setQuickAdd(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && quickAdd) {
-                            addMonitoredSymbol(quickAdd);
-                            setQuickAdd('');
-                          }
-                        }}
-                        className="bg-transparent border-none outline-none text-[9px] w-12 focus:w-20 transition-all font-mono text-terminal-fg placeholder:text-terminal-border"
-                      />
-                    </div>
+                  <h2 className="text-[10px] uppercase text-terminal-muted font-bold tracking-widest mb-3 flex items-center border-b border-terminal-border/30 pb-2 shrink-0">
+                    <Layers className="w-3 h-3 mr-2" /> Futures Watchlist
                   </h2>
                   <div className="flex-grow overflow-y-auto pr-1 space-y-1 scrollbar-thin">
                     {monitoredSymbols.map((sym) => {
