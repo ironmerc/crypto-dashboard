@@ -124,7 +124,7 @@ export default function Dashboard() {
         </div>
         <div className="lg:ml-auto flex flex-wrap items-center gap-2 md:gap-4 text-xs text-terminal-muted font-mono">
           {/* Telegram Egress Status */}
-          <div className="hidden md:flex items-center gap-2 px-2 py-1 rounded bg-[#0a0a0a] border border-terminal-border/30" title="Master Telegram Egress Toggle Status">
+          <div className="flex items-center gap-2 px-2 py-1 rounded bg-[#0a0a0a] border border-terminal-border/30 shrink-0" title="Master Telegram Egress Toggle Status">
             <span className={`w-2 h-2 rounded-full ${(telegramConfig && telegramConfig.globalEnabled) ? 'bg-terminal-green shadow-[0_0_8px_#00ff41]' : 'bg-red-500 shadow-[0_0_8px_#ef4444]'}`}></span>
             <span className="font-bold tracking-wider text-[10px]">{(telegramConfig && telegramConfig.globalEnabled) ? 'TG: ON' : 'TG: OFF'}</span>
           </div>
