@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 WATCH_SYMBOLS = ["BTCUSDT", "ETHUSDT"]
 BINANCE_FUTURES_WS = "wss://fstream.binance.com/ws/"
 BINANCE_API = "https://fapi.binance.com"
+ALL_TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d"]
 
 class MarketEngine:
     def __init__(self, bot_url="http://localhost:8888"):
@@ -59,7 +60,7 @@ class MarketEngine:
 
         # Check timeframe toggle if applicable
         if tf:
-            enabled_tfs = self.config.get("timeframes", {}).get(category, ["5m", "15m", "1h", "4h"])
+            enabled_tfs = self.config.get("timeframes", {}).get(category, ALL_TIMEFRAMES)
             if tf not in enabled_tfs:
                 return
 
@@ -128,9 +129,10 @@ class MarketEngine:
                     self.state[s] = {
                         "regime": {}, "volatility": {}, "flow": {},
                         "execution": "Unknown", "levels": {}, "last_price": 0,
-                        "klines": {"15m": [], "1h": [], "4h": []},
-                        "rsi": {"15m": 50, "1h": 50, "4h": 50},
-                        "oi_history": [], "spread_history": []
+                        "klines": {tf: [] for tf in ALL_TIMEFRAMES},
+                        "rsi": {tf: 50 for tf in ALL_TIMEFRAMES},
+                        "oi_history": [], "spread_history": [],
+                        "summary_hash": {}
                     }
 
             streams = []
@@ -139,12 +141,12 @@ class MarketEngine:
                 streams.extend([
                     f"{sym}@aggTrade",
                     f"{sym}@forceOrder",
-                    f"{sym}@kline_15m",
-                    f"{sym}@kline_1h",
-                    f"{sym}@kline_4h",
                     f"{sym}@bookTicker",
                     f"{sym}@openInterest"
                 ])
+                # Add all 12 kline intervals
+                for tf in ALL_TIMEFRAMES:
+                    streams.append(f"{sym}@kline_{tf}")
             
             ws_url = f"{BINANCE_FUTURES_WS}{'/'.join(streams)}"
         

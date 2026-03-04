@@ -4,6 +4,8 @@ import { useTerminalStore } from '../store/useTerminalStore';
 import { ShieldAlert, ArrowLeft, Activity, Clock, Bell, Settings, Shield, Trash2, Sliders, Zap, Layers } from 'lucide-react';
 import { fetchConfigFromBot } from '../utils/syncConfig';
 
+const ALL_TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d"];
+
 interface BotStatus {
     status: 'online' | 'offline' | 'unreachable';
     bot_username?: string;
@@ -532,9 +534,9 @@ export default function TelegramSettings() {
                                                                     </div>
 
                                                                     {(cat as any).hasTimeframes && (config.categories?.[cat.id] ?? true) && (
-                                                                        <div className="flex flex-wrap items-center gap-1.5 pl-7">
-                                                                            {['5m', '15m', '1h', '4h'].map(tf => {
-                                                                                const enabledTfs = config.timeframes?.[cat.id] || ['5m', '15m', '1h', '4h'];
+                                                                        <div className="flex flex-wrap items-center gap-1.5 pl-7 mt-1.5">
+                                                                            {ALL_TIMEFRAMES.map(tf => {
+                                                                                const enabledTfs = config.timeframes?.[cat.id] || ALL_TIMEFRAMES;
                                                                                 const isChecked = enabledTfs.includes(tf);
                                                                                 return (
                                                                                     <button
@@ -546,8 +548,8 @@ export default function TelegramSettings() {
                                                                                             updateConfig({ timeframes: { [cat.id]: nextTfs } });
                                                                                         }}
                                                                                         className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all ${isChecked
-                                                                                                ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400'
-                                                                                                : 'bg-slate-950/40 border-slate-800 text-slate-600 underline decoration-slate-800'
+                                                                                            ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400'
+                                                                                            : 'bg-slate-950/40 border-slate-800 text-slate-600 underline decoration-slate-800'
                                                                                             }`}
                                                                                     >
                                                                                         {tf.toUpperCase()}
