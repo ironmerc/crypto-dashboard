@@ -408,10 +408,30 @@ export const useTerminalStore = create<TerminalState>()(
                 whaleDelta: state.whaleDelta,
             }),
             // On rehydration, prune events older than 1 hour so the feed stays contextually fresh
+            // Also migrate persisted state that may be missing fields (e.g. old deploy on RPi)
             onRehydrateStorage: () => (state) => {
                 if (state) {
                     const oneHourAgo = Date.now() - 60 * 60 * 1000;
-                    state.events = state.events.filter(e => e.timestamp > oneHourAgo);
+                    state.events = state.events?.filter(e => e.timestamp > oneHourAgo) ?? [];
+
+                    // Migration: ensure monitoredSymbols is always a non-empty array
+                    if (
+                        !state.telegramConfig ||
+                        !Array.isArray(state.telegramConfig.monitoredSymbols) ||
+                        state.telegramConfig.monitoredSymbols.length === 0
+                    ) {
+                        state.telegramConfig = {
+                            ...(state.telegramConfig || {}),
+                            monitoredSymbols: ['BTCUSDT', 'ETHUSDT'],
+                            activeSessions: state.telegramConfig?.activeSessions ?? ['London', 'US', 'Asia'],
+                            globalEnabled: state.telegramConfig?.globalEnabled ?? true,
+                            alertOnStateChange: state.telegramConfig?.alertOnStateChange ?? true,
+                            quietHours: state.telegramConfig?.quietHours ?? { enabled: false, start: '22:00', end: '06:00' },
+                            categories: state.telegramConfig?.categories ?? {},
+                            cooldowns: state.telegramConfig?.cooldowns ?? {},
+                            thresholds: state.telegramConfig?.thresholds ?? { global: { whaleMinAmount: 500000, liquidationMinAmount: 1000000, oiSpikePercentage: 1.5, fundingExtremeRate: 0.05, atrExpansionRatio: 1.3, whaleMomentumDelta: 5000000, rvolMultiplier: 3.0, rsiOverbought: 70, rsiOversold: 30, emaSeparationPct: 0.15 } },
+                        };
+                    }
                 }
             },
         }

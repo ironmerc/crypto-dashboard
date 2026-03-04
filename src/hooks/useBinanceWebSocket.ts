@@ -13,7 +13,8 @@ export interface TickerData {
 
 export function useBinanceTickers(symbols: string[]) {
     const [tickers, setTickers] = useState<Record<string, TickerData>>({});
-    const streamName = symbols.map(s => `${s.toLowerCase()}@ticker`).join('/');
+    const safeSymbols = symbols && symbols.length > 0 ? symbols : ['BTCUSDT'];
+    const streamName = safeSymbols.map(s => `${s.toLowerCase()}@ticker`).join('/');
 
     const { lastJsonMessage } = useWebSocket(`${BINANCE_WS_URL}/${streamName}`, {
         shouldReconnect: () => true,
