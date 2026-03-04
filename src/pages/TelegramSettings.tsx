@@ -257,7 +257,7 @@ export default function TelegramSettings() {
                                         </button>
                                     </div>
                                     <div className="flex flex-wrap gap-2">
-                                        {config.monitoredSymbols.length === 0 ? (
+                                        {(!config.monitoredSymbols || config.monitoredSymbols.length === 0) ? (
                                             <div className="w-full py-4 text-center border border-dashed border-slate-800 rounded-lg">
                                                 <span className="text-[10px] text-slate-500 italic">No assets monitored. Add one above (e.g. BTCUSDT)</span>
                                             </div>
@@ -290,7 +290,7 @@ export default function TelegramSettings() {
                                             <input
                                                 type="checkbox"
                                                 className="sr-only peer"
-                                                checked={config.globalEnabled}
+                                                checked={config.globalEnabled || false}
                                                 onChange={(e) => updateConfig({ globalEnabled: e.target.checked })}
                                             />
                                             <div className="w-10 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
@@ -305,7 +305,7 @@ export default function TelegramSettings() {
                                             <input
                                                 type="checkbox"
                                                 className="sr-only peer"
-                                                checked={config.alertOnStateChange}
+                                                checked={config.alertOnStateChange || false}
                                                 onChange={(e) => updateConfig({ alertOnStateChange: e.target.checked })}
                                             />
                                             <div className="w-8 h-4 bg-slate-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-500"></div>
@@ -367,7 +367,7 @@ export default function TelegramSettings() {
                                         className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[10px] text-indigo-400 font-bold focus:outline-none"
                                     >
                                         <option value="global">GLOBAL DEFAULTS</option>
-                                        {config.monitoredSymbols.map(s => (
+                                        {(config.monitoredSymbols || []).map(s => (
                                             <option key={s} value={s}>{s} OVERRIDE</option>
                                         ))}
                                     </select>
@@ -382,8 +382,9 @@ export default function TelegramSettings() {
                                         { id: 'rsiOverbought', label: 'RSI Overbought', step: 1, min: 60, max: 90 },
                                         { id: 'rsiOversold', label: 'RSI Oversold', step: 1, min: 10, max: 40 },
                                     ].map(t => {
-                                        const symbolThresholds = config.thresholds[editingSymbol] || config.thresholds.global;
-                                        const value = (symbolThresholds as any)[t.id];
+                                        const safeThresholds = config.thresholds || { global: {} };
+                                        const symbolThresholds = safeThresholds[editingSymbol] || safeThresholds.global || {};
+                                        const value = (symbolThresholds as any)[t.id] || 0;
 
                                         const formatValue = (val: number, id: string) => {
                                             if (id.includes('Amount')) {
@@ -409,9 +410,9 @@ export default function TelegramSettings() {
                                                     step={t.step}
                                                     value={value}
                                                     onChange={(e) => {
-                                                        const nextThresholds = { ...config.thresholds };
+                                                        const nextThresholds = { ...safeThresholds };
                                                         nextThresholds[editingSymbol] = {
-                                                            ...(nextThresholds[editingSymbol] || config.thresholds.global),
+                                                            ...(nextThresholds[editingSymbol] || safeThresholds.global),
                                                             [t.id]: parseFloat(e.target.value)
                                                         };
                                                         updateConfig({ thresholds: nextThresholds });
@@ -591,7 +592,7 @@ export default function TelegramSettings() {
                                 </div>
 
                                 <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-                                    {history.length === 0 ? (
+                                    {(!history || history.length === 0) ? (
                                         <div className="h-full flex flex-col items-center justify-center text-slate-600 text-sm">
                                             <Trash2 className="w-8 h-8 mb-2 opacity-50" />
                                             <span>No egress logs found</span>
