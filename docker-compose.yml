@@ -16,5 +16,5 @@ services:
     ports:
       - "8888:8888"
     volumes:
-      - ./telegram-bot/config.json:/app/config.json
+      - ./telegram-bot:/app
     restart: unless-stopped
