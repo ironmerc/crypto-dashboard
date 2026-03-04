@@ -384,35 +384,15 @@ export function CandleChart({ symbol }: CandleChartProps) {
         }
     }, [sessionPoc, sessionVah, sessionVal]);
 
-    // 4. Draw Liquidation Clusters
+    // 4. Draw Liquidation Clusters - REMOVED (User Request: "remove is long liq spam")
     useEffect(() => {
         if (!seriesRef.current) return;
 
-        // Clear old liquidations
+        // Ensure lines are cleared even if the effect is disabled
         liqLinesRef.current.forEach(line => {
             try { seriesRef.current?.removePriceLine(line); } catch (e) { }
         });
         liqLinesRef.current = [];
-
-        if (liquidations.length === 0) return;
-
-        // Show top 20 largest liquidations to form visual memory "pools" or "clusters"
-        const topLiqs = [...liquidations].sort((a, b) => b.value - a.value).slice(0, 20);
-
-        topLiqs.forEach(liq => {
-            const isShortLiq = liq.side === 'BUY'; // Short got squeezed (above price) -> green
-
-            const line = seriesRef.current?.createPriceLine({
-                price: liq.price,
-                color: isShortLiq ? 'rgba(0, 204, 51, 0.8)' : 'rgba(255, 51, 51, 0.8)',
-                lineWidth: 2,
-                lineStyle: 0, // Solid (0 is Solid)
-                axisLabelVisible: true,
-                title: isShortLiq ? '💦 SHORT LIQ' : '💦 LONG LIQ',
-            });
-            if (line) liqLinesRef.current.push(line);
-        });
-
     }, [liquidations]);
 
     // 5. Draw Custom Price Alerts
