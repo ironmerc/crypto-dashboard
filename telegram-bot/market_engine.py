@@ -149,6 +149,15 @@ class MarketEngine:
                 async with websockets.connect(ws_url) as ws:
                     logger.info(f"Connected to Binance MTF Stream: {len(streams)} feeds")
                     while True:
+                        # Check for instant reload signal from bot.py
+                        if os.path.exists("reload.flag"):
+                            try:
+                                os.remove("reload.flag")
+                            except OSError:
+                                pass
+                            await self.get_bot_config()
+                            logger.info("Instant reload triggered by flag file.")
+
                         # Check if monitored symbols changed
                         if self.config.get("monitoredSymbols") != self.monitored_symbols:
                             logger.info("Monitored symbols changed. Rebuilding WebSocket connection...")
@@ -347,10 +356,10 @@ class MarketEngine:
         )
 
     async def periodic_config_sync(self):
-        """Keeps in-memory config fresh."""
+        """Keeps in-memory config fresh every 10s."""
         while True:
             await self.get_bot_config()
-            await asyncio.sleep(2)
+            await asyncio.sleep(10)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

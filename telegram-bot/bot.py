@@ -212,6 +212,12 @@ async def handle_post_config(request):
         data = await request.json()
         deep_update(bot_config, data)
         save_config()
+        # Signal market engine to reload config immediately
+        try:
+            with open("reload.flag", "w") as f:
+                f.write("1")
+        except Exception as e:
+            logger.warning(f"Could not write reload flag: {e}")
         logger.info("Bot configuration updated from frontend via deep merge.")
         return web.json_response({"status": "success", "config": bot_config})
     except Exception as e:
