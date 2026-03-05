@@ -22,6 +22,18 @@ const isWithinQuietHours = (startStr: string, endStr: string) => {
     }
 };
 
+// Sessions (UTC)
+// Asia: 00:00 - 08:00
+// London: 08:00 - 16:00
+// US: 13:00 - 21:00 (overlaps with London)
+export const getCurrentSession = (): string => {
+    const hours = new Date().getUTCHours();
+    if (hours >= 13 && hours < 21) return 'US';
+    if (hours >= 8 && hours < 16) return 'London';
+    if (hours >= 0 && hours < 8) return 'Asia';
+    return 'Off-Hours';
+};
+
 // Helper to optionally send Telegram notifications
 export const sendTelegramAlert = async (title: string, message: string, alertType: string, cooldownSecs: number, categoryKey: string) => {
     const state = useTerminalStore.getState();
@@ -53,7 +65,7 @@ export const sendTelegramAlert = async (title: string, message: string, alertTyp
                 message: `<b>🚨 ${title}</b>\n\n${message}`,
                 type: alertType,
                 severity: "warning",
-                symbol: title.split(']')[0].replace('[', ''),
+                symbol: title.includes(']') ? title.split(']')[0].replace('[', '').trim() : title.split(' ')[0].trim(),
                 cooldown: cooldownSecs,
                 category: categoryKey
             })
