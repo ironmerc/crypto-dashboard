@@ -7,8 +7,13 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 
-# Copy the rest of the application files and build
+# Copy the rest of the application files
 COPY . .
+
+# Run tests - ensuring build only succeeds if tests pass in the container environment
+RUN npm run test -- --run
+
+# Build the application
 RUN npm run build
 
 # Production Stage - Nginx

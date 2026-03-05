@@ -1,7 +1,6 @@
-// @ts-nocheck
 import { useEffect, useRef, useMemo, useState } from 'react';
 import { createChart, ColorType, CandlestickSeries, LineSeries } from 'lightweight-charts';
-import type { IChartApi, ISeriesApi } from 'lightweight-charts';
+import type { IChartApi, ISeriesApi, IPriceLine } from 'lightweight-charts';
 import useWebSocket from 'react-use-websocket';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { calculateEMA, calculateVWAP, calculateRSI, calculateATR, calculateSMA } from '../utils/indicators';
@@ -10,22 +9,31 @@ interface CandleChartProps {
     symbol: string; // e.g., 'BTCUSDT'
 }
 
+interface KlineData {
+    time: number;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+}
+
 export function CandleChart({ symbol }: CandleChartProps) {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
     const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
-    const pocLineRef = useRef<any>(null);
-    const vahLineRef = useRef<any>(null);
-    const valLineRef = useRef<any>(null);
-    const liqLinesRef = useRef<any[]>([]);
-    const alertLinesRef = useRef<any[]>([]);
+    const pocLineRef = useRef<IPriceLine | null>(null);
+    const vahLineRef = useRef<IPriceLine | null>(null);
+    const valLineRef = useRef<IPriceLine | null>(null);
+    const liqLinesRef = useRef<IPriceLine[]>([]);
+    const alertLinesRef = useRef<IPriceLine[]>([]);
 
     // Indicator Series Refs
     const ema21SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const ema50SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const vwapSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const rsiSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
-    const klinesDataRef = useRef<any[]>([]);
+    const klinesDataRef = useRef<KlineData[]>([]);
 
     // Indicator States for HUD
     const [latestAtr, setLatestAtr] = useState<number | null>(null);
@@ -37,13 +45,11 @@ export function CandleChart({ symbol }: CandleChartProps) {
         isSettingAlertRef.current = isSettingAlert;
     }, [isSettingAlert]);
 
-    const fundingRate = useTerminalStore(state => state.fundingRate[symbol]);
-    const openInterest = useTerminalStore(state => state.openInterest[symbol]);
     const oiHistory = useTerminalStore(state => state.oiHistory[symbol]);
-
     const globalInterval = useTerminalStore(state => state.globalInterval);
 
     const sessionPoc = useTerminalStore(state => state.sessionPoc[symbol]);
+    const fundingRate = useTerminalStore((state) => state.fundingRate[symbol]);
     const sessionVah = useTerminalStore(state => state.sessionVah[symbol]);
     const sessionVal = useTerminalStore(state => state.sessionVal[symbol]);
     // Fix infinite loop: Zustand selector must return a stable reference
@@ -100,13 +106,8 @@ export function CandleChart({ symbol }: CandleChartProps) {
             borderVisible: false,
             wickUpColor: '#00cc33',
             wickDownColor: '#ff3333',
-            autoscaleInfoProvider: (original) => {
+            autoscaleInfoProvider: (original: () => any) => {
                 const res = original();
-                if (res !== null && res.priceRange !== null) {
-                    // Get current price from the last candle close (or you could use store)
-                    // But we don't have direct access here without a ref.
-                    // Returning null falls back to default.
-                }
                 return res;
             }
         });
@@ -155,7 +156,7 @@ export function CandleChart({ symbol }: CandleChartProps) {
 
                 if (cdata.length > 0 && seriesRef.current) {
                     klinesDataRef.current = cdata;
-                    seriesRef.current.setData(cdata);
+                    seriesRef.current.setData(cdata as any);
 
                     // Compute Indicators on history
                     const closes = cdata.map((d: any) => d.close);
@@ -213,7 +214,7 @@ export function CandleChart({ symbol }: CandleChartProps) {
                         id: Math.random().toString(36).substr(2, 9),
                         symbol: symbol,
                         price: Number(price.toFixed(2)),
-                        side: 'NEUTRAL',
+                        side: 'NEUTRAL' as const,
                         createdAt: Date.now()
                     };
                     addPriceAlert(newAlert);
@@ -268,7 +269,7 @@ export function CandleChart({ symbol }: CandleChartProps) {
                 };
 
                 if (!isNaN(updateData.open) && !isNaN(updateData.close)) {
-                    seriesRef.current.update(updateData);
+                    seriesRef.current.update(updateData as any);
 
                     // Maintain rolling klines array for indicators
                     const klines = klinesDataRef.current;
@@ -422,8 +423,7 @@ export function CandleChart({ symbol }: CandleChartProps) {
         });
     }, [priceAlerts, symbol]);
 
-    // For HUD context
-    const activeTicker = useTerminalStore(state => state.prices[symbol]);
+
 
     const handleAddManualAlert = () => {
         const p = parseFloat(manualAlertPrice);

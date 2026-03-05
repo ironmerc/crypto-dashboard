@@ -4,6 +4,14 @@ import { persist } from 'zustand/middleware';
 export type EventType = 'Whale' | 'Liquidation' | 'Wall' | 'SmartAlert';
 export type Side = 'BUY' | 'SELL' | 'LONG' | 'SHORT' | 'NEUTRAL';
 
+export interface PriceAlert {
+    id: string;
+    symbol: string;
+    price: number;
+    side: Side;
+    createdAt: number;
+}
+
 export interface MarketEvent {
     id: string;
     type: EventType;
@@ -131,9 +139,9 @@ interface TerminalState {
     removeMonitoredSymbol: (symbol: string) => void;
 
     // Custom Price Alerts
-    priceAlerts: any[];
-    setPriceAlerts: (alerts: any[]) => void;
-    addPriceAlert: (alert: any) => Promise<void>;
+    priceAlerts: PriceAlert[];
+    setPriceAlerts: (alerts: PriceAlert[]) => void;
+    addPriceAlert: (alert: PriceAlert) => Promise<void>;
     removePriceAlert: (id: string) => Promise<void>;
     fetchPriceAlerts: () => Promise<void>;
 }
@@ -339,7 +347,7 @@ export const useTerminalStore = create<TerminalState>()(
             removePriceAlert: async (id: string) => {
                 const previousAlerts = get().priceAlerts;
                 // Optimistic Update
-                set({ priceAlerts: previousAlerts.filter((a: any) => a.id !== id) });
+                set({ priceAlerts: previousAlerts.filter((a: PriceAlert) => a.id !== id) });
 
                 try {
                     const resp = await fetch(`/api/bot/alerts/price`, {

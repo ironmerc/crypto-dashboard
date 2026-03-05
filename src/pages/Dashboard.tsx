@@ -232,25 +232,25 @@ export default function Dashboard() {
 
             {/* Liquidity Mobile */}
             <section className="panel min-h-[400px]">
-              <LiquidityIntelligence key={`intel-mob-${localActiveSymbol}`} symbol={localActiveSymbol} />
+              <ErrorBoundary><LiquidityIntelligence key={`intel-mob-${localActiveSymbol}`} symbol={localActiveSymbol} /></ErrorBoundary>
             </section>
 
             {/* Tape & Feed Mobile */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <section className="panel min-h-[300px]">
-                <VolumeTape symbol={localActiveSymbol} />
+                <ErrorBoundary><VolumeTape symbol={localActiveSymbol} /></ErrorBoundary>
               </section>
               <section className="panel min-h-[300px]">
-                <EventFeed symbol={localActiveSymbol} />
+                <ErrorBoundary><EventFeed symbol={localActiveSymbol} /></ErrorBoundary>
               </section>
             </div>
 
             {/* Context & Orderbook Mobile */}
             <section className="panel min-h-[300px]">
-              <MarketContext symbol={localActiveSymbol} />
+              <ErrorBoundary><MarketContext symbol={localActiveSymbol} /></ErrorBoundary>
             </section>
             <section className="panel min-h-[400px]">
-              <OrderBook symbol={localActiveSymbol} />
+              <ErrorBoundary><OrderBook symbol={localActiveSymbol} /></ErrorBoundary>
             </section>
           </div>
         ) : (
@@ -354,7 +354,7 @@ export default function Dashboard() {
                 </PanelResizeHandle>
 
                 <Panel defaultSize={20} minSize={10} className="panel flex-grow overflow-y-auto scrollbar-thin min-h-[200px] lg:min-h-0">
-                  <VolumeTape key={`tape-${localActiveSymbol}`} symbol={localActiveSymbol} />
+                  <ErrorBoundary><VolumeTape key={`tape-${localActiveSymbol}`} symbol={localActiveSymbol} /></ErrorBoundary>
                 </Panel>
               </PanelGroup>
             </Panel>
@@ -392,7 +392,7 @@ export default function Dashboard() {
 
                 {/* Liquidity Intelligence (Bottom) */}
                 <Panel defaultSize={35} minSize={20} className="panel relative overflow-y-auto scrollbar-thin p-0 border-0 flex-shrink-0 min-h-[350px] lg:min-h-0">
-                  <LiquidityIntelligence key={`intel-${localActiveSymbol}`} symbol={localActiveSymbol} />
+                  <ErrorBoundary><LiquidityIntelligence key={`intel-${localActiveSymbol}`} symbol={localActiveSymbol} /></ErrorBoundary>
                 </Panel>
               </PanelGroup>
             </Panel>
@@ -406,7 +406,7 @@ export default function Dashboard() {
               <PanelGroup orientation="vertical">
                 {/* Market Context (Top) */}
                 <Panel defaultSize={35} minSize={20} className="flex-grow flex flex-col min-h-[300px] lg:min-h-0 mb-4 overflow-y-auto scrollbar-thin">
-                  <MarketContext symbol={localActiveSymbol} />
+                  <ErrorBoundary><MarketContext symbol={localActiveSymbol} /></ErrorBoundary>
                 </Panel>
 
                 <PanelResizeHandle className="h-2 flex items-center justify-center cursor-row-resize bg-terminal-bg relative group my-1 z-10">
@@ -415,7 +415,7 @@ export default function Dashboard() {
 
                 {/* Smart Event Feed (Middle) */}
                 <Panel defaultSize={30} minSize={15} className="flex-grow overflow-y-auto scrollbar-thin mb-4">
-                  <EventFeed symbol={localActiveSymbol} />
+                  <ErrorBoundary><EventFeed symbol={localActiveSymbol} /></ErrorBoundary>
                 </Panel>
 
                 <PanelResizeHandle className="h-2 flex items-center justify-center cursor-row-resize bg-terminal-bg relative group my-1 z-10">
@@ -429,7 +429,7 @@ export default function Dashboard() {
                     <span className="text-terminal-fg/50 font-mono text-[9px]">{globalInterval} SYNC</span>
                   </h2>
                   <div className="flex-grow overflow-hidden">
-                    <OrderBook key={localActiveSymbol} symbol={localActiveSymbol} />
+                    <ErrorBoundary><OrderBook key={localActiveSymbol} symbol={localActiveSymbol} /></ErrorBoundary>
                   </div>
                 </Panel>
               </PanelGroup>
