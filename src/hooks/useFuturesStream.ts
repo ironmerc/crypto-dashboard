@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import useWebSocket from 'react-use-websocket';
 import { useTerminalStore } from '../store/useTerminalStore';
+import { usePageVisibility } from './usePageVisibility';
 import type { OrderBookLevel, Side, MarketEvent } from '../store/useTerminalStore';
 
 const BINANCE_FUTURES_WS = 'wss://fstream.binance.com/ws';
@@ -14,6 +15,7 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
     const setOrderBook = useTerminalStore(state => state.setOrderBook);
     const addEvent = useTerminalStore(state => state.addEvent);
     const addTrade = useTerminalStore(state => state.addTrade);
+    const isVisible = usePageVisibility();
 
     const { sendMessage, lastJsonMessage } = useWebSocket(BINANCE_FUTURES_WS, {
         shouldReconnect: () => true,
@@ -74,14 +76,14 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
         return [...fast, ...remainingDeep];
     };
 
-    const updateMergedBook = (lastUpdateId: number) => {
+    const updateMergedBook = (lastUpdateId?: number) => {
         const mergedBids = mergeBooks(deepBidsRef.current, fastBidsRef.current, 'bids');
         const mergedAsks = mergeBooks(deepAsksRef.current, fastAsksRef.current, 'asks');
 
         setOrderBook(activeSymbol, {
             bids: mergedBids,
             asks: mergedAsks,
-            lastUpdateId
+            lastUpdateId: lastUpdateId || 0
         });
     };
 
@@ -89,7 +91,7 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
     useEffect(() => {
         let isFetching = false;
         const fetchDeepBook = async () => {
-            if (isFetching) return;
+            if (isFetching || !isVisible) return;
             isFetching = true;
             try {
                 // Use Spot API for deep liquidity (5000 levels gives ~10x wider view than Futures 1000 levels)
@@ -126,7 +128,7 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
         return () => {
             clearInterval(depthInterval);
         };
-    }, [activeSymbol]);
+    }, [activeSymbol, isVisible]);
 
     useEffect(() => {
         if (!lastJsonMessage) return;
@@ -143,6 +145,9 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
             const side: Side = isBuyerMaker ? 'SELL' : 'BUY';
 
             setPrice(msg.s, price);
+
+            // Skip heavy state updates if hidden to prevent background lag
+            if (!isVisible) return;
 
             // Update Volume Delta (Tape)
             addTrade(msg.s, {
@@ -164,14 +169,13 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
                     side,
                     timestamp: msg.T
                 });
-                // NOTE: Telegram alerts disabled here. Handled by backend market engine.
             }
         }
 
         // 2. Liquidation Detection (@forceOrder)
         else if (msg.e === 'forceOrder') {
             const order = msg.o;
-            if (!order) return;
+            if (!order || !isVisible) return;
 
             const price = parseFloat(order.ap);
             const qty = parseFloat(order.q);
@@ -190,7 +194,6 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
             };
 
             addEvent(liqEvent);
-            // NOTE: Telegram alerts disabled here. Handled by backend market engine.
         }
 
         // 3. WS Depth Updates (Active Symbol Only)
@@ -209,8 +212,18 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
             if (fastBids.length > 0) fastBidsRef.current = fastBids;
             if (fastAsks.length > 0) fastAsksRef.current = fastAsks;
 
-            updateMergedBook(msg.u);
+            // Only merge and update state if visible
+            if (isVisible) {
+                updateMergedBook(msg.u);
+            }
         }
 
-    }, [lastJsonMessage, setPrice, addEvent, addTrade, activeSymbolL, updateMergedBook]);
+    }, [lastJsonMessage, setPrice, addEvent, addTrade, activeSymbolL, isVisible]);
+
+    // Force a full UI update when tab is focused again
+    useEffect(() => {
+        if (isVisible) {
+            updateMergedBook();
+        }
+    }, [isVisible]);
 }

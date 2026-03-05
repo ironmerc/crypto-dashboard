@@ -12,6 +12,7 @@ import { useOpenInterest } from '../hooks/useOpenInterest';
 import { useSmartAlerts } from '../hooks/useSmartAlerts';
 import { useMarketContextAlerts } from '../hooks/useMarketContextAlerts';
 import { useTerminalStore } from '../store/useTerminalStore';
+import { usePageVisibility } from '../hooks/usePageVisibility';
 import { EventFeed } from '../components/EventFeed';
 import { VolumeTape } from '../components/VolumeTape';
 import { LiquidityIntelligence } from '../components/LiquidityIntelligence';
@@ -82,13 +83,14 @@ export default function Dashboard() {
   };
 
   const [renderTime, setRenderTime] = useState(() => Date.now());
+  const isVisible = usePageVisibility();
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setRenderTime(Date.now());
+      if (isVisible) setRenderTime(Date.now());
     }, 30000); // Refresh deltas every 30s
     return () => clearInterval(timer);
-  }, []);
+  }, [isVisible]);
 
   const intervalMs = getIntervalMs(globalInterval);
   const { oiDelta, fundingDelta } = useMemo(() => {

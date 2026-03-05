@@ -1,12 +1,14 @@
 import { useEffect } from 'react';
 import axios from 'axios';
 import { useTerminalStore } from '../store/useTerminalStore';
+import { usePageVisibility } from './usePageVisibility';
 
 export function useOpenInterest(symbol: string) {
     const setOpenInterest = useTerminalStore(state => state.setOpenInterest);
     const setFundingRate = useTerminalStore(state => state.setFundingRate);
     const setLongShortRatio = useTerminalStore(state => state.setLongShortRatio);
     const globalInterval = useTerminalStore(state => state.globalInterval);
+    const isVisible = usePageVisibility();
 
     useEffect(() => {
         if (!symbol) return;
@@ -14,6 +16,7 @@ export function useOpenInterest(symbol: string) {
         const symbolUpper = symbol.toUpperCase();
 
         const fetchMetrics = async () => {
+            if (!isVisible) return;
             try {
                 // Fetch Open Interest
                 const response = await axios.get(`https://fapi.binance.com/fapi/v1/openInterest`, {
@@ -51,12 +54,14 @@ export function useOpenInterest(symbol: string) {
             }
         };
 
-        // Initial fetch
-        fetchMetrics();
+        // Initial fetch only if visible or transition to visible
+        if (isVisible) {
+            fetchMetrics();
+        }
 
         // Poll every 60 seconds (Binance rate limits apply to REST, so fetching 1/min is safe)
         const interval = setInterval(fetchMetrics, 60000);
 
         return () => clearInterval(interval);
-    }, [symbol, setOpenInterest, setFundingRate, setLongShortRatio, globalInterval]);
+    }, [symbol, setOpenInterest, setFundingRate, setLongShortRatio, globalInterval, isVisible]);
 }

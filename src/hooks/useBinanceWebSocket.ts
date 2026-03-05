@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import useWebSocket from 'react-use-websocket';
+import { usePageVisibility } from './usePageVisibility';
 
 const BINANCE_WS_URL = 'wss://fstream.binance.com/ws';
 
@@ -13,6 +14,7 @@ export interface TickerData {
 
 export function useBinanceTickers(symbols: string[]) {
     const [tickers, setTickers] = useState<Record<string, TickerData>>({});
+    const isVisible = usePageVisibility();
     const safeSymbols = symbols && symbols.length > 0 ? symbols : ['BTCUSDT'];
     const streamName = safeSymbols.map(s => `${s.toLowerCase()}@ticker`).join('/');
 
@@ -22,7 +24,7 @@ export function useBinanceTickers(symbols: string[]) {
     });
 
     useEffect(() => {
-        if (lastJsonMessage) {
+        if (lastJsonMessage && isVisible) {
             const data = lastJsonMessage as any;
             if (data.e === '24hrTicker') {
                 setTickers(prev => ({
@@ -37,7 +39,7 @@ export function useBinanceTickers(symbols: string[]) {
                 }));
             }
         }
-    }, [lastJsonMessage]);
+    }, [lastJsonMessage, isVisible]);
 
     return tickers;
 }
@@ -54,6 +56,7 @@ export interface OrderBookData {
 
 export function useBinanceOrderBook(symbol: string, limit: number = 20) {
     const [orderBook, setOrderBook] = useState<OrderBookData>({ bids: [], asks: [] });
+    const isVisible = usePageVisibility();
     const streamUrl = `${BINANCE_WS_URL}/${symbol.toLowerCase()}@depth${limit}@100ms`;
 
     const { lastJsonMessage } = useWebSocket(streamUrl, {
@@ -61,7 +64,7 @@ export function useBinanceOrderBook(symbol: string, limit: number = 20) {
     });
 
     useEffect(() => {
-        if (lastJsonMessage) {
+        if (lastJsonMessage && isVisible) {
             const data = lastJsonMessage as any;
             if (data.bids && data.asks) {
                 setOrderBook({
@@ -70,7 +73,7 @@ export function useBinanceOrderBook(symbol: string, limit: number = 20) {
                 });
             }
         }
-    }, [lastJsonMessage]);
+    }, [lastJsonMessage, isVisible]);
 
     return orderBook;
 }

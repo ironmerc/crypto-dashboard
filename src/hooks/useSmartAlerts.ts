@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useTerminalStore } from '../store/useTerminalStore';
+import { usePageVisibility } from './usePageVisibility';
 
 // Helper to check if current local time is within quiet hours
 const isWithinQuietHours = (startStr: string, endStr: string) => {
@@ -64,9 +65,11 @@ export const sendTelegramAlert = async (title: string, message: string, alertTyp
 
 export function useSmartAlerts(symbol: string) {
     const lastAlerts = useRef<Record<string, number>>({});
+    const isVisible = usePageVisibility();
 
     useEffect(() => {
         const interval = setInterval(() => {
+            if (!isVisible) return;
             const state = useTerminalStore.getState();
             const now = Date.now();
             const config = state.telegramConfig;
@@ -153,5 +156,5 @@ export function useSmartAlerts(symbol: string) {
         }, 5000);
 
         return () => clearInterval(interval);
-    }, [symbol]);
+    }, [symbol, isVisible]);
 }

@@ -5,14 +5,21 @@ import TelegramSettings from './pages/TelegramSettings';
 import DashboardSettings from './pages/DashboardSettings';
 import { GlobalErrorBoundary } from './components/GlobalErrorBoundary';
 import { fetchConfigFromBot } from './utils/syncConfig';
+import { usePageVisibility } from './hooks/usePageVisibility';
 
 export default function App() {
+    const isVisible = usePageVisibility();
+
     // Fetch config from bot on mount + every 30s so all devices stay in sync
     useEffect(() => {
-        fetchConfigFromBot();
-        const interval = setInterval(fetchConfigFromBot, 30000);
+        const fetch = () => {
+            if (isVisible) fetchConfigFromBot();
+        };
+
+        fetch();
+        const interval = setInterval(fetch, 30000);
         return () => clearInterval(interval);
-    }, []);
+    }, [isVisible]);
 
     return (
         <GlobalErrorBoundary>

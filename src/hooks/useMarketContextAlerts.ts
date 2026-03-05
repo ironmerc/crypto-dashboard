@@ -2,14 +2,18 @@ import { useEffect } from 'react';
 
 import { calculateMarketContext } from '../lib/marketContextEngine';
 import { sendTelegramAlert } from './useSmartAlerts';
+import { usePageVisibility } from './usePageVisibility';
 
 export function useMarketContextAlerts(symbol: string) {
+    const isVisible = usePageVisibility();
+
     useEffect(() => {
         if (!symbol) return;
 
         // Broadcast the Market Context summary every 4 hours
         // 4 hours * 60 minutes * 60 seconds * 1000 milliseconds
         const interval = setInterval(() => {
+            if (!isVisible) return;
             const context = calculateMarketContext(symbol);
             if (!context || !context.price) return;
 
