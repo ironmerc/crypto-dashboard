@@ -28,6 +28,13 @@ This application is built with React/Vite but is intended to be run locally or o
 * **Serving Layer**: Nginx (serves static frontend files and reverse-proxies API requests to the bot to bypass CORS).
 * **Alert Backend**: Python 3.11 Alpine container running `aiohttp` and `asyncio.Queue` for non-blocking Telegram alerts with granular cooldowns.
 
+### Documentation (Local-Only)
+Since this project uses the GSD methodology, core documentation is kept locally in the `.gsd/` directory and excluded from Git tracking to ensure privacy and environment-specific focus.
+
+- [Architecture](file:///.gsd/ARCHITECTURE.md)
+- [Stack & Tech Specs](file:///.gsd/STACK.md)
+- [Mission Control Rules](file:///.gsd/PROJECT_RULES.md)
+
 ### The Bot Pipeline
 When the React UI detects an anomaly (like an ATR Expansion or an Open Interest Spike), it fires a JSON payload to `/api/bot/alert`. 
 

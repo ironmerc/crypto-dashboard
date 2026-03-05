@@ -582,23 +582,17 @@ export default function TelegramSettings() {
                                             onChange={(e) => setSelectedTest(e.target.value)}
                                             className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-2 text-xs text-slate-300 focus:border-indigo-500 focus:outline-none hover:border-slate-700 transition-colors"
                                         >
-                                            <optgroup label="Phase 1: Market Data">
-                                                <option value="oi_spike">OI Spike/Flush</option>
-                                                <option value="atr_expand">Volatility Expansion</option>
-                                                <option value="liquidation">Liquidations</option>
-                                                <option value="whale">Whale Activity</option>
-                                            </optgroup>
-                                            <optgroup label="Phase 2: Contextual Alpha">
-                                                <option value="funding_extreme">Funding Rate Extremes</option>
-                                                <option value="va_breakout">Value Area Breakout</option>
-                                                <option value="whale_momentum">Whale Momentum Shift</option>
-                                                <option value="rvol">Abnormal RVOL</option>
-                                                <option value="market_context_summary">Market Summary</option>
-                                                <option value="daily_wrap">Daily Wrap-Up</option>
-                                            </optgroup>
-                                            <optgroup label="Diagnostics">
-                                                <option value="ping">System Ping</option>
-                                            </optgroup>
+                                            <option value="oi_spike">OI Spike/Flush</option>
+                                            <option value="atr_expand">Volatility Expansion</option>
+                                            <option value="liquidation">Liquidations</option>
+                                            <option value="whale">Whale Activity</option>
+                                            <option value="funding_extreme">Funding Rate Extremes</option>
+                                            <option value="va_breakout">Value Area Breakout</option>
+                                            <option value="whale_momentum">Whale Momentum Shift</option>
+                                            <option value="rvol">Abnormal RVOL</option>
+                                            <option value="market_context_summary">Market Summary</option>
+                                            <option value="daily_wrap">Daily Wrap-Up</option>
+                                            <option value="ping">System Ping</option>
                                         </select>
                                     </div>
                                     <button

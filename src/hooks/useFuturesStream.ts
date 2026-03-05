@@ -12,6 +12,8 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
     const activeSymbolL = activeSymbol.toLowerCase();
     const setPrice = useTerminalStore(state => state.setPrice);
     const setOrderBook = useTerminalStore(state => state.setOrderBook);
+    const setOpenInterest = useTerminalStore(state => state.setOpenInterest);
+    const setFundingRate = useTerminalStore(state => state.setFundingRate);
     const addEvent = useTerminalStore(state => state.addEvent);
     const addTrade = useTerminalStore(state => state.addTrade);
     const isVisible = usePageVisibility();
@@ -31,7 +33,7 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
         if (toUnsubscribe.length > 0) {
             sendMessage(JSON.stringify({
                 method: 'UNSUBSCRIBE',
-                params: toUnsubscribe.flatMap(s => [`${s}@aggTrade`, `${s}@forceOrder`]),
+                params: toUnsubscribe.flatMap(s => [`${s}@aggTrade`, `${s}@forceOrder`, `${s}@openInterest@500ms`]),
                 id: Date.now(),
             }));
         }
@@ -39,7 +41,7 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
         if (toSubscribe.length > 0) {
             sendMessage(JSON.stringify({
                 method: 'SUBSCRIBE',
-                params: toSubscribe.flatMap(s => [`${s}@aggTrade`, `${s}@forceOrder`]),
+                params: toSubscribe.flatMap(s => [`${s}@aggTrade`, `${s}@forceOrder`, `${s}@openInterest@500ms`]),
                 id: Date.now() + 1,
             }));
         }
@@ -227,7 +229,19 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
             }
         }
 
-    }, [lastJsonMessage, setPrice, addEvent, addTrade, activeSymbolL, isVisible]);
+        // 4. Open Interest Update (@openInterest@500ms)
+        else if (msg.e === 'openInterestUpdate') {
+            setOpenInterest(msg.s, parseFloat(msg.o));
+        }
+
+        // 5. Mark Price / Funding Rate Update (@markPrice)
+        else if (msg.e === 'markPriceUpdate') {
+            if (msg.r) {
+                setFundingRate(msg.s, parseFloat(msg.r));
+            }
+        }
+
+    }, [lastJsonMessage, setPrice, setOpenInterest, setFundingRate, addEvent, addTrade, activeSymbolL, isVisible]);
 
     // Force a full UI update when tab is focused again
     useEffect(() => {

@@ -144,7 +144,7 @@ class MarketEngine:
                     f"{sym}@aggTrade",
                     f"{sym}@forceOrder",
                     f"{sym}@bookTicker",
-                    f"{sym}@openInterest",
+                    f"{sym}@openInterest@500ms",
                     f"{sym}@markPrice"
                 ])
                 # Add all 12 kline intervals
