@@ -23,5 +23,17 @@ dist-ssr
 *.sln
 *.sw?
 .env
-.agents/rules/rules.md
 telegram-bot/config.json
+
+# GSD / AGENT
+.gsd/
+.agent/
+.agents/
+.gemini/
+docs/
+gsd-template/
+adapters/
+PROJECT_RULES.md
+GSD-STYLE.md
+model_capabilities.yaml
+scripts/

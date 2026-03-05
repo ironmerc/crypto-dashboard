@@ -464,31 +464,31 @@ export default function TelegramSettings() {
                                                 title: 'Core Activity',
                                                 icon: <Activity className="w-4 h-4 text-emerald-400" />,
                                                 items: [
-                                                    { id: 'oi_spike', label: 'OI Spikes/Flushes', defaultCd: 600, icon: '📊' },
-                                                    { id: 'atr_expand', label: 'Volatility Expansion', defaultCd: 300, icon: '📈' },
-                                                    { id: 'liquidation', label: 'Major Liquidations', defaultCd: 60, icon: '💀' },
-                                                    { id: 'whale', label: 'Whale Activity', defaultCd: 60, icon: '🐋' },
+                                                    { id: 'oi_spike', label: 'OI Spikes/Flushes', defaultCd: 600 },
+                                                    { id: 'atr_expand', label: 'Volatility Expansion', defaultCd: 300 },
+                                                    { id: 'liquidation', label: 'Major Liquidations', defaultCd: 60 },
+                                                    { id: 'whale', label: 'Whale Activity', defaultCd: 60 },
                                                 ]
                                             },
                                             {
                                                 title: 'Market Dynamics',
                                                 icon: <Layers className="w-4 h-4 text-blue-400" />,
                                                 items: [
-                                                    { id: 'regime_shift', label: 'Regime Shifts (MTF)', defaultCd: 900, icon: '🧭', hasTimeframes: true },
-                                                    { id: 'volatility_state', label: 'Volatility States (MTF)', defaultCd: 300, icon: '🌊', hasTimeframes: true },
-                                                    { id: 'order_flow', label: 'Flow Anomalies (MTF)', defaultCd: 300, icon: '⚡', hasTimeframes: true },
-                                                    { id: 'level_testing', label: 'Level Interactions (MTF)', defaultCd: 600, icon: '🎯', hasTimeframes: true },
+                                                    { id: 'regime_shift', label: 'Regime Shifts (MTF)', defaultCd: 900, hasTimeframes: true },
+                                                    { id: 'volatility_state', label: 'Volatility States (MTF)', defaultCd: 300, hasTimeframes: true },
+                                                    { id: 'order_flow', label: 'Flow Anomalies (MTF)', defaultCd: 300, hasTimeframes: true },
+                                                    { id: 'level_testing', label: 'Level Interactions (MTF)', defaultCd: 600, hasTimeframes: true },
                                                 ]
                                             },
                                             {
                                                 title: 'Context & Alpha',
                                                 icon: <Zap className="w-4 h-4 text-amber-400" />,
                                                 items: [
-                                                    { id: 'context_summary', label: 'Context Summary Shifts', defaultCd: 900, icon: '📝', hasTimeframes: true },
-                                                    { id: 'funding', label: 'Funding Extremes', defaultCd: 3600, icon: '💰' },
-                                                    { id: 'value_area', label: 'Value Area Breaks', defaultCd: 300, icon: '📦' },
-                                                    { id: 'rvol', label: 'RVOL Anomalies', defaultCd: 300, icon: '🔥' },
-                                                    { id: 'execution_quality', label: 'Execution Quality', defaultCd: 300, icon: '💎' },
+                                                    { id: 'context_summary', label: 'Context Summary Shifts', defaultCd: 900, hasTimeframes: true },
+                                                    { id: 'funding', label: 'Funding Extremes', defaultCd: 3600 },
+                                                    { id: 'value_area', label: 'Value Area Breaks', defaultCd: 300 },
+                                                    { id: 'rvol', label: 'RVOL Anomalies', defaultCd: 300 },
+                                                    { id: 'execution_quality', label: 'Execution Quality', defaultCd: 300 },
                                                 ]
                                             }
                                         ];
@@ -512,10 +512,7 @@ export default function TelegramSettings() {
                                                                                 onChange={(e) => updateConfig({ categories: { [cat.id]: e.target.checked } })}
                                                                                 className="w-4 h-4 rounded border-slate-700 text-indigo-500 focus:ring-indigo-500 bg-slate-950 cursor-pointer shrink-0"
                                                                             />
-                                                                            <div className="flex items-center min-w-0 space-x-1 sm:space-x-2 overflow-hidden">
-                                                                                <span className="text-sm shrink-0">{cat.icon}</span>
-                                                                                <span className="text-[11px] sm:text-sm font-medium text-slate-200 truncate">{cat.label}</span>
-                                                                            </div>
+                                                                            <span className="text-[11px] sm:text-sm font-medium text-slate-200 truncate">{cat.label}</span>
                                                                         </div>
                                                                         <div className="flex items-center shrink-0">
                                                                             <select
