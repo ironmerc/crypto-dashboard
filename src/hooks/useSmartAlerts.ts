@@ -94,7 +94,10 @@ export function useSmartAlerts(symbol: string) {
                 const ratio = atr / atrSma;
                 // Use configurable cooldown or default to 5m
                 const cdSecs = (config.cooldowns && config.cooldowns['atr_expand']) || 300;
-                if (ratio > 1.3 && canAlert(`ATR_EXPANSION_${symbol}`, cdSecs * 1000)) {
+                const thresholdObj = config.thresholds[symbol] || config.thresholds.global || { atrExpansionRatio: 1.3 };
+                const atrThreshold = thresholdObj.atrExpansionRatio || 1.3;
+
+                if (ratio > atrThreshold && canAlert(`ATR_EXPANSION_${symbol}`, cdSecs * 1000)) {
                     if (!config.globalEnabled || (config.categories && config.categories['atr_expand'] === false)) return;
 
                     const title = 'VOLATILITY EXPANSION';
@@ -128,8 +131,10 @@ export function useSmartAlerts(symbol: string) {
                     const oiChangePct = ((newest - oldest) / Math.abs(oldest)) * 100;
 
                     const cdSecs = (config.cooldowns && config.cooldowns['oi_spike']) || 600;
+                    const thresholdObj = config.thresholds[symbol] || config.thresholds.global || { oiSpikePercentage: 1.5 };
+                    const oiThreshold = thresholdObj.oiSpikePercentage || 1.5;
 
-                    if (Math.abs(oiChangePct) > 1.5 && canAlert(`OI_SPIKE_${symbol}`, cdSecs * 1000)) {
+                    if (Math.abs(oiChangePct) > oiThreshold && canAlert(`OI_SPIKE_${symbol}`, cdSecs * 1000)) {
                         if (!config.globalEnabled || (config.categories && config.categories['oi_spike'] === false)) return;
 
                         const isUp = oiChangePct > 0;

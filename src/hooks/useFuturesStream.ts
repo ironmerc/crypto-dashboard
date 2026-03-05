@@ -6,8 +6,7 @@ import type { OrderBookLevel, Side, MarketEvent } from '../store/useTerminalStor
 
 const BINANCE_FUTURES_WS = 'wss://fstream.binance.com/ws';
 
-// Thresholds for detection
-const WHALE_TRADE_USD = 500000; // $500k
+// Dynamic thresholds will be read from the store config
 
 export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
     const activeSymbolL = activeSymbol.toLowerCase();
@@ -159,7 +158,11 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
             });
 
             // Whale Detection
-            if (value >= WHALE_TRADE_USD) {
+            const config = useTerminalStore.getState().telegramConfig;
+            const thresholdObj = config.thresholds[msg.s] || config.thresholds.global || { whaleMinAmount: 500000 };
+            const whaleThreshold = thresholdObj.whaleMinAmount || 500000;
+
+            if (value >= whaleThreshold) {
                 addEvent({
                     type: 'Whale',
                     symbol: msg.s,
@@ -182,18 +185,24 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
             const value = price * qty;
             const side = order.S === 'BUY' ? 'SHORT' : 'LONG';
 
-            const liqEvent: MarketEvent = {
-                id: Math.random().toString(36).substr(2, 9),
-                type: 'Liquidation',
-                symbol: order.s,
-                price,
-                amount: qty,
-                value,
-                side: side as Side,
-                timestamp: order.T
-            };
+            const config = useTerminalStore.getState().telegramConfig;
+            const thresholdObj = config.thresholds[order.s] || config.thresholds.global || { liquidationMinAmount: 500000 };
+            const liqThreshold = thresholdObj.liquidationMinAmount || 500000;
 
-            addEvent(liqEvent);
+            if (value >= liqThreshold) {
+                const liqEvent: MarketEvent = {
+                    id: Math.random().toString(36).substr(2, 9),
+                    type: 'Liquidation',
+                    symbol: order.s,
+                    price,
+                    amount: qty,
+                    value,
+                    side: side as Side,
+                    timestamp: order.T
+                };
+
+                addEvent(liqEvent);
+            }
         }
 
         // 3. WS Depth Updates (Active Symbol Only)

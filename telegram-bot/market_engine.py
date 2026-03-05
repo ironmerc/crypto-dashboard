@@ -409,6 +409,33 @@ class MarketEngine:
                     )
                 self.state[symbol]["regime"][tf] = new_regime
 
+                # B2. RSI Extremes
+                rsi_ob = float(thresholds.get("rsiOverbought", 70))
+                rsi_os = float(thresholds.get("rsiOversold", 30))
+                
+                old_rsi_state = self.state[symbol].get("rsi_state", {}).get(tf, "Neutral")
+                new_rsi_state = "Neutral"
+                if rsi >= rsi_ob: new_rsi_state = "Overbought"
+                elif rsi <= rsi_os: new_rsi_state = "Oversold"
+                
+                if new_rsi_state != old_rsi_state and new_rsi_state != "Neutral":
+                    rsi_icon = "🔥" if new_rsi_state == "Overbought" else "🧊"
+                    await self.send_alert(
+                        f"[{symbol}] {rsi_icon} RSI Extreme ({tf})",
+                        f"<b>State:</b> {new_rsi_state}\n<b>Current RSI:</b> {rsi:.1f}",
+                        "momentum_shift", symbol, "info", 600, tf=tf
+                    )
+                self.state[symbol].setdefault("rsi_state", {})[tf] = new_rsi_state
+
+                # B3. Relative Volume (RVOL) Spike
+                rvol_mult = float(thresholds.get("rvolMultiplier", 3.0))
+                if rvol >= rvol_mult:
+                     await self.send_alert(
+                        f"[{symbol}] 🌋 RVOL Spike ({tf})",
+                        f"<b>Relative Volume:</b> {rvol:.1f}x average\n<b>Price:</b> ${price:,.2f}",
+                        "volatility_state", symbol, "info", 600, tf=tf
+                    )
+
                 # C. Positioning & Flow Shift (15m window typically)
                 if tf == "15m" and len(self.state[symbol]["oi_history"]) >= 2:
                     oi_history = self.state[symbol]["oi_history"]
@@ -417,7 +444,7 @@ class MarketEngine:
                     
                     thresholds = self.config.get("thresholds", {}).get(symbol, 
                                  self.config.get("thresholds", {}).get("global", {}))
-                    oi_threshold = float(thresholds.get("oiSpikePercentage", 0.4))
+                    oi_threshold = float(thresholds.get("oiSpikePercentage", 1.5))
                     
                     flow = "Neutral/Stable"
                     if abs(oi_delta) > oi_threshold:
