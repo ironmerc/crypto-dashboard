@@ -524,11 +524,13 @@ class MarketEngine:
                 if time.time() - last_wrap > 80000: # Ensure only once per day
                     price = self.state[symbol]["last_price"]
                     whale_flow = self.state[symbol]["whale_delta"]
-                    await self.send_alert(
-                        f"[{symbol}] 📅 Daily Market Wrap",
-                        f"<b>Closing Price:</b> ${price:,.2f}\n<b>Whale Net Flow:</b> ${whale_flow/1e6:+.2f}M\n<b>Funding Rate:</b> {self.state[symbol]['funding_rate']*100:.4f}%",
-                        "market_context", symbol, "info", 3600
-                    )
+                    
+                    if price > 0:
+                        await self.send_alert(
+                            f"[{symbol}] 📅 Daily Market Wrap",
+                            f"<b>Closing Price:</b> ${price:,.2f}\n<b>Whale Net Flow:</b> ${whale_flow/1e6:+.2f}M\n<b>Funding Rate:</b> {self.state[symbol]['funding_rate']*100:.4f}%",
+                            "market_context", symbol, "info", 3600
+                        )
                     self.state[symbol]["last_daily_wrap"] = time.time()
 
             # G. 4-Hour Periodic Summary (Check once per minute)
@@ -545,12 +547,18 @@ class MarketEngine:
                     f"<b>Positioning:</b> {flow}\n"
                     f"<b>Price:</b> ${price:,.2f}"
                 )
-                await self.send_alert(
-                    f"[{symbol}] 🧭 Market Context Summary",
-                    msg,
-                    "market_context", symbol, "info", 3600
-                )
-                self.state[symbol]["last_periodic_summary"] = time.time()
+                
+                # Only send if we have actual data
+                if regime != "Unknown" and volatility != "Unknown":
+                    await self.send_alert(
+                        f"[{symbol}] 🧭 Market Context Summary",
+                        msg,
+                        "market_context", symbol, "info", 3600
+                    )
+                    self.state[symbol]["last_periodic_summary"] = time.time()
+                else:
+                    # If we don't have data yet, defer the first summary slightly to allow klines to populate
+                    self.state[symbol]["last_periodic_summary"] = time.time() - 10800 # Try again in 1 hour
 
     async def run(self):
         """Starts the engine tasks."""
