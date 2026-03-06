@@ -33,9 +33,66 @@ class MarketEngine:
                 async with session.get(f"{self.bot_url}/config") as resp:
                     if resp.status == 200:
                         self.config = await resp.json()
+                        self.monitored_symbols = self.config.get("monitoredSymbols", WATCH_SYMBOLS)
                         # logger.info("Engine synced with latest bot configuration.")
             except Exception as e:
                 logger.error(f"Failed to fetch config from bot: {e}")
+
+    async def fetch_historical_klines(self, symbol, timeframe, limit=100):
+        """Fetches historical klines from Binance REST API."""
+        url = f"{BINANCE_API}/fapi/v1/klines"
+        params = {
+            "symbol": symbol,
+            "interval": timeframe,
+            "limit": limit
+        }
+        async with ClientSession() as session:
+            try:
+                async with session.get(url, params=params) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        # Format: [t, o, h, l, c, v, ...] -> we need [t, o, h, l, c, v]
+                        return [[k[0], k[1], k[2], k[3], k[4], k[5]] for k in data]
+                    else:
+                        logger.error(f"Failed to fetch history for {symbol} {timeframe}: {resp.status}")
+            except Exception as e:
+                logger.error(f"Error fetching history: {e}")
+        return []
+
+    async def init_symbol_state(self, symbol):
+        """Initializes state and fetches history for a new symbol."""
+        if symbol in self.state: return
+        
+        logger.info(f"Initializing state for {symbol}...")
+        self.state[symbol] = {
+            "last_price": 0,
+            "whale_delta": 0,
+            "volume_profile": {},
+            "last_vah": 0,
+            "last_val": 0,
+            "oi_history": [],
+            "regime": {},
+            "flow": {},
+            "volatility": {},
+            "levels": {},
+            "klines": {tf: [] for tf in ALL_TIMEFRAMES},
+            "funding_rate": 0
+        }
+        
+        # Fetch history for all timeframes to populate indicators immediately
+        tasks = []
+        for tf in ALL_TIMEFRAMES:
+            tasks.append(self.fetch_historical_klines(symbol, tf))
+        
+        results = await asyncio.gather(*tasks)
+        for i, tf in enumerate(ALL_TIMEFRAMES):
+            self.state[symbol]["klines"][tf] = results[i]
+            if results[i]:
+                # Pre-calculate indicators if we have enough data
+                try:
+                    self.calculate_indicators(symbol, tf)
+                except Exception as e:
+                    logger.debug(f"Initial indicators failed for {symbol} {tf}: {e}")
 
     def get_active_session(self):
         """Determines the current market session based on UTC hour."""
@@ -90,21 +147,34 @@ class MarketEngine:
         df['v'] = df['v'].astype(float)
         
         # EMA for Regime
-        ema21 = df['c'].ewm(span=21, adjust=False).mean().iloc[-1]
-        ema50 = df['c'].ewm(span=50, adjust=False).mean().iloc[-1]
+        if len(df) >= 50:
+            ema21 = df['c'].ewm(span=21, adjust=False).mean().iloc[-1]
+            ema50 = df['c'].ewm(span=50, adjust=False).mean().iloc[-1]
+        else:
+            ema21 = ema50 = df['c'].iloc[-1]
         
         # RSI
-        delta = df['c'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rsi = 100 - (100 / (1 + (gain/loss))).iloc[-1]
+        if len(df) >= 15:
+            delta = df['c'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs)).iloc[-1]
+        else:
+            rsi = 50.0
         
         # ATR Ratio (Current TR / SMA 20 of TR)
         df['tr'] = np.maximum(df['h'] - df['l'], np.maximum(abs(df['h'] - df['c'].shift(1)), abs(df['l'] - df['c'].shift(1))))
-        atr_ratio = df['tr'].iloc[-1] / df['tr'].rolling(20).mean().iloc[-1]
+        if len(df) >= 20:
+            atr_ratio = df['tr'].iloc[-1] / df['tr'].rolling(20).mean().iloc[-1]
+        else:
+            atr_ratio = 1.0
         
         # RVOL (Current Volume / SMA 20 of Volume)
-        rvol = df['v'].iloc[-1] / df['v'].rolling(20).mean().iloc[-1]
+        if len(df) >= 20:
+            rvol = df['v'].iloc[-1] / df['v'].rolling(20).mean().iloc[-1]
+        else:
+            rvol = 1.0
 
         # VWAP (Approximation via candle typical price)
         df['tp'] = (df['h'] + df['l'] + df['c']) / 3
@@ -439,14 +509,16 @@ class MarketEngine:
                 if rsi >= rsi_ob: new_rsi_state = "Overbought"
                 elif rsi <= rsi_os: new_rsi_state = "Oversold"
                 
-                if new_rsi_state != old_rsi_state and new_rsi_state != "Neutral":
+                if new_rsi_state != old_rsi_state and new_rsi_state != "Neutral" and old_rsi_state != "Unknown":
                     rsi_icon = "🔥" if new_rsi_state == "Overbought" else "🧊"
                     await self.send_alert(
                         f"[{symbol}] {rsi_icon} RSI Extreme ({tf})",
-                        f"<b>State:</b> {new_rsi_state}\n<b>Current RSI:</b> {rsi:.1f}",
+                        f"<b>State:</b> {new_rsi_state}\n<b>Current RSI:</b> {rsi:.1f}\n<b>Threshold:</b> {rsi_ob if new_rsi_state == 'Overbought' else rsi_os}",
                         "rsi_extreme", symbol, "info", 600, tf=tf
                     )
-                self.state[symbol].setdefault("rsi_state", {})[tf] = new_rsi_state
+                
+                if "rsi_state" not in self.state[symbol]: self.state[symbol]["rsi_state"] = {}
+                self.state[symbol]["rsi_state"][tf] = new_rsi_state
 
                 # B3. Relative Volume (RVOL) Spike
                 rvol_mult = float(thresholds.get("rvolMultiplier", 3.0))
@@ -592,7 +664,12 @@ class MarketEngine:
         # 1. Initial config fetch
         await self.get_bot_config()
         
-        # 2. Start workers
+        # 2. Initialize symbols from config
+        init_tasks = [self.init_symbol_state(s) for s in self.monitored_symbols]
+        if init_tasks:
+            await asyncio.gather(*init_tasks)
+        
+        # 3. Start workers
         await asyncio.gather(
             self.monitor_ws(),
             self.periodic_config_sync()

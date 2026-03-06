@@ -201,9 +201,14 @@ export default function TelegramSettings() {
                 category = "whale";
                 break;
             case 'rvol':
-                title = `[BTCUSDT] 🌋 Abnormal RVOL Detected`;
+                title = `[BTCUSDT] 🌋 Volume Surge (RVOL)`;
                 message = "<b>RVOL Spike:</b> 4.2x Average\n<b>Dominant Pressure:</b> 🟢 Buying\n<b>5m Volume:</b> $24.5M\n\n<i>Extremely high activity detected.</i>";
                 category = "rvol_spike";
+                break;
+            case 'ema_cross':
+                title = `[BTCUSDT] 🟢 Trend Stretch (Regime Shift)`;
+                message = "<b>Bias:</b> Range → Uptrend (Strong)\n<b>RSI:</b> 62.5\n<b>EMA Sep:</b> 0.45%\n\n<i>Price is stretching away from the mean, indicating a strong trend.</i>";
+                category = "ema_cross";
                 break;
             case 'daily_wrap':
                 title = `[BTCUSDT] 📅 Daily Market Wrap-Up`;
@@ -224,6 +229,11 @@ export default function TelegramSettings() {
                 title = `[BTCUSDT] ⚡ Context Summary Shift`;
                 message = "<b>Uptrend (Strong) → Active Long Building</b>\n\n<b>Regime:</b> Uptrend\n<b>Volatility:</b> Normal\n<b>Positioning:</b> Active Long Building";
                 category = "context_summary";
+                break;
+            case 'rsi_extreme':
+                title = `[BTCUSDT] 🎢 RSI Extreme Detected`;
+                message = "<b>Status:</b> 🔴 OVERBOUGHT\n<b>Current RSI:</b> 74.2\n<b>Threshold:</b> 70\n<b>Timeframe:</b> 1h\n\n<i>Price is extended. Potential for mean reversion.</i>";
+                category = "rsi_extreme";
                 break;
             default:
                 title = `[SYSTEM] Diagnostic Ping`;
@@ -908,12 +918,15 @@ export default function TelegramSettings() {
                                                     >
                                                         <option value="atr_expand">ATR Expansion (Volatility)</option>
                                                         <option value="context_summary">Context Summary Shift</option>
+                                                        <option value="ema_cross">Trend Stretch (Regime Shift)</option>
                                                         <option value="level_testing">Level Interaction (POC/VWAP)</option>
                                                         <option value="liquidation">Liquidations (Forced Orders)</option>
                                                         <option value="market_context_summary">Market Wrap/Daily Summary</option>
                                                         <option value="oi_spike">OI Spike/Flush (Leverage)</option>
                                                         <option value="order_flow">Order Flow Shift (Aggression)</option>
                                                         <option value="ping">System Connectivity Ping</option>
+                                                        <option value="rsi_extreme">RSI Extreme (Overbought/Oversold)</option>
+                                                        <option value="rvol">Volume Surge (RVOL Spike)</option>
                                                         <option value="whale">Whale Activity (Individual Blocks)</option>
                                                     </select>
                                                 </div>
