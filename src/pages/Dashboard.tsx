@@ -9,7 +9,6 @@ import { OrderBook } from '../components/OrderBook';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useFuturesStream } from '../hooks/useFuturesStream';
 import { useOpenInterest } from '../hooks/useOpenInterest';
-import { useSmartAlerts } from '../hooks/useSmartAlerts';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { usePageVisibility } from '../hooks/usePageVisibility';
 import { EventFeed } from '../components/EventFeed';
@@ -17,6 +16,7 @@ import { VolumeTape } from '../components/VolumeTape';
 import { LiquidityIntelligence } from '../components/LiquidityIntelligence';
 import { MarketContext } from '../components/MarketContext';
 import { ActionAlertStrip } from '../components/ActionAlertStrip';
+import { useBackendAlerts } from '../hooks/useBackendAlerts';
 
 export default function Dashboard() {
   const monitoredSymbols = useTerminalStore((state) => state.telegramConfig.monitoredSymbols);
@@ -39,7 +39,7 @@ export default function Dashboard() {
   // Futures Hooks (Intel Engine)
   useFuturesStream(localActiveSymbol, monitoredSymbols);
   useOpenInterest(localActiveSymbol);
-  useSmartAlerts(localActiveSymbol);
+  useBackendAlerts();
 
   const openInterest = useTerminalStore((state) => state.openInterest[localActiveSymbol]);
   const oiHistory = useTerminalStore((state) => state.oiHistory[localActiveSymbol]);
