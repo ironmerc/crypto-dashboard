@@ -6,6 +6,11 @@ from collections import deque
 import json
 from aiohttp import web, ClientSession
 from alert_policy import build_cooldown_key, should_accept_alert
+from schema_validation import (
+    load_schema,
+    log_schema_warnings,
+    validate_by_schema_warn_only,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -59,6 +64,8 @@ DEFAULT_CONFIG = {
 }
 
 bot_config = DEFAULT_CONFIG.copy()
+TELEGRAM_CONFIG_SCHEMA = load_schema("telegram-config.schema.json")
+ALERT_EVENT_SCHEMA = load_schema("alert-event.schema.json")
 
 def load_config():
     global bot_config
@@ -211,6 +218,12 @@ async def handle_alert(request):
     """HTTP endpoint to receive alerts from the internal network."""
     try:
         data = await request.json()
+        warnings = validate_by_schema_warn_only(
+            payload=data,
+            schema=ALERT_EVENT_SCHEMA,
+            partial=False,
+        )
+        log_schema_warnings("alert:event", warnings)
         
         if not "message" in data:
             return web.json_response({"error": "Missing 'message' field"}, status=400)
@@ -242,6 +255,12 @@ async def handle_post_config(request):
     global bot_config
     try:
         data = await request.json()
+        warnings = validate_by_schema_warn_only(
+            payload=data,
+            schema=TELEGRAM_CONFIG_SCHEMA,
+            partial=True,
+        )
+        log_schema_warnings("config:update", warnings)
         deep_update(bot_config, data)
         save_config()
         # Signal market engine to reload config immediately

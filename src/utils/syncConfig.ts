@@ -1,4 +1,6 @@
 import { useTerminalStore } from '../store/useTerminalStore';
+import telegramConfigSchema from '../../schemas/telegram-config.schema.json';
+import { logSchemaWarnings, validateBySchemaWarnOnly } from './schemaValidation';
 
 let syncTimeout: any = null;
 
@@ -12,6 +14,8 @@ export const fetchConfigFromBot = async () => {
         const response = await fetch(botUrl);
         if (response.ok) {
             const botConfig = await response.json();
+            const warnings = validateBySchemaWarnOnly(botConfig, telegramConfigSchema as any, { partial: false });
+            logSchemaWarnings('config:fetch', warnings);
             console.log('[Sync] Received config from bot:', botConfig);
             // Update store with data from bot, merging with current state
             useTerminalStore.getState().updateTelegramConfig(botConfig, true);
@@ -32,6 +36,8 @@ export const syncConfigToBot = async () => {
 
     syncTimeout = setTimeout(async () => {
         const config = useTerminalStore.getState().telegramConfig;
+        const warnings = validateBySchemaWarnOnly(config, telegramConfigSchema as any, { partial: false });
+        logSchemaWarnings('config:sync', warnings);
         const botUrl = import.meta.env.VITE_TELEGRAM_BOT_URL || '/api/bot/config';
 
         try {

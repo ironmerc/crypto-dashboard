@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "telegram-config.schema.json",
+  "title": "TelegramConfig",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "globalEnabled",
+    "activeSessions",
+    "monitoredSymbols",
+    "alertOnStateChange",
+    "quietHours",
+    "categories",
+    "cooldowns",
+    "thresholds",
+    "timeframes"
+  ],
+  "properties": {
+    "globalEnabled": { "type": "boolean" },
+    "activeSessions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "monitoredSymbols": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "alertOnStateChange": { "type": "boolean" },
+    "quietHours": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "start", "end"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "start": { "type": "string" },
+        "end": { "type": "string" }
+      }
+    },
+    "categories": {
+      "type": "object",
+      "additionalProperties": { "type": "boolean" }
+    },
+    "cooldowns": {
+      "type": "object",
+      "additionalProperties": { "type": "number" }
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/telegramThresholds"
+      }
+    },
+    "timeframes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    },
+    "priceAlerts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "monitoredTimeframes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "telegramThresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "whaleMinAmount",
+        "liquidationMinAmount",
+        "oiSpikePercentage",
+        "fundingExtremeRate",
+        "atrExpansionRatio",
+        "whaleMomentumDelta",
+        "rvolMultiplier",
+        "rsiOverbought",
+        "rsiOversold",
+        "emaSeparationPct"
+      ],
+      "properties": {
+        "whaleMinAmount": { "type": "number" },
+        "liquidationMinAmount": { "type": "number" },
+        "oiSpikePercentage": { "type": "number" },
+        "fundingExtremeRate": { "type": "number" },
+        "atrExpansionRatio": { "type": "number" },
+        "whaleMomentumDelta": { "type": "number" },
+        "rvolMultiplier": { "type": "number" },
+        "rsiOverbought": { "type": "number" },
+        "rsiOversold": { "type": "number" },
+        "emaSeparationPct": { "type": "number" }
+      }
+    }
+  }
+}
+

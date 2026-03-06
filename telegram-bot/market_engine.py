@@ -9,6 +9,7 @@ import numpy as np
 from datetime import datetime, timezone
 from aiohttp import ClientSession
 from debounce import debounced_state_change as apply_debounced_state_change, threshold_trigger
+from alert_metadata import build_alert_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -141,18 +142,42 @@ class MarketEngine:
         allowed = self.config.get("activeSessions", ["London", "US", "Asia"])
         return current in allowed
 
-    async def send_alert(self, title, message, category, symbol, severity="info", cooldown=60, tf=None):
+    async def send_alert(
+        self,
+        title,
+        message,
+        category,
+        symbol,
+        severity="info",
+        cooldown=60,
+        tf=None,
+        reason="rule_triggered",
+        current_value=None,
+        threshold_value=None,
+        comparison=None,
+        metadata=None
+    ):
         """Proxies alerts to bot API; policy checks are centralized in bot.py."""
 
         session_name = self.get_active_session()
+        alert_metadata = build_alert_metadata(
+            reason=reason,
+            current_value=current_value,
+            threshold_value=threshold_value,
+            comparison=comparison,
+            timeframe=tf,
+            session=session_name,
+            extra=metadata,
+        )
         payload = {
-            "message": f"<b>🚨 {title}</b>\n\n{message}\n\n<i>Session: {session_name}</i>",
+            "message": f"<b>\U0001F6A8 {title}</b>\n\n{message}\n\n<i>Session: {session_name}</i>",
             "type": category,
             "category": category,
             "severity": severity,
             "symbol": symbol,
             "cooldown": cooldown,
-            "tf": tf
+            "tf": tf,
+            "metadata": alert_metadata
         }
         
         async with ClientSession() as session:
@@ -293,7 +318,7 @@ class MarketEngine:
             threshold = float(thresholds.get("whaleMinAmount", 500000))
             
             if amount >= threshold:
-                side = "🔴 SELL" if data['m'] else "🟢 BUY"
+                side = "\U0001F534 SELL" if data['m'] else "\U0001F7E2 BUY"
                 
                 # Update Whale Delta
                 delta_change = -amount if data['m'] else amount
@@ -303,16 +328,26 @@ class MarketEngine:
                 # Check for Momentum Shift ($5M swing)
                 momentum_threshold = float(thresholds.get("whaleMomentumDelta", 5000000))
                 if abs(self.state[symbol]["whale_delta"] - (old_delta // momentum_threshold * momentum_threshold)) >= momentum_threshold:
-                     await self.send_alert(
-                        f"[{symbol}] 🐋💨 Whale Momentum Shift",
+                    await self.send_alert(
+                        f"[{symbol}] \U0001F40B\U0001F4A8 Whale Momentum Shift",
                         f"<b>Net Flow:</b> ${self.state[symbol]['whale_delta']/1e6:+.2f}M\n<b>Dynamics:</b> {'Massive Accumulation' if delta_change > 0 else 'Massive Distribution'}",
-                        "whale", symbol, "info", 900
+                        "whale", symbol, "info", 900,
+                        reason="whale_momentum_delta_cross",
+                        current_value=self.state[symbol]["whale_delta"],
+                        threshold_value=momentum_threshold,
+                        comparison="abs_delta>=",
+                        metadata={"delta_change": delta_change},
                     )
 
                 await self.send_alert(
-                    f"[{symbol}] 🐋 Whale Trade",
+                    f"[{symbol}] \U0001F40B Whale Trade",
                     f"<b>Direction:</b> {side}\n<b>Size:</b> ${amount/1e6:.2f}M\n<b>Price:</b> ${price:,.2f}",
-                    "whale", symbol, "info", 60
+                    "whale", symbol, "info", 60,
+                    reason="whale_trade_amount_threshold_cross",
+                    current_value=amount,
+                    threshold_value=threshold,
+                    comparison=">=",
+                    metadata={"side": "sell" if data['m'] else "buy"},
                 )
             
             # Update Volume Profile & VA
@@ -348,9 +383,25 @@ class MarketEngine:
                 old_val = self.state[symbol]["last_val"]
                 if old_vah > 0:
                     if price > vah and self.state[symbol]["last_price"] <= vah:
-                        await self.send_alert(f"[{symbol}] 📈 VA Breakout (High)", f"Price ${price:,.2f} breaking above VAH ${vah:,.2f}", "level_testing", symbol, "info", 3600)
+                        await self.send_alert(
+                            f"[{symbol}] \U0001F4C8 VA Breakout (High)",
+                            f"Price ${price:,.2f} breaking above VAH ${vah:,.2f}",
+                            "level_testing", symbol, "info", 3600,
+                            reason="value_area_breakout_high",
+                            current_value=price,
+                            threshold_value=vah,
+                            comparison=">"
+                        )
                     elif price < val and self.state[symbol]["last_price"] >= val:
-                        await self.send_alert(f"[{symbol}] 📉 VA Breakout (Low)", f"Price ${price:,.2f} breaking below VAL ${val:,.2f}", "level_testing", symbol, "info", 3600)
+                        await self.send_alert(
+                            f"[{symbol}] \U0001F4C9 VA Breakout (Low)",
+                            f"Price ${price:,.2f} breaking below VAL ${val:,.2f}",
+                            "level_testing", symbol, "info", 3600,
+                            reason="value_area_breakout_low",
+                            current_value=price,
+                            threshold_value=val,
+                            comparison="<"
+                        )
                 
                 self.state[symbol]["last_vah"] = vah
                 self.state[symbol]["last_val"] = val
@@ -366,15 +417,24 @@ class MarketEngine:
                 
                 # Check for crossing (Upwards or Downwards)
                 hit = False
-                if last_price < alert_price <= price: hit = True # Cross up
-                elif last_price > alert_price >= price: hit = True # Cross down
+                crossing = None
+                if last_price < alert_price <= price:
+                    hit = True # Cross up
+                    crossing = "cross_up"
+                elif last_price > alert_price >= price:
+                    hit = True # Cross down
+                    crossing = "cross_down"
                 
                 if hit:
-                    logger.info(f"🔔 ALERT HIT: {symbol} at ${price:,.2f} (Target: ${alert_price:,.2f})")
+                    logger.info(f"\U0001F514 ALERT HIT: {symbol} at ${price:,.2f} (Target: ${alert_price:,.2f})")
                     await self.send_alert(
-                        f"[{symbol}] 🔔 PRICE ALERT HIT",
+                        f"[{symbol}] \U0001F514 PRICE ALERT HIT",
                         f"<b>Target:</b> ${alert_price:,.2f}\n<b>Current:</b> ${price:,.2f}\n<b>Status:</b> Level reached.",
-                        "price_alert", symbol, "warning", 10 # Short cooldown
+                        "price_alert", symbol, "warning", 10, # Short cooldown
+                        reason="custom_price_cross",
+                        current_value=price,
+                        threshold_value=alert_price,
+                        comparison=crossing
                     )
                     # Trigger removal of the alert from bot.py
                     async with ClientSession() as session:
@@ -442,7 +502,15 @@ class MarketEngine:
                             await self.send_alert(
                                 f"[{symbol}] {icon} {title}",
                                 f"Open Interest {'increased' if is_up else 'dropped'} by {abs(oi_change_pct):.2f}% in {tf_str}.",
-                                "oi_spike", symbol, "info", cooldown, tf=tf_str
+                                "oi_spike", symbol, "info", cooldown, tf=tf_str,
+                                reason="oi_change_threshold_cross",
+                                current_value=abs(oi_change_pct),
+                                threshold_value=oi_threshold,
+                                comparison="abs(%)>",
+                                metadata={
+                                    "direction": "increase" if is_up else "decrease",
+                                    "oi_change_pct": oi_change_pct,
+                                },
                             )
 
         # 4. Funding Rate
@@ -456,11 +524,15 @@ class MarketEngine:
             extreme = float(thresholds.get("fundingExtremeRate", 0.05)) / 100 # Frontend sends 0.05 for 0.05%
             
             if abs(rate) >= extreme and abs(old_rate) < extreme:
-                direction = "🟢 POSITIVE" if rate > 0 else "🔴 NEGATIVE"
+                direction = "\U0001F7E2 POSITIVE" if rate > 0 else "\U0001F534 NEGATIVE"
                 await self.send_alert(
-                    f"[{symbol}] 🚨 Funding Extreme",
+                    f"[{symbol}] \U0001F6A8 Funding Extreme",
                     f"<b>Direction:</b> {direction}\n<b>Rate:</b> {rate*100:.4f}%\n<b>Context:</b> Leverage becoming unbalanced.",
-                    "extreme_funding", symbol, "warning", 14400
+                    "extreme_funding", symbol, "warning", 14400,
+                    reason="funding_rate_extreme_cross",
+                    current_value=rate * 100,
+                    threshold_value=extreme * 100,
+                    comparison="abs(%)>="
                 )
 
         # 4. Liquidations
@@ -474,9 +546,14 @@ class MarketEngine:
             if amount >= threshold:
                 side = o['S']
                 await self.send_alert(
-                    f"[{symbol}] 💥 Liquidation",
+                    f"[{symbol}] \U0001F4A5 Liquidation",
                     f"<b>Side:</b> {side}\n<b>Amount:</b> ${amount/1e6:.2f}M\n<b>Price:</b> ${float(o['p']):,.2f}",
-                    "liquidation", symbol, "warning", 30
+                    "liquidation", symbol, "warning", 30,
+                    reason="liquidation_amount_threshold_cross",
+                    current_value=amount,
+                    threshold_value=threshold,
+                    comparison=">=",
+                    metadata={"side": side}
                 )
 
         # 5. Klines (MTF & State Change)
@@ -517,7 +594,12 @@ class MarketEngine:
                     await self.send_alert(
                         f"[{symbol}] {color} Volatility Shift ({tf})",
                         f"<b>State:</b> {old_vol} -> {next_vol}\n<b>ATR Ratio:</b> {atr_ratio:.2f}x\n<b>Risk:</b> {'High' if next_vol != 'Normal' else 'Low'}",
-                        "atr_expand", symbol, "info", 300, tf=tf
+                        "atr_expand", symbol, "info", 300, tf=tf,
+                        reason="volatility_state_change",
+                        current_value=atr_ratio,
+                        threshold_value=exp_ratio,
+                        comparison="state_change",
+                        metadata={"from": old_vol, "to": next_vol},
                     )
 
                 # B. Regime & Bias Shift
@@ -543,7 +625,12 @@ class MarketEngine:
                     await self.send_alert(
                         f"[{symbol}] {icon} Regime Shift ({tf})",
                         f"<b>Bias:</b> {old_regime} -> {next_regime}\n<b>RSI:</b> {rsi:.1f}\n<b>EMA Sep:</b> {sep:.2f}%",
-                        "ema_cross", symbol, "info", 900, tf=tf
+                        "ema_cross", symbol, "info", 900, tf=tf,
+                        reason="regime_state_change",
+                        current_value=sep,
+                        threshold_value=sep_threshold,
+                        comparison="sep>=",
+                        metadata={"from": old_regime, "to": next_regime},
                     )
 
                 # B2. RSI Extremes
@@ -562,10 +649,17 @@ class MarketEngine:
                 )
                 if rsi_changed and next_rsi_state != "Neutral" and old_rsi_state != "Unknown":
                     rsi_icon = "OVERBOUGHT" if next_rsi_state == "Overbought" else "OVERSOLD"
+                    rsi_threshold = rsi_ob if next_rsi_state == "Overbought" else rsi_os
+                    rsi_comparison = ">=" if next_rsi_state == "Overbought" else "<="
                     await self.send_alert(
                         f"[{symbol}] {rsi_icon} RSI Extreme ({tf})",
                         f"<b>State:</b> {next_rsi_state}\n<b>Current RSI:</b> {rsi:.1f}\n<b>Threshold:</b> {rsi_ob if next_rsi_state == 'Overbought' else rsi_os}",
-                        "rsi_extreme", symbol, "info", 600, tf=tf
+                        "rsi_extreme", symbol, "info", 600, tf=tf,
+                        reason="rsi_threshold_cross",
+                        current_value=rsi,
+                        threshold_value=rsi_threshold,
+                        comparison=rsi_comparison,
+                        metadata={"state": next_rsi_state},
                     )
 
                 # B3. Relative Volume (RVOL) Spike
@@ -582,7 +676,11 @@ class MarketEngine:
                     await self.send_alert(
                         f"[{symbol}] RVOL Spike ({tf})",
                         f"<b>Relative Volume:</b> {rvol:.1f}x average\n<b>Price:</b> ${price:,.2f}",
-                        "rvol_spike", symbol, "info", 600, tf=tf
+                        "rvol_spike", symbol, "info", 600, tf=tf,
+                        reason="rvol_multiplier_cross",
+                        current_value=rvol,
+                        threshold_value=rvol_mult,
+                        comparison=">="
                     )
 
                 # C. Positioning & Flow Shift (MTF)
@@ -623,19 +721,33 @@ class MarketEngine:
                             await self.send_alert(
                                 f"[{symbol}] Flow Shift ({tf})",
                                 f"<b>Dynamics:</b> {next_flow}\n<b>OI Delta:</b> {oi_delta:+.2f}%\n<b>Price Delta:</b> {price_delta:+.2f}%",
-                                "order_flow", symbol, "info", 900, tf=tf
+                                "order_flow", symbol, "info", 900, tf=tf,
+                                reason="flow_state_change",
+                                current_value=oi_delta,
+                                threshold_value=oi_threshold,
+                                comparison="abs(%)>",
+                                metadata={"price_delta_pct": price_delta, "state": next_flow},
                             )
 
                 # D. Level Interaction Interaction
                 levels = [("POC", poc), ("VWAP", vwap)]
                 active_level = "In Vacuum"
+                active_level_price = None
+                level_distance_pct = None
+                proximity_threshold_pct = None
                 for name, l_price in levels:
                     dist = abs(price - l_price) / l_price * 100
                     if dist < 0.05:
                         active_level = f"Consolidating at {name}"
+                        active_level_price = l_price
+                        level_distance_pct = dist
+                        proximity_threshold_pct = 0.05
                         break
                     elif dist < 0.15:
                         active_level = f"Testing {name}"
+                        active_level_price = l_price
+                        level_distance_pct = dist
+                        proximity_threshold_pct = 0.15
                         break
                 
                 old_level, next_level, level_changed = self.debounced_state_change(
@@ -649,7 +761,12 @@ class MarketEngine:
                     await self.send_alert(
                         f"[{symbol}] Level Interaction ({tf})",
                         f"<b>Status:</b> {next_level}\n<b>Price:</b> ${price:,.2f}",
-                        "level_testing", symbol, "info", 600, tf=tf
+                        "level_testing", symbol, "info", 600, tf=tf,
+                        reason="level_proximity_state_change",
+                        current_value=level_distance_pct,
+                        threshold_value=proximity_threshold_pct,
+                        comparison="<",
+                        metadata={"level_price": active_level_price, "state": next_level},
                     )
 
                 # E. Context Summary Shift Evaluator
@@ -684,7 +801,12 @@ class MarketEngine:
                         await self.send_alert(
                             f"[{symbol}] Context Summary Shift ({tf})",
                             msg,
-                            "context_summary", symbol, "info", 900, tf=tf
+                            "context_summary", symbol, "info", 900, tf=tf,
+                            reason="context_summary_change",
+                            current_value=next_summary_hash,
+                            threshold_value=old_summary_hash,
+                            comparison="!=",
+                            metadata={"regime": regime, "flow": flow, "volatility": volatility},
                         )
             
             # F. Daily Wrap-Up (Check once per minute)
@@ -697,9 +819,12 @@ class MarketEngine:
                     
                     if price > 0:
                         await self.send_alert(
-                            f"[{symbol}] 📅 Daily Market Wrap",
+                            f"[{symbol}] \U0001F4C5 Daily Market Wrap",
                             f"<b>Closing Price:</b> ${price:,.2f}\n<b>Whale Net Flow:</b> ${whale_flow/1e6:+.2f}M\n<b>Funding Rate:</b> {self.state[symbol]['funding_rate']*100:.4f}%",
-                            "market_context", symbol, "info", 3600
+                            "market_context", symbol, "info", 3600,
+                            reason="daily_market_wrap",
+                            current_value=price,
+                            metadata={"whale_flow": whale_flow, "funding_rate": self.state[symbol]['funding_rate']},
                         )
                     self.state[symbol]["last_daily_wrap"] = time.time()
 
@@ -721,9 +846,12 @@ class MarketEngine:
                 # Only send if we have actual data
                 if regime != "Unknown" and volatility != "Unknown":
                     await self.send_alert(
-                        f"[{symbol}] 🧭 Market Context Summary",
+                        f"[{symbol}] \U0001F9ED Market Context Summary",
                         msg,
-                        "market_context", symbol, "info", 3600
+                        "market_context", symbol, "info", 3600,
+                        reason="periodic_market_context_summary",
+                        current_value=price,
+                        metadata={"regime": regime, "volatility": volatility, "flow": flow},
                     )
                     self.state[symbol]["last_periodic_summary"] = time.time()
                 else:
@@ -756,3 +884,4 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     engine = MarketEngine()
     asyncio.run(engine.run())
+

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "alert-event.schema.json",
+  "title": "AlertEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["message", "type"],
+  "properties": {
+    "message": { "type": "string" },
+    "type": { "type": "string" },
+    "category": { "type": "string" },
+    "severity": { "type": "string" },
+    "symbol": { "type": "string" },
+    "cooldown": { "type": "number" },
+    "tf": { "type": ["string", "null"] },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "reason": { "type": "string" },
+        "current_value": { "type": ["number", "string", "null"] },
+        "threshold_value": { "type": ["number", "string", "null"] },
+        "comparison": { "type": ["string", "null"] },
+        "timeframe": { "type": ["string", "null"] },
+        "session": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
+

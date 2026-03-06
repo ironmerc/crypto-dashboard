@@ -1,45 +1,87 @@
-# Godmode Futures Watchtower v2.0
+# Crypto Dashboard + Telegram Alert Stack
 
-A highly customizable, low-latency cryptocurrency futures dashboard designed for rigorous market monitoring and off-screen alerting.
+Low-latency crypto futures dashboard with a Python Telegram alert backend.
 
-## Features
+## What This Project Includes
 
-- **Scalable UI**: Fully responsive grid that squishes down responsively. Shrink the browser or snap it to the side to trigger a cohesive zoom scale out.
-- **Resizable Panels**: User-adjustable heights and column widths utilizing custom `react-resizable-panels` that match the terminal theme.
-- **Internal Overflow Handling**: Compressing horizontal or vertical panes automatically introduces sleek internal scrollbars rather than clipping the content.
-- **Dedicated Alert Bot**: A lightweight Python `aiohttp` Telegram Bot that runs internally in its own Docker container, circumventing CORS complexity entirely via Nginx reverse proxies.
+- React/Vite dashboard (`src/`) with Zustand state and alert controls
+- Python `aiohttp` Telegram bot (`telegram-bot/bot.py`) for queueing, policy checks, cooldowns, and delivery
+- Python market engine (`telegram-bot/market_engine.py`) that ingests Binance streams and emits alert events
+- Nginx proxy (`nginx.conf`) to route frontend `/api/bot/*` traffic to the bot container
+
+## Current Alert Pipeline
+
+1. Market engine detects conditions (whale activity, OI spikes, regime/volatility shifts, RSI/RVOL events, liquidation, custom price hits, summaries).
+2. Engine posts alert payloads to bot `/alert`.
+3. Bot applies policy gates (`alert_policy.py`) and cooldown keying (`type + symbol + timeframe`).
+4. Accepted alerts are queued and delivered to Telegram asynchronously.
+5. Alert events are stored in bounded history for dashboard consumption.
+
+## New Reliability Layer (Current)
+
+- Shared JSON schemas in [`schemas/`](schemas):
+  - `telegram-config.schema.json`
+  - `alert-event.schema.json`
+- Frontend and backend both run **warn-only schema validation**:
+  - Frontend: `src/utils/schemaValidation.ts`
+  - Backend: `telegram-bot/schema_validation.py`
+- Engine now attaches `metadata` on alerts with:
+  - `reason`
+  - `current_value`
+  - `threshold_value`
+  - `comparison`
+  - `timeframe`
+  - `session`
+
+This gives traceability for why each alert fired without hard-blocking payloads.
 
 ## Quick Start (Docker)
 
-This application is built with React/Vite but is intended to be run locally or on a Raspberry Pi using Docker Compose so that the React frontend, the Nginx reverse proxy, and the backend Python alerting bot all spin up together.
+1. Copy env file:
 
-1. **Clone the repository**
-2. **Setup Telegram Environment**
-   * Copy `.env.example` to `.env`.
-   * Open `.env` and fill in your `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
-3. **Build & Up**
-   ```bash
-   docker-compose up -d --build
-   ```
+```bash
+cp .env.example .env
+```
 
-## Architecture
+2. Fill `.env` with:
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
 
-* **Frontend**: React + TypeScript + Zustand + Vite + TailwindCSS.
-* **Serving Layer**: Nginx (serves static frontend files and reverse-proxies API requests to the bot to bypass CORS).
-* **Alert Backend**: Python 3.11 Alpine container running `aiohttp` and `asyncio.Queue` for non-blocking Telegram alerts with granular cooldowns.
+3. Build and run:
 
-### Documentation (Local-Only)
-Since this project uses the GSD methodology, core documentation is kept locally in the `.gsd/` directory and excluded from Git tracking to ensure privacy and environment-specific focus.
+```bash
+docker-compose up -d --build
+```
 
-- [Architecture](file:///.gsd/ARCHITECTURE.md)
-- [Stack & Tech Specs](file:///.gsd/STACK.md)
-- [Mission Control Rules](file:///.gsd/PROJECT_RULES.md)
+4. Open dashboard:
+- `http://localhost:8000`
 
-### The Bot Pipeline
-When the React UI detects an anomaly (like an ATR Expansion or an Open Interest Spike), it fires a JSON payload to `/api/bot/alert`. 
+## Ports and Routes
 
-Nginx intercepts this route and transparently passes the payload to `http://telegram-bot:8080/`. The Python bot accepts the signal, puts it into an internal asynchronous queue, replies `202 Accepted` immediately, and then handles the API dispatch and rate-limit cooldowns in the background.
+- Frontend container: `8000 -> 80`
+- Telegram bot container: `8888 -> 8888`
+- Nginx proxy route:
+  - `/api/bot/*` -> `http://telegram-bot:8888/*`
+
+## Local Dev Commands
+
+```bash
+npm install
+npm run dev
+```
+
+Useful checks:
+
+```bash
+npm test
+npm run build
+python -m unittest telegram-bot/tests/test_schema_validation.py telegram-bot/tests/test_alert_metadata.py
+```
+
+## Notes
+
+- Local/private GSD docs may exist under `.gsd/` and are intentionally not tracked.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT. See [`LICENSE`](LICENSE).
