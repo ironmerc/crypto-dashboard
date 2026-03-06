@@ -138,6 +138,10 @@ interface TerminalState {
     addMonitoredSymbol: (symbol: string) => void;
     removeMonitoredSymbol: (symbol: string) => void;
 
+    // Theme Settings
+    theme: 'terminal' | 'professional';
+    setTheme: (theme: 'terminal' | 'professional') => void;
+
     // Custom Price Alerts
     priceAlerts: PriceAlert[];
     setPriceAlerts: (alerts: PriceAlert[]) => void;
@@ -327,6 +331,9 @@ export const useTerminalStore = create<TerminalState>()(
                 currentRSI: indicators.rsi !== undefined ? { ...state.currentRSI, [symbol]: indicators.rsi } : state.currentRSI,
             })),
 
+            theme: 'terminal',
+            setTheme: (theme) => set({ theme }),
+
             priceAlerts: [],
             setPriceAlerts: (alerts) => set({ priceAlerts: alerts }),
             addPriceAlert: async (alert) => {
@@ -488,6 +495,7 @@ export const useTerminalStore = create<TerminalState>()(
                 telegramConfig: state.telegramConfig,
                 events: state.events,
                 whaleDelta: state.whaleDelta,
+                theme: state.theme,
                 // Do NOT persist isConfigFetched - always re-fetch on page load
             }),
             // On rehydration, prune events older than 1 hour so the feed stays contextually fresh

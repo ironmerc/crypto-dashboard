@@ -107,7 +107,7 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <div className={`dashboard-scale min-h-screen w-full bg-[#050505] text-terminal-text p-2 md:p-4 selection:bg-terminal-fg selection:text-black flex flex-col gap-4 ${isMobile ? 'overflow-x-hidden overflow-y-auto' : 'h-screen overflow-hidden'}`}>
+    <div className={`dashboard-scale min-h-screen w-full bg-terminal-bg text-terminal-fg p-2 md:p-4 selection:bg-terminal-fg selection:text-black flex flex-col gap-4 ${isMobile ? 'overflow-x-hidden overflow-y-auto' : 'h-screen overflow-hidden'}`}>
 
       {/* HEADER */}
       <header className="flex flex-col lg:flex-row lg:items-center gap-3 border-b border-terminal-border/50 pb-3 shrink-0">
@@ -124,7 +124,7 @@ export default function Dashboard() {
         </div>
         <div className="lg:ml-auto flex flex-wrap items-center gap-2 md:gap-4 text-xs text-terminal-muted font-mono">
           {/* Telegram Egress Status */}
-          <div className="flex items-center gap-2 px-2 py-1 rounded bg-[#0a0a0a] border border-terminal-border/30 shrink-0" title="Master Telegram Egress Toggle Status">
+          <div className="flex items-center gap-2 px-2 py-1 rounded bg-terminal-surface border border-terminal-border/30 shrink-0" title="Master Telegram Egress Toggle Status">
             <span className={`w-2 h-2 rounded-full ${(telegramConfig && telegramConfig.globalEnabled) ? 'bg-terminal-green shadow-[0_0_8px_#00ff41]' : 'bg-red-500 shadow-[0_0_8px_#ef4444]'}`}></span>
             <span className="font-bold tracking-wider text-[10px]">{(telegramConfig && telegramConfig.globalEnabled) ? 'TG: ON' : 'TG: OFF'}</span>
           </div>
@@ -150,7 +150,7 @@ export default function Dashboard() {
           </Link>
 
           {/* Global Timeframe Selector */}
-          <div className="flex flex-wrap bg-[#0a0a0a] border border-terminal-border/30 rounded shadow-lg p-0.5 max-w-full overflow-x-auto scrollbar-none">
+          <div className="flex flex-wrap bg-terminal-surface border border-terminal-border/30 rounded shadow-lg p-0.5 max-w-full overflow-x-auto scrollbar-none">
             {['1m', '5m', '15m', '30m', '1h', '4h', '12h', '1d', '1w', '1M'].map(t => (
               <button
                 key={t}
@@ -166,7 +166,7 @@ export default function Dashboard() {
             <span className="hidden sm:inline">DATALINK ENCRYPTED</span>
             <span className="sm:hidden">ENCRYPTED</span>
           </span>
-          <span className="border border-terminal-border/30 px-2 py-1 rounded bg-[#0a0a0a] shrink-0">
+          <span className="border border-terminal-border/30 px-2 py-1 rounded bg-terminal-surface shrink-0">
             {new Date().toISOString().split('T')[0]}
           </span>
         </div>
@@ -329,7 +329,7 @@ export default function Dashboard() {
                           key={sym}
                           onClick={() => setLocalActiveSymbol(sym)}
                           className={`w-full text-left px-2 py-1.5 rounded flex justify-between items-center transition-colors border text-xs ${isSelected
-                            ? 'border-terminal-fg bg-[#00ff4111] glow-text'
+                            ? 'border-terminal-fg bg-terminal-green/10 glow-text'
                             : 'border-transparent hover:bg-terminal-border/30 text-terminal-muted opacity-70 hover:opacity-100'
                             }`}
                         >

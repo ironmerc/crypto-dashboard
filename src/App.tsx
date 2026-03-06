@@ -6,6 +6,7 @@ import DashboardSettings from './pages/DashboardSettings';
 import { GlobalErrorBoundary } from './components/GlobalErrorBoundary';
 import { fetchConfigFromBot } from './utils/syncConfig';
 import { usePageVisibility } from './hooks/usePageVisibility';
+import { ThemeManager } from './components/ThemeManager';
 
 export default function App() {
     const isVisible = usePageVisibility();
@@ -23,6 +24,7 @@ export default function App() {
 
     return (
         <GlobalErrorBoundary>
+            <ThemeManager />
             <BrowserRouter>
                 <Routes>
                     <Route path="/" element={<Dashboard />} />

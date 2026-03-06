@@ -1,22 +1,57 @@
-@import "tailwindcss";
+:root {
+  /* Default: Terminal Theme */
+  --bg-primary: #0a0a0a;
+  --bg-surface: #111111;
+  --color-accent: #00ff41;
+  --color-text: #00ff41;
+  --color-text-muted: #808080;
+  --color-border: #333333;
+  --color-red: #ff3333;
+  --color-green: #00cc33;
+  --color-blue: #33ccff;
+  --font-main: "Fira Code", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+[data-theme="professional"] {
+  --bg-primary: #020617;
+  /* slate-950 */
+  --bg-surface: #0f172a;
+  /* slate-900 */
+  --color-accent: #6366f1;
+  /* indigo-500 */
+  --color-text: #f8fafc;
+  /* slate-50 */
+  --color-text-muted: #94a3b8;
+  /* slate-400 */
+  --color-border: #1e293b;
+  /* slate-800 */
+  --color-red: #ef4444;
+  /* red-500 */
+  --color-green: #22c55e;
+  /* green-500 */
+  --color-blue: #6366f1;
+  /* indigo-500 */
+  --font-main: "Inter", "system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", sans-serif;
+}
 
 @theme {
-  --color-terminal-bg: #0a0a0a;
-  --color-terminal-fg: #00ff41;
-  --color-terminal-red: #ff3333;
-  --color-terminal-green: #00cc33;
-  --color-terminal-blue: #33ccff;
-  --color-terminal-muted: #808080;
-  --color-terminal-border: #333333;
-  --color-terminal-surface: #111111;
-  --font-mono: "Fira Code", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --color-terminal-bg: var(--bg-primary);
+  --color-terminal-fg: var(--color-text);
+  --color-terminal-red: var(--color-red);
+  --color-terminal-green: var(--color-green);
+  --color-terminal-blue: var(--color-blue);
+  --color-terminal-muted: var(--color-text-muted);
+  --color-terminal-border: var(--color-border);
+  --color-terminal-surface: var(--bg-surface);
+  --color-accent-primary: var(--color-accent);
+  --font-mono: var(--font-main);
 }
 
 @layer base {
   body {
     background-color: var(--color-terminal-bg);
     color: var(--color-terminal-fg);
-    font-family: var(--font-mono);
+    font-family: var(--font-main);
     -webkit-font-smoothing: antialiased;
     letter-spacing: -0.015em;
     margin: 0;
@@ -26,15 +61,16 @@
 
 @layer utilities {
   .glow-text {
-    text-shadow: 0 0 8px rgba(0, 255, 65, 0.5);
+    text-shadow: 0 0 8px var(--color-accent-primary);
+    opacity: 0.85;
   }
 
   .glow-red {
-    text-shadow: 0 0 8px rgba(255, 51, 51, 0.5);
+    text-shadow: 0 0 8px var(--color-red);
   }
 
   .glow-blue {
-    text-shadow: 0 0 8px rgba(51, 204, 255, 0.5);
+    text-shadow: 0 0 8px var(--color-blue);
   }
 
   .panel {
@@ -42,6 +78,7 @@
     border: 1px solid var(--color-terminal-border);
     border-radius: 0.5rem;
     padding: 1rem;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   }
 
   .dashboard-scale {
@@ -52,21 +89,21 @@
   }
 }
 
-/* Custom hacker scrollbar */
+/* Custom theme scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0a0a0a;
+  background: var(--bg-primary);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #333333;
+  background: var(--color-border);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #00ff41;
+  background: var(--color-accent-primary);
 }

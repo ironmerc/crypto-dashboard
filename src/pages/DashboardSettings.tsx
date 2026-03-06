@@ -17,6 +17,8 @@ export default function DashboardSettings() {
     const monitoredSymbols = useTerminalStore((s) => s.telegramConfig.monitoredSymbols);
     const addMonitoredSymbol = useTerminalStore((s) => s.addMonitoredSymbol);
     const removeMonitoredSymbol = useTerminalStore((s) => s.removeMonitoredSymbol);
+    const theme = useTerminalStore((s) => s.theme);
+    const setTheme = useTerminalStore((s) => s.setTheme);
 
     const [inputValue, setInputValue] = useState('');
     const [error, setError] = useState('');
@@ -228,6 +230,59 @@ export default function DashboardSettings() {
                             <X size={11} /> {error}
                         </p>
                     )}
+                </section>
+
+                {/* Section: Appearance */}
+                <section>
+                    <div className="flex items-center gap-2 mb-1">
+                        <Zap size={13} className="text-terminal-green" />
+                        <h2 className="text-terminal-green text-xs font-bold uppercase tracking-widest">
+                            Appearance
+                        </h2>
+                    </div>
+                    <p className="text-terminal-muted text-xs mb-5">
+                        Choose your preferred interface aesthetic. Changes are applied system-wide.
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <button
+                            onClick={() => setTheme('terminal')}
+                            className={`flex flex-col gap-3 p-4 rounded-xl border transition-all text-left ${theme === 'terminal'
+                                    ? 'border-terminal-green bg-terminal-green/5 ring-1 ring-terminal-green/50'
+                                    : 'border-terminal-border bg-black/20 hover:border-terminal-muted/50'
+                                }`}
+                        >
+                            <div className="flex justify-between items-center">
+                                <span className={`text-xs font-bold uppercase tracking-wider ${theme === 'terminal' ? 'text-terminal-green' : 'text-terminal-fg'}`}>
+                                    Hacker Terminal
+                                </span>
+                                {theme === 'terminal' && <CircleDot size={12} className="text-terminal-green" />}
+                            </div>
+                            <div className="flex flex-col gap-1.5 opacity-60">
+                                <div className="h-2 w-full bg-terminal-fg/20 rounded-full" />
+                                <div className="h-2 w-3/4 bg-terminal-fg/20 rounded-full" />
+                            </div>
+                        </button>
+
+                        <button
+                            onClick={() => setTheme('professional')}
+                            className={`flex flex-col gap-3 p-4 rounded-xl border transition-all text-left ${theme === 'professional'
+                                    ? 'border-terminal-blue bg-terminal-blue/5 ring-1 ring-terminal-blue/50'
+                                    : 'border-terminal-border bg-black/20 hover:border-terminal-muted/50'
+                                }`}
+                        >
+                            <div className="flex justify-between items-center">
+                                <span className={`text-xs font-bold uppercase tracking-wider ${theme === 'professional' ? 'text-terminal-blue' : 'text-terminal-fg'}`}>
+                                    Indigo Professional
+                                </span>
+                                {theme === 'professional' && <CircleDot size={12} className="text-terminal-blue" />}
+                            </div>
+                            <div className="flex flex-col gap-1.5 opacity-60">
+                                <div className="h-2 w-full bg-terminal-blue/20 rounded-full" />
+                                <div className="h-2 w-3/4 bg-terminal-blue/20 rounded-full" />
+                            </div>
+                        </button>
+                    </div>
                 </section>
 
                 {/* Placeholder for future settings */}
