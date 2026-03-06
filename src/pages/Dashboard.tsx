@@ -10,7 +10,6 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useFuturesStream } from '../hooks/useFuturesStream';
 import { useOpenInterest } from '../hooks/useOpenInterest';
 import { useSmartAlerts } from '../hooks/useSmartAlerts';
-import { useMarketContextAlerts } from '../hooks/useMarketContextAlerts';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { usePageVisibility } from '../hooks/usePageVisibility';
 import { EventFeed } from '../components/EventFeed';
@@ -41,7 +40,6 @@ export default function Dashboard() {
   useFuturesStream(localActiveSymbol, monitoredSymbols);
   useOpenInterest(localActiveSymbol);
   useSmartAlerts(localActiveSymbol);
-  useMarketContextAlerts(localActiveSymbol);
 
   const openInterest = useTerminalStore((state) => state.openInterest[localActiveSymbol]);
   const oiHistory = useTerminalStore((state) => state.oiHistory[localActiveSymbol]);

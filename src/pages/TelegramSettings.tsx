@@ -122,12 +122,12 @@ export default function TelegramSettings() {
             case 'funding_extreme':
                 title = `[BTCUSDT] ⚠️ Extreme Funding Rate`;
                 message = "<b>Current Rate:</b> 0.0521%\n<b>Implication:</b> Extreme Long Bias\n\n<i>Leverage is heavily skewed. Risk of a long squeeze is elevated.</i>";
-                category = "funding";
+                category = "extreme_funding";
                 break;
             case 'va_breakout':
                 title = `[BTCUSDT] 📈 Value Area Breakout`;
                 message = "<b>Direction:</b> 🟢 Breaking VAH (Bullish)\n<b>Current Price:</b> $65,100\n<b>VAH:</b> $64,800\n<b>VAL:</b> $63,200\n\n<i>Price has gained acceptance outside the high-volume node.</i>";
-                category = "value_area";
+                category = "level_testing";
                 break;
             case 'whale_momentum':
                 title = `[BTCUSDT] 🐋💨 Whale Momentum Shift`;
@@ -137,12 +137,27 @@ export default function TelegramSettings() {
             case 'rvol':
                 title = `[BTCUSDT] 🌋 Abnormal RVOL Detected`;
                 message = "<b>RVOL Spike:</b> 4.2x Average\n<b>Dominant Pressure:</b> 🟢 Buying\n<b>5m Volume:</b> $24.5M\n\n<i>Extremely high activity detected.</i>";
-                category = "rvol";
+                category = "rvol_spike";
                 break;
             case 'daily_wrap':
                 title = `[BTCUSDT] 📅 Daily Market Wrap-Up`;
                 message = "<b>Closing Price:</b> $64,500\n<b>Net Whale Flow (24h):</b> +$15.2M\n<b>Net OI Change (24h):</b> +$42.1M\n<b>Current Funding:</b> 0.0125%\n\n<i>Session closed, data reset for the new day.</i>";
                 category = "market_context";
+                break;
+            case 'order_flow':
+                title = `[BTCUSDT] 📊 Flow Shift Detected`;
+                message = "<b>Dynamics:</b> Active Long Building\n<b>OI Delta:</b> +2.45%\n<b>Price Delta:</b> +0.85%\n\n<i>Aggressive positioning detected.</i>";
+                category = "order_flow";
+                break;
+            case 'level_testing':
+                title = `[BTCUSDT] 🎯 Level Interaction`;
+                message = "<b>Status:</b> Testing POC\n<b>Price:</b> $64,250\n\n<i>Interaction with high-volume node.</i>";
+                category = "level_testing";
+                break;
+            case 'context_summary':
+                title = `[BTCUSDT] ⚡ Context Summary Shift`;
+                message = "<b>Uptrend (Strong) → Active Long Building</b>\n\n<b>Regime:</b> Uptrend\n<b>Volatility:</b> Normal\n<b>Positioning:</b> Active Long Building";
+                category = "context_summary";
                 break;
             default:
                 title = `[SYSTEM] Diagnostic Ping`;
@@ -418,7 +433,7 @@ export default function TelegramSettings() {
                                     <div className="bg-slate-900/40 border border-slate-800/60 rounded-xl p-6 backdrop-blur-sm h-full">
                                         <div className="space-y-6">
                                             {/* Subscription groups implementation... */}
-                                            {['oi_spike', 'atr_expand', 'liquidation', 'whale', 'momentum', 'extreme_funding', 'ema_cross', 'rsi_extreme', 'rvol_spike'].map(id => (
+                                            {['oi_spike', 'atr_expand', 'liquidation', 'whale', 'extreme_funding', 'ema_cross', 'rsi_extreme', 'rvol_spike', 'order_flow', 'level_testing', 'context_summary', 'market_context'].map(id => (
                                                 <div key={id} className="p-4 bg-slate-950/50 border border-slate-800/50 rounded-xl space-y-4">
                                                     <div className="flex items-center justify-between">
                                                         <div className="flex items-center space-x-3">
@@ -781,6 +796,10 @@ export default function TelegramSettings() {
                                                 <option value="atr_expand">Volatility Expansion</option>
                                                 <option value="liquidation">Liquidations</option>
                                                 <option value="whale">Whale Activity</option>
+                                                <option value="order_flow">Order Flow Shift</option>
+                                                <option value="level_testing">Level Testing</option>
+                                                <option value="context_summary">Context Summary</option>
+                                                <option value="market_context_summary">Market Wrap/Summary</option>
                                                 <option value="ping">System Ping</option>
                                             </select>
                                             <button

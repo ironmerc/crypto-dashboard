@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react';
 import useWebSocket from 'react-use-websocket';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { usePageVisibility } from './usePageVisibility';
-import { sendTelegramAlert, getCurrentSession } from './useSmartAlerts';
 import type { OrderBookLevel, Side, MarketEvent } from '../store/useTerminalStore';
 
 const BINANCE_FUTURES_WS = 'wss://fstream.binance.com/ws';
@@ -18,7 +17,6 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
     const addEvent = useTerminalStore(state => state.addEvent);
     const addTrade = useTerminalStore(state => state.addTrade);
     const isVisible = usePageVisibility();
-    const lastAlerts = useRef<Record<string, number>>({});
 
     const { sendMessage, lastJsonMessage } = useWebSocket(BINANCE_FUTURES_WS, {
         shouldReconnect: () => true,
@@ -176,19 +174,6 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
                     side,
                     timestamp: msg.T
                 });
-
-                // Telegram Egress
-                const cdSecs = (config.cooldowns && config.cooldowns['whale']) || 60;
-                const now = Date.now();
-                const alertKey = `WHALE_${msg.s}`;
-                if (!lastAlerts.current[alertKey] || now - lastAlerts.current[alertKey] > cdSecs * 1000) {
-                    lastAlerts.current[alertKey] = now;
-                    const session = getCurrentSession();
-                    const emoji = side === 'BUY' ? '🟢' : '🔴';
-                    const title = `${msg.s} 🐋 Whale Trade`;
-                    const alertMsg = `<b>Direction:</b> ${emoji} ${side}\n<b>Size:</b> $${(value / 1000000).toFixed(2)}M\n<b>Price:</b> $${price.toLocaleString()}\n\n<b>Session:</b> ${session}`;
-                    sendTelegramAlert(title, alertMsg, `WHALE_${msg.s}`, cdSecs, 'whale');
-                }
             }
         }
 
@@ -219,19 +204,6 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
                 };
 
                 addEvent(liqEvent);
-
-                // Telegram Egress
-                const cdSecs = (config.cooldowns && config.cooldowns['liquidation']) || 30;
-                const now = Date.now();
-                const alertKey = `LIQ_${order.s}`;
-                if (!lastAlerts.current[alertKey] || now - lastAlerts.current[alertKey] > cdSecs * 1000) {
-                    lastAlerts.current[alertKey] = now;
-                    const session = getCurrentSession();
-                    const emoji = side === 'LONG' ? '💧' : '🔥';
-                    const title = `${order.s} 💥 Major Liquidation`;
-                    const alertMsg = `<b>Side:</b> ${emoji} ${side}\n<b>Amount:</b> $${(value / 1000000).toFixed(2)}M\n<b>Price:</b> $${price.toLocaleString()}\n\n<b>Session:</b> ${session}`;
-                    sendTelegramAlert(title, alertMsg, `LIQ_${order.s}`, cdSecs, 'liquidation');
-                }
             }
         }
 

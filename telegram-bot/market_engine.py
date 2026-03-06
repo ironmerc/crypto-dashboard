@@ -134,7 +134,7 @@ class MarketEngine:
                         "oi_history": [], "spread_history": [],
                         "whale_delta": 0, "funding_rate": 0,
                         "volume_profile": {}, "last_vah": 0, "last_val": 0,
-                        "summary_hash": {}, "last_daily_wrap": 0
+                        "summary_hash": {}, "last_daily_wrap": 0, "last_periodic_summary": 0
                     }
 
             streams = []
@@ -143,7 +143,6 @@ class MarketEngine:
                 streams.extend([
                     f"{sym}@aggTrade",
                     f"{sym}@forceOrder",
-                    f"{sym}@bookTicker",
                     f"{sym}@openInterest@500ms",
                     f"{sym}@markPrice"
                 ])
@@ -294,30 +293,35 @@ class MarketEngine:
             
             self.state[symbol]["last_price_for_alerts"] = price
 
-        # 2. Execution Context (Spread)
-        elif stream == "bookTicker":
-            bids = float(data['b'])
-            asks = float(data['a'])
-            price = (bids + asks) / 2
-            spread_pct = (asks - bids) / price * 100
-            
-            # Categorize
-            quality = "Tight" if spread_pct < 0.01 else ("Good" if spread_pct < 0.05 else "Wide")
-            old_quality = self.state[symbol].get("execution", "Unknown")
-            
-            if quality != old_quality:
-                # Limit execution alerts to once every 10m to avoid chop
-                await self.send_alert(
-                    f"[{symbol}] ⚡ Execution Context Shift",
-                    f"<b>Spread:</b> {old_quality} → {quality}\n<b>Raw Pct:</b> {spread_pct:.4f}%",
-                    "execution_quality", symbol, "info", 600
-                )
-            self.state[symbol]["execution"] = quality
 
         # 3. Open Interest Flow History
         elif stream == "openInterestUpdate": # Stream name is openInterestUpdate
             now = time.time()
-            self.state[symbol]["oi_history"] = [h for h in self.state[symbol]["oi_history"] if now - h['t'] <= 1800]
+            self.state[symbol]["oi_history"].append({'t': now, 'v': float(data['o'])})
+            self.state[symbol]["oi_history"] = [h for h in self.state[symbol]["oi_history"] if now - h['t'] <= 1800] # 30m window
+            
+            # --- 5m OI Spike Detection (Matches useSmartAlerts.ts) ---
+            window_5m = [h for h in self.state[symbol]["oi_history"] if now - h['t'] <= 300]
+            if len(window_5m) > 1:
+                oldest = window_5m[0]['v']
+                newest = window_5m[-1]['v']
+                if oldest > 0:
+                    oi_change_pct = ((newest - oldest) / abs(oldest)) * 100
+                    
+                    thresholds = self.config.get("thresholds", {}).get(symbol, 
+                                 self.config.get("thresholds", {}).get("global", {}))
+                    oi_threshold = float(thresholds.get("oiSpikePercentage", 1.5))
+                    
+                    if abs(oi_change_pct) > oi_threshold:
+                         is_up = oi_change_pct > 0
+                         title = "OI SPIKE DETECTED" if is_up else "OI FLUSH DETECTED"
+                         icon = "🌋" if is_up else "💧"
+                         cooldown = self.config.get("cooldowns", {}).get("oi_spike", 600)
+                         await self.send_alert(
+                            f"[{symbol}] {icon} {title}",
+                            f"Open Interest {'increased' if is_up else 'dropped'} by {abs(oi_change_pct):.2f}% in 5m.",
+                            "oi_spike", symbol, "info", cooldown
+                         )
 
         # 4. Funding Rate
         elif stream == "markPriceUpdate":
@@ -334,7 +338,7 @@ class MarketEngine:
                 await self.send_alert(
                     f"[{symbol}] 🚨 Funding Extreme",
                     f"<b>Direction:</b> {direction}\n<b>Rate:</b> {rate*100:.4f}%\n<b>Context:</b> Leverage becoming unbalanced.",
-                    "funding", symbol, "warning", 14400
+                    "extreme_funding", symbol, "warning", 14400
                 )
 
         # 4. Liquidations
@@ -384,7 +388,7 @@ class MarketEngine:
                     await self.send_alert(
                         f"[{symbol}] {color} Volatility Shift ({tf})",
                         f"<b>State:</b> {old_vol} → {vol_state}\n<b>ATR Ratio:</b> {atr_ratio:.2f}x\n<b>Risk:</b> {'High' if vol_state != 'Normal' else 'Low'}",
-                        "volatility_state", symbol, "info", 300, tf=tf
+                        "atr_expand", symbol, "info", 300, tf=tf
                     )
                 self.state[symbol]["volatility"][tf] = vol_state
 
@@ -405,7 +409,7 @@ class MarketEngine:
                     await self.send_alert(
                         f"[{symbol}] {icon} Regime Shift ({tf})",
                         f"<b>Bias:</b> {old_regime} → {new_regime}\n<b>RSI:</b> {rsi:.1f}\n<b>EMA Sep:</b> {sep:.2f}%",
-                        "regime_shift", symbol, "info", 900, tf=tf
+                        "ema_cross", symbol, "info", 900, tf=tf
                     )
                 self.state[symbol]["regime"][tf] = new_regime
 
@@ -423,7 +427,7 @@ class MarketEngine:
                     await self.send_alert(
                         f"[{symbol}] {rsi_icon} RSI Extreme ({tf})",
                         f"<b>State:</b> {new_rsi_state}\n<b>Current RSI:</b> {rsi:.1f}",
-                        "momentum_shift", symbol, "info", 600, tf=tf
+                        "rsi_extreme", symbol, "info", 600, tf=tf
                     )
                 self.state[symbol].setdefault("rsi_state", {})[tf] = new_rsi_state
 
@@ -433,7 +437,7 @@ class MarketEngine:
                      await self.send_alert(
                         f"[{symbol}] 🌋 RVOL Spike ({tf})",
                         f"<b>Relative Volume:</b> {rvol:.1f}x average\n<b>Price:</b> ${price:,.2f}",
-                        "volatility_state", symbol, "info", 600, tf=tf
+                        "rvol_spike", symbol, "info", 600, tf=tf
                     )
 
                 # C. Positioning & Flow Shift (15m window typically)
@@ -491,7 +495,7 @@ class MarketEngine:
                     volatility = st.get("volatility", {}).get(tf, "Unknown")
                     execution = st.get("execution", "Unknown")
                     
-                    new_summary_hash = f"{regime}|{flow}|{volatility}|{execution}"
+                    new_summary_hash = f"{regime}|{flow}|{volatility}"
                     
                     if "summary_hash" not in self.state[symbol]: 
                         self.state[symbol]["summary_hash"] = {}
@@ -504,8 +508,7 @@ class MarketEngine:
                             f"<b>{regime} → {flow}</b>\n\n"
                             f"<b>Regime & Bias:</b> {regime}\n"
                             f"<b>Volatility:</b> {volatility}\n"
-                            f"<b>Positioning:</b> {flow}\n"
-                            f"<b>Execution Context:</b> {execution}"
+                            f"<b>Positioning:</b> {flow}"
                         )
                         await self.send_alert(
                             f"[{symbol}] ⚡ Context Summary Shift ({tf})",
@@ -527,6 +530,27 @@ class MarketEngine:
                         "market_context", symbol, "info", 3600
                     )
                     self.state[symbol]["last_daily_wrap"] = time.time()
+
+            # G. 4-Hour Periodic Summary (Check once per minute)
+            last_periodic = self.state[symbol].get("last_periodic_summary", 0)
+            if time.time() - last_periodic > 14400: # 4 hours
+                regime = self.state[symbol]["regime"].get("1h", "Unknown")
+                volatility = self.state[symbol]["volatility"].get("1h", "Unknown")
+                flow = self.state[symbol]["flow"].get("1h", "Unknown")
+                price = self.state[symbol]["last_price"]
+                
+                msg = (
+                    f"<b>Regime:</b> {regime}\n"
+                    f"<b>Volatility:</b> {volatility}\n"
+                    f"<b>Positioning:</b> {flow}\n"
+                    f"<b>Price:</b> ${price:,.2f}"
+                )
+                await self.send_alert(
+                    f"[{symbol}] 🧭 Market Context Summary",
+                    msg,
+                    "market_context", symbol, "info", 3600
+                )
+                self.state[symbol]["last_periodic_summary"] = time.time()
 
     async def run(self):
         """Starts the engine tasks."""

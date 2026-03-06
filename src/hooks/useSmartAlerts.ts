@@ -126,8 +126,6 @@ export function useSmartAlerts(symbol: string) {
                         title: title,
                         message: msg,
                     });
-
-                    sendTelegramAlert(`[${symbol}] ${title}`, msg, `ATR_${symbol}`, cdSecs, 'atr_expand');
                 }
             }
 
@@ -164,8 +162,6 @@ export function useSmartAlerts(symbol: string) {
                             title: title,
                             message: msg,
                         });
-
-                        sendTelegramAlert(`[${symbol}] ${title}`, msg, `OI_${isUp ? 'UP' : 'DOWN'}_${symbol}`, cdSecs, 'oi_spike');
                     }
                 }
             }
