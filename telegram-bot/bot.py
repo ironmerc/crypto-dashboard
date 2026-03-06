@@ -6,6 +6,7 @@ from collections import deque
 import json
 from aiohttp import web, ClientSession
 from alert_policy import build_cooldown_key, should_accept_alert
+from config_utils import normalize_config_shape
 from schema_validation import (
     load_schema,
     log_schema_warnings,
@@ -89,6 +90,11 @@ def load_config():
             with open(CONFIG_FILE, 'r') as f:
                 saved = json.load(f)
                 bot_config.update(saved)
+                normalized, changed, notes = normalize_config_shape(bot_config)
+                if changed:
+                    bot_config = normalized
+                    save_config()
+                    logger.info(f"Config normalized on load: {'; '.join(notes)}")
                 logger.info("Configuration loaded from config.json")
         except Exception as e:
             logger.error(f"Failed to load config: {e}")
@@ -262,6 +268,10 @@ async def handle_post_config(request):
         )
         log_schema_warnings("config:update", warnings)
         deep_update(bot_config, data)
+        normalized, changed, notes = normalize_config_shape(bot_config)
+        if changed:
+            bot_config = normalized
+            logger.info(f"Config normalized on update: {'; '.join(notes)}")
         save_config()
         # Signal market engine to reload config immediately
         try:
