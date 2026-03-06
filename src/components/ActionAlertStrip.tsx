@@ -44,7 +44,7 @@ export function ActionAlertStrip() {
 
     if (!activeAlert) {
         return (
-            <div className="bg-[#050505] border-y border-terminal-border/30 h-8 flex items-center justify-between px-4 font-mono text-[10px] text-terminal-muted overflow-hidden">
+            <div className="bg-terminal-surface/30 backdrop-blur-md border-y border-terminal-border/60 h-8 flex items-center justify-between px-4 font-mono text-[10px] text-terminal-muted overflow-hidden shadow-sm">
                 <div className="flex items-center gap-2 opacity-50">
                     <div className="w-1.5 h-1.5 rounded-full bg-terminal-muted animate-pulse" />
                     SYSTEM NOMINAL // STANDBY FOR HIGH-PRIORITY ACTION ALERTS //
@@ -106,7 +106,7 @@ export function ActionAlertStrip() {
     }
 
     return (
-        <div className={`h-8 flex items-center justify-between px-4 font-mono text-[10px] border-y ${borderTint} overflow-hidden transition-all duration-300 relative`}>
+        <div className={`h-8 flex items-center justify-between px-4 font-mono text-[10px] border-y ${borderTint} overflow-hidden transition-all duration-300 relative bg-terminal-surface/30 backdrop-blur-md shadow-sm`}>
             {/* Background pulse */}
             <div className={`absolute inset-0 ${bgPulse} animate-pulse opacity-50`} />
 

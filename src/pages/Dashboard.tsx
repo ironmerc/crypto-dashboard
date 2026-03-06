@@ -110,7 +110,7 @@ export default function Dashboard() {
     <div className={`dashboard-scale min-h-screen w-full bg-terminal-bg text-terminal-fg p-2 md:p-4 selection:bg-terminal-fg selection:text-black flex flex-col gap-4 ${isMobile ? 'overflow-x-hidden overflow-y-auto' : 'h-screen overflow-hidden'}`}>
 
       {/* HEADER */}
-      <header className="flex flex-col lg:flex-row lg:items-center gap-3 border-b border-terminal-border/50 pb-3 shrink-0">
+      <header className="flex flex-col lg:flex-row lg:items-center gap-3 border-b border-terminal-border/50 pb-3 shrink-0 bg-terminal-surface/30 backdrop-blur-md sticky top-0 z-50 px-2 md:px-4 pt-2 -mx-2 md:-mx-4">
         <div className="flex items-center gap-3">
           <Terminal className="w-6 h-6 text-terminal-fg animate-pulse shrink-0" />
           <h1 className="text-xl font-bold uppercase tracking-widest glow-text truncate">
@@ -124,7 +124,7 @@ export default function Dashboard() {
         </div>
         <div className="lg:ml-auto flex flex-wrap items-center gap-2 md:gap-4 text-xs text-terminal-muted font-mono">
           {/* Telegram Egress Status */}
-          <div className="flex items-center gap-2 px-2 py-1 rounded bg-terminal-surface border border-terminal-border/30 shrink-0" title="Master Telegram Egress Toggle Status">
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-terminal-surface/40 backdrop-blur-sm border border-terminal-border/60 shrink-0 shadow-sm hover:border-terminal-border transition-colors cursor-default" title="Master Telegram Egress Toggle Status">
             <span className={`w-2 h-2 rounded-full ${(telegramConfig && telegramConfig.globalEnabled) ? 'bg-terminal-green shadow-[0_0_8px_#00ff41]' : 'bg-red-500 shadow-[0_0_8px_#ef4444]'}`}></span>
             <span className="font-bold tracking-wider text-[10px]">{(telegramConfig && telegramConfig.globalEnabled) ? 'TG: ON' : 'TG: OFF'}</span>
           </div>
@@ -132,7 +132,7 @@ export default function Dashboard() {
           {/* Dashboard Settings Link */}
           <Link
             to="/settings"
-            className="flex items-center gap-2 px-3 py-1 rounded bg-terminal-border/20 text-terminal-muted hover:text-terminal-green hover:bg-terminal-green/10 transition-all border border-terminal-border/30 hover:border-terminal-green/50 text-[10px] uppercase font-bold tracking-wider"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-terminal-surface/40 backdrop-blur-sm text-terminal-muted hover:text-terminal-green hover:bg-terminal-green/10 transition-all border border-terminal-border/60 hover:border-terminal-green/50 text-[10px] uppercase font-bold tracking-wider shadow-sm"
             title="Dashboard Settings"
           >
             <Settings className="w-3.5 h-3.5" />
@@ -142,7 +142,7 @@ export default function Dashboard() {
           {/* Telegram Bot Settings Link */}
           <Link
             to="/integrations/telegram"
-            className="flex items-center gap-2 px-3 py-1 rounded bg-terminal-border/20 text-terminal-muted hover:text-terminal-fg hover:bg-terminal-border/40 transition-all border border-terminal-border/30 hover:border-terminal-fg/50 text-[10px] uppercase font-bold tracking-wider"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-terminal-surface/40 backdrop-blur-sm text-terminal-muted hover:text-terminal-fg hover:bg-terminal-border/40 transition-all border border-terminal-border/60 hover:border-terminal-fg/50 text-[10px] uppercase font-bold tracking-wider shadow-sm"
             title="Telegram Bot Operations Console"
           >
             <Settings className="w-3.5 h-3.5" />
@@ -150,7 +150,7 @@ export default function Dashboard() {
           </Link>
 
           {/* Global Timeframe Selector */}
-          <div className="flex flex-wrap bg-terminal-surface border border-terminal-border/30 rounded shadow-lg p-0.5 max-w-full overflow-x-auto scrollbar-none">
+          <div className="flex flex-wrap bg-terminal-surface/40 backdrop-blur-sm border border-terminal-border/60 rounded-md shadow-sm p-0.5 max-w-full overflow-x-auto scrollbar-none">
             {['1m', '5m', '15m', '30m', '1h', '4h', '12h', '1d', '1w', '1M'].map(t => (
               <button
                 key={t}
@@ -166,7 +166,7 @@ export default function Dashboard() {
             <span className="hidden sm:inline">DATALINK ENCRYPTED</span>
             <span className="sm:hidden">ENCRYPTED</span>
           </span>
-          <span className="border border-terminal-border/30 px-2 py-1 rounded bg-terminal-surface shrink-0">
+          <span className="border border-terminal-border/60 px-2.5 py-1.5 rounded-md bg-terminal-surface/40 backdrop-blur-sm shrink-0 shadow-sm font-mono font-bold text-terminal-muted">
             {new Date().toISOString().split('T')[0]}
           </span>
         </div>
@@ -367,11 +367,11 @@ export default function Dashboard() {
                 {/* Main Chart */}
                 <Panel defaultSize={65} minSize={30} className="panel flex-grow relative overflow-hidden flex flex-col min-h-[400px] lg:min-h-0 mb-4">
                   <div className="absolute top-4 left-4 z-10 pointer-events-none flex items-end gap-3">
-                    <h2 className="text-2xl font-bold uppercase tracking-widest flex items-center gap-3 bg-black/50 px-2 rounded">
+                    <h2 className="text-2xl font-bold uppercase tracking-widest flex items-center gap-3 bg-terminal-surface/40 backdrop-blur-md px-3 py-1 rounded-lg border border-terminal-border/40 shadow-sm">
                       {localActiveSymbol.replace('USDT', '/USDT-PERP')}
                     </h2>
                     {futuresPrice && (
-                      <div className={`text-2xl font-mono leading-none bg-black/50 px-2 rounded ${activeTicker && parseFloat(activeTicker.changePercent24h) >= 0 ? 'text-terminal-green glow-text' : 'text-terminal-red glow-red'}`}>
+                      <div className={`text-2xl font-mono leading-none bg-terminal-surface/40 backdrop-blur-md px-3 py-1 rounded-lg border border-terminal-border/40 shadow-sm ${activeTicker && parseFloat(activeTicker.changePercent24h) >= 0 ? 'text-terminal-green glow-text' : 'text-terminal-red glow-red'}`}>
                         {futuresPrice.toFixed(2)}
                       </div>
                     )}

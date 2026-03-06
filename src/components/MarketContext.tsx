@@ -50,17 +50,17 @@ export function MarketContext({ symbol }: MarketContextProps) {
     }, [regime, volatility, derivatives]);
 
     if (!price) {
-        return <div className="h-full flex items-center justify-center text-terminal-muted text-xs bg-[#0a0510] border border-terminal-border/30 rounded-lg">Waiting for Context...</div>;
+        return <div className="h-full flex items-center justify-center text-terminal-muted text-xs bg-terminal-surface/20 backdrop-blur-md border border-terminal-border/40 rounded-xl">Waiting for Context...</div>;
     }
 
     return (
-        <div className="flex flex-col h-full bg-[#0a0510] text-terminal-fg p-3 rounded-lg border border-terminal-border/30 shadow-lg font-sans overflow-hidden">
-            <div className="flex items-center justify-between mb-3 border-b border-terminal-border/30 pb-2">
+        <div className="flex flex-col h-full bg-terminal-surface/20 text-terminal-fg p-3 rounded-xl border border-terminal-border/60 shadow-sm font-sans overflow-hidden backdrop-blur-md transition-all duration-300 hover:border-terminal-border">
+            <div className="flex items-center justify-between mb-3 border-b border-terminal-border/40 pb-2">
                 <div className="flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-[#E040FB]" />
-                    <h2 className="text-sm font-bold tracking-wider text-[#e6e6e6]">Market Context & Decision Support</h2>
+                    <Activity className="w-4 h-4 text-accent-primary" />
+                    <h2 className="text-sm font-bold tracking-wider text-terminal-fg">Market Context & Decision Support</h2>
                 </div>
-                <div className={`text-xs font-bold px-2 py-0.5 rounded ${sessionInfo.overlap ? 'bg-terminal-hl/20 text-terminal-fg border border-terminal-hl' : 'bg-black/30 text-terminal-muted'}`}>
+                <div className={`text-xs font-bold px-2 py-0.5 rounded-md ${sessionInfo.overlap ? 'bg-accent-primary/20 text-accent-primary border border-accent-primary/30' : 'bg-terminal-surface/40 text-terminal-muted border border-terminal-border/20'}`}>
                     {sessionInfo.names} Session
                 </div>
             </div>
@@ -68,16 +68,16 @@ export function MarketContext({ symbol }: MarketContextProps) {
             {/* Headline */}
             <div className="mb-4">
                 <div className="text-[10px] uppercase text-terminal-muted tracking-wide mb-1 flex items-center gap-1">
-                    <Zap className="w-3 h-3" /> Summary
+                    <Zap className="w-3 h-3 text-accent-primary" /> Summary
                 </div>
-                <div className="text-sm font-bold text-white bg-[#1a1025] px-3 py-2 rounded border border-purple-500/20 shadow-inner">
+                <div className="text-sm font-bold text-white bg-terminal-surface/40 px-3 py-2 rounded-lg border border-terminal-border/40 shadow-inner">
                     {headline}
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 mb-1 flex-grow overflow-y-auto pr-1 custom-scrollbar">
+            <div className="grid grid-cols-2 gap-3 mb-1 flex-grow overflow-y-auto pr-1 scrollbar-thin">
                 {/* Regime Panel */}
-                <div className="bg-[#12081a] p-2.5 rounded border border-terminal-border/20 flex flex-col justify-between">
+                <div className="bg-terminal-bg/30 p-2.5 rounded-lg border border-terminal-border/30 flex flex-col justify-between hover:bg-terminal-bg/40 transition-colors">
                     <div>
                         <div className="text-[10px] uppercase text-terminal-muted tracking-wide mb-1 flex items-center gap-1">
                             <TrendingUp className="w-3 h-3" /> Regime & Bias
@@ -91,7 +91,7 @@ export function MarketContext({ symbol }: MarketContextProps) {
                 </div>
 
                 {/* Volatility Panel */}
-                <div className="bg-[#12081a] p-2.5 rounded border border-terminal-border/20 flex flex-col justify-between">
+                <div className="bg-terminal-bg/30 p-2.5 rounded-lg border border-terminal-border/30 flex flex-col justify-between hover:bg-terminal-bg/40 transition-colors">
                     <div>
                         <div className="text-[10px] uppercase text-terminal-muted tracking-wide mb-1 flex items-center gap-1">
                             <AlertTriangle className="w-3 h-3" /> Volatility
@@ -105,7 +105,7 @@ export function MarketContext({ symbol }: MarketContextProps) {
                 </div>
 
                 {/* Derivatives Panel */}
-                <div className="bg-[#12081a] p-2.5 rounded border border-terminal-border/20 flex flex-col justify-between">
+                <div className="bg-terminal-bg/30 p-2.5 rounded-lg border border-terminal-border/30 flex flex-col justify-between hover:bg-terminal-bg/40 transition-colors">
                     <div>
                         <div className="text-[10px] uppercase text-terminal-muted tracking-wide mb-1 flex items-center gap-1">
                             <Activity className="w-3 h-3" /> Positioning Synthesis
@@ -121,7 +121,7 @@ export function MarketContext({ symbol }: MarketContextProps) {
                 </div>
 
                 {/* Execution Panel */}
-                <div className="bg-[#12081a] p-2.5 rounded border border-terminal-border/20 flex flex-col justify-between">
+                <div className="bg-terminal-bg/30 p-2.5 rounded-lg border border-terminal-border/30 flex flex-col justify-between hover:bg-terminal-bg/40 transition-colors">
                     <div>
                         <div className="text-[10px] uppercase text-terminal-muted tracking-wide mb-1 flex items-center gap-1">
                             <Target className="w-3 h-3" /> Execution Context
@@ -133,10 +133,10 @@ export function MarketContext({ symbol }: MarketContextProps) {
                 </div>
 
                 {/* Level Interaction Panel */}
-                <div className="bg-[#12081a] p-2.5 rounded border border-terminal-border/20 flex flex-col justify-between col-span-2">
+                <div className="bg-terminal-bg/30 p-2.5 rounded-lg border border-terminal-border/30 flex flex-col justify-between col-span-2 hover:bg-terminal-bg/40 transition-colors">
                     <div>
                         <div className="text-[10px] uppercase text-terminal-muted tracking-wide mb-1 flex items-center gap-1">
-                            <Target className="w-3 h-3 text-[#E040FB]" /> Level Interaction Status
+                            <Target className="w-3 h-3 text-accent-primary" /> Level Interaction Status
                         </div>
                         <div className={`text-sm font-bold ${levelInteraction.color}`}>{levelInteraction.text}</div>
                     </div>

@@ -79,7 +79,7 @@ export function OrderBook({ symbol }: OrderBookProps) {
             <div className="flex h-full overflow-hidden">
                 {/* Bids (Buyers - Support) */}
                 <div className="w-1/2 pr-2 overflow-hidden flex flex-col pt-1">
-                    <div className="flex justify-between text-terminal-muted text-[10px] mb-1 uppercase opacity-50 px-1 shrink-0 bg-black/50 py-0.5 rounded">
+                    <div className="flex justify-between text-terminal-muted text-[10px] mb-1 uppercase opacity-60 px-2 shrink-0 bg-terminal-surface/40 py-1 rounded-md border border-terminal-border/20 shadow-inner">
                         <span>Amount</span>
                         <span className="flex items-center gap-1">Bid <span className="text-[8px] tracking-normal opacity-70">({tickSize})</span></span>
                     </div>
@@ -101,8 +101,8 @@ export function OrderBook({ symbol }: OrderBookProps) {
                 </div>
 
                 {/* Asks (Sellers - Resistance) */}
-                <div className="w-1/2 pl-2 overflow-hidden flex flex-col border-l border-terminal-border pt-1">
-                    <div className="flex justify-between text-terminal-muted text-[10px] mb-1 uppercase opacity-50 px-1 shrink-0 bg-black/50 py-0.5 rounded">
+                <div className="w-1/2 pl-2 overflow-hidden flex flex-col border-l border-terminal-border/40 pt-1">
+                    <div className="flex justify-between text-terminal-muted text-[10px] mb-1 uppercase opacity-60 px-2 shrink-0 bg-terminal-surface/40 py-1 rounded-md border border-terminal-border/20 shadow-inner">
                         <span className="flex items-center gap-1">Ask <span className="text-[8px] tracking-normal opacity-70">({tickSize})</span></span>
                         <span>Amount</span>
                     </div>

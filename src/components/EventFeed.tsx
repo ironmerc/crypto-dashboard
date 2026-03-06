@@ -32,10 +32,9 @@ export function EventFeed({ symbol }: EventFeedProps) {
                 totalWhaleDelta < 0 ? 'SELL-SIDE' : 'NEUTRAL';
 
     return (
-        <div className="bg-[#050505] border border-terminal-border/30 rounded p-4 h-full flex flex-col font-mono text-sm leading-tight relative overflow-hidden group">
+        <div className="bg-terminal-surface/20 backdrop-blur-md border border-terminal-border/60 rounded-xl p-4 h-full flex flex-col font-mono text-sm leading-tight relative overflow-hidden group shadow-sm transition-all duration-300 hover:border-terminal-border">
 
-            {/* Glitch Overlay for aesthetic */}
-            <div className="absolute inset-0 bg-scanline pointer-events-none opacity-50 z-10" />
+
 
             <h3 className="text-terminal-text/70 uppercase tracking-[0.2em] mb-2 text-xs flex justify-between items-center border-b border-terminal-border/30 pb-2 z-20 shrink-0">
                 <div className="flex items-center gap-2">
@@ -45,7 +44,7 @@ export function EventFeed({ symbol }: EventFeedProps) {
             </h3>
 
             {/* Smart Money Context Panel */}
-            <div className="flex flex-col gap-1 mb-3 shrink-0 z-20 bg-[#111] p-2 rounded border border-white/5 text-[10px]">
+            <div className="flex flex-col gap-1 mb-3 shrink-0 z-20 bg-terminal-surface/40 backdrop-blur-sm p-2 rounded-lg border border-terminal-border/40 text-[10px] shadow-inner">
                 <div className="flex justify-between">
                     <span className="text-terminal-text/50">Net Flow ({globalInterval}):</span>
                     <span className={`font-bold ${deltaColor}`}>

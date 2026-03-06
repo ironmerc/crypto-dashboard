@@ -143,8 +143,8 @@ export function LiquidityIntelligence({ symbol }: LiquidityIntelligenceProps) {
     }, [orderBook, currentPrice]);
 
     return (
-        <div className="flex flex-col h-full w-full font-mono bg-[#18042B]/80 text-[11px] leading-tight flex-grow overflow-hidden p-3 border border-purple-500/20 rounded shadow-[0_0_15px_rgba(168,85,247,0.1)] gap-2">
-            <h2 className="text-[12px] uppercase text-purple-400 font-bold tracking-widest border-b border-purple-500/30 pb-2 flex justify-between items-center shrink-0">
+        <div className="flex flex-col h-full w-full font-mono bg-terminal-surface/30 backdrop-blur-md text-[11px] leading-tight flex-grow overflow-hidden p-3 border border-terminal-border/60 rounded-xl shadow-sm gap-2 transition-all duration-300 hover:border-terminal-border">
+            <h2 className="text-[12px] uppercase text-accent-primary font-bold tracking-widest border-b border-terminal-border/40 pb-2 flex justify-between items-center shrink-0">
                 <span>Liquidity Intelligence</span>
                 <span className="text-[9px] text-terminal-muted">{globalInterval} SYNC</span>
             </h2>
@@ -179,7 +179,7 @@ export function LiquidityIntelligence({ symbol }: LiquidityIntelligenceProps) {
             </div>
 
             {/* Net Whale Flow */}
-            <div className="flex items-center justify-between pt-2 border-t border-purple-500/10 shrink-0">
+            <div className="flex items-center justify-between pt-2 border-t border-terminal-border/20 shrink-0">
                 <span className="text-[10px] uppercase font-bold text-terminal-muted tracking-wide">Whale Flow</span>
                 <div className={`font-bold font-mono ${whaleDelta > 0 ? 'text-terminal-green glow-text' : whaleDelta < 0 ? 'text-terminal-red glow-red' : 'text-terminal-fg'}`}>
                     {whaleDelta > 0 ? '+' : ''}${(whaleDelta / 1000000).toFixed(2)}M
@@ -187,7 +187,7 @@ export function LiquidityIntelligence({ symbol }: LiquidityIntelligenceProps) {
             </div>
 
             {/* Scrollable Intelligence Details */}
-            <div className="flex flex-col gap-1.5 pt-2 border-t border-purple-500/10 flex-grow justify-start overflow-y-auto scrollbar-thin">
+            <div className="flex flex-col gap-1.5 pt-2 border-t border-terminal-border/20 flex-grow justify-start overflow-y-auto scrollbar-thin">
 
                 {/* Main Magnet */}
                 <div className="flex justify-between items-center bg-[#fbbf24]/10 p-1.5 rounded border-l-2 border-[#fbbf24]">

@@ -103,7 +103,7 @@ export default function DashboardSettings() {
     return (
         <div className="min-h-screen bg-terminal-bg text-terminal-fg font-mono">
             {/* Header */}
-            <div className="border-b border-terminal-border px-6 py-4 flex items-center gap-4 bg-terminal-surface">
+            <div className="border-b border-terminal-border px-6 py-4 flex items-center gap-4 bg-terminal-surface/30 backdrop-blur-md sticky top-0 z-50">
                 <Link
                     to="/"
                     className="flex items-center gap-2 text-terminal-muted hover:text-terminal-fg transition-colors text-sm"
@@ -147,7 +147,7 @@ export default function DashboardSettings() {
                     </p>
 
                     {/* Active chips */}
-                    <div className="flex flex-wrap gap-2 min-h-[52px] p-3 rounded-lg border border-terminal-border bg-black/30 mb-4">
+                    <div className="flex flex-wrap gap-2 min-h-[52px] p-3 rounded-xl border border-terminal-border/60 bg-terminal-surface/30 backdrop-blur-sm mb-4 shadow-inner">
                         {monitoredSymbols.length === 0 && (
                             <span className="text-terminal-muted text-xs self-center">No assets monitored.</span>
                         )}
@@ -190,7 +190,7 @@ export default function DashboardSettings() {
                                     onFocus={() => setShowDropdown(true)}
                                     onKeyDown={handleKey}
                                     placeholder="Search perpetual, e.g. SOL → SOLUSDT"
-                                    className="w-full bg-terminal-surface border border-terminal-border rounded-lg pl-9 pr-4 py-2 text-sm text-terminal-fg placeholder:text-terminal-muted/40 focus:outline-none focus:border-terminal-green transition-colors"
+                                    className="w-full bg-terminal-bg/50 border border-terminal-border/80 rounded-lg pl-9 pr-4 py-2.5 text-sm text-terminal-fg placeholder:text-terminal-muted/40 focus:outline-none focus:border-terminal-green focus:ring-1 focus:ring-terminal-green/50 transition-all shadow-inner"
                                 />
                             </div>
                             <button
@@ -247,9 +247,9 @@ export default function DashboardSettings() {
                     <div className="grid grid-cols-2 gap-4">
                         <button
                             onClick={() => setTheme('terminal')}
-                            className={`flex flex-col gap-3 p-4 rounded-xl border transition-all text-left ${theme === 'terminal'
-                                    ? 'border-terminal-green bg-terminal-green/5 ring-1 ring-terminal-green/50'
-                                    : 'border-terminal-border bg-black/20 hover:border-terminal-muted/50'
+                            className={`flex flex-col gap-3 p-4 rounded-xl border transition-all duration-300 text-left ${theme === 'terminal'
+                                ? 'border-terminal-green bg-terminal-green/10 ring-1 ring-terminal-green/50 shadow-[0_0_15px_rgba(0,255,65,0.15)] glow-text'
+                                : 'border-terminal-border/60 bg-terminal-surface/40 backdrop-blur-sm hover:border-terminal-border hover:shadow-lg'
                                 }`}
                         >
                             <div className="flex justify-between items-center">
@@ -266,9 +266,9 @@ export default function DashboardSettings() {
 
                         <button
                             onClick={() => setTheme('professional')}
-                            className={`flex flex-col gap-3 p-4 rounded-xl border transition-all text-left ${theme === 'professional'
-                                    ? 'border-terminal-blue bg-terminal-blue/5 ring-1 ring-terminal-blue/50'
-                                    : 'border-terminal-border bg-black/20 hover:border-terminal-muted/50'
+                            className={`flex flex-col gap-3 p-4 rounded-xl border transition-all duration-300 text-left ${theme === 'professional'
+                                ? 'border-terminal-blue bg-terminal-blue/10 ring-1 ring-terminal-blue/50 shadow-[0_0_15px_rgba(45,136,255,0.2)] glow-text'
+                                : 'border-terminal-border/60 bg-terminal-surface/40 backdrop-blur-sm hover:border-terminal-border hover:shadow-lg'
                                 }`}
                         >
                             <div className="flex justify-between items-center">

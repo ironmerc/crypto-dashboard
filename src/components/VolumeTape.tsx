@@ -18,8 +18,8 @@ export function VolumeTape({ symbol }: VolumeTapeProps) {
 
     return (
         <div className="flex flex-col h-full overflow-hidden font-mono text-[10px]">
-            <h2 className="text-[10px] uppercase text-terminal-muted font-bold tracking-widest mb-2 flex items-center gap-2 border-b border-terminal-border/30 pb-2 shrink-0">
-                <BarChart2 className="w-3 h-3 text-[#ff00ff]" /> Order Flow
+            <h2 className="text-[10px] uppercase text-terminal-muted font-bold tracking-widest mb-2 flex items-center gap-2 border-b border-terminal-border/40 pb-2 shrink-0">
+                <BarChart2 className="w-3 h-3 text-accent-primary" /> Order Flow
             </h2>
 
             {/* Delta Status */}
@@ -51,7 +51,7 @@ export function VolumeTape({ symbol }: VolumeTapeProps) {
             </div>
 
             {/* Tape Header */}
-            <div className="flex justify-between text-terminal-muted text-[9px] uppercase opacity-50 px-1 mt-1 mb-1 shrink-0 border-b border-terminal-border/10 pb-1">
+            <div className="flex justify-between text-terminal-muted text-[10px] mb-1 uppercase opacity-60 px-2 mt-1 shrink-0 bg-terminal-surface/40 py-1 rounded-md border border-terminal-border/20 shadow-inner">
                 <span>Time</span>
                 <span>Price</span>
                 <span>Size</span>
