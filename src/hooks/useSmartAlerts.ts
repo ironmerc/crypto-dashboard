@@ -2,26 +2,6 @@ import { useEffect, useRef } from 'react';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { usePageVisibility } from './usePageVisibility';
 
-// Helper to check if current local time is within quiet hours
-const isWithinQuietHours = (startStr: string, endStr: string) => {
-    const now = new Date();
-    const currentMins = now.getHours() * 60 + now.getMinutes();
-
-    const [startH, startM] = startStr.split(':').map(Number);
-    const [endH, endM] = endStr.split(':').map(Number);
-
-    const startMins = startH * 60 + startM;
-    const endMins = endH * 60 + endM;
-
-    if (startMins <= endMins) {
-        // Standard range (e.g., 09:00 to 17:00)
-        return currentMins >= startMins && currentMins <= endMins;
-    } else {
-        // Wraps around midnight (e.g., 22:00 to 06:00)
-        return currentMins >= startMins || currentMins <= endMins;
-    }
-};
-
 // Sessions (UTC)
 // Asia: 00:00 - 08:00
 // London: 08:00 - 16:00
@@ -36,26 +16,6 @@ export const getCurrentSession = (): string => {
 
 // Helper to optionally send Telegram notifications
 export const sendTelegramAlert = async (title: string, message: string, alertType: string, cooldownSecs: number, categoryKey: string) => {
-    const state = useTerminalStore.getState();
-    const config = state.telegramConfig;
-
-    // Strict check 
-    if (config.globalEnabled === false || String(config.globalEnabled) === "false") {
-        console.log(`[Egress] Blocked ${alertType} because global egress is OFF`);
-        return;
-    }
-    if (config.categories && config.categories[categoryKey] === false) {
-        console.log(`[Egress] Blocked ${alertType} because category ${categoryKey} is OFF`);
-        return;
-    }
-
-    if (config.quietHours?.enabled && config.quietHours.start && config.quietHours.end) {
-        if (isWithinQuietHours(config.quietHours.start, config.quietHours.end)) {
-            console.log(`[SmartAlerts] Suppressing ${title} due to quiet hours.`);
-            return;
-        }
-    }
-
     try {
         const botUrl = import.meta.env.VITE_TELEGRAM_BOT_URL || '/api/bot/alert';
         await fetch(botUrl, {

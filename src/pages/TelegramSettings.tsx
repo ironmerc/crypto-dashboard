@@ -150,11 +150,6 @@ export default function TelegramSettings() {
     };
 
     const fireMockAlert = async (type: string, inputCategory: string) => {
-        if (!config || !config.globalEnabled) {
-            alert("Master Egress Toggle is OFF. Manual diagnostic tests are blocked.");
-            return;
-        }
-
         let title = "";
         let message = "";
         let category = inputCategory || type;

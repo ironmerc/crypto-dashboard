@@ -33,7 +33,7 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
         if (toUnsubscribe.length > 0) {
             sendMessage(JSON.stringify({
                 method: 'UNSUBSCRIBE',
-                params: toUnsubscribe.flatMap(s => [`${s}@aggTrade`, `${s}@forceOrder`, `${s}@openInterest@500ms`]),
+                params: toUnsubscribe.flatMap(s => [`${s}@aggTrade`, `${s}@forceOrder`, `${s}@openInterest@500ms`, `${s}@markPrice`]),
                 id: Date.now(),
             }));
         }
@@ -41,7 +41,7 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
         if (toSubscribe.length > 0) {
             sendMessage(JSON.stringify({
                 method: 'SUBSCRIBE',
-                params: toSubscribe.flatMap(s => [`${s}@aggTrade`, `${s}@forceOrder`, `${s}@openInterest@500ms`]),
+                params: toSubscribe.flatMap(s => [`${s}@aggTrade`, `${s}@forceOrder`, `${s}@openInterest@500ms`, `${s}@markPrice`]),
                 id: Date.now() + 1,
             }));
         }

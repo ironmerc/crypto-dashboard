@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timezone
 from aiohttp import ClientSession
+from debounce import debounced_state_change as apply_debounced_state_change, threshold_trigger
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,35 @@ class MarketEngine:
         self.state = {}
         self.ws_task = None
         self.config_sync_task = None
+
+    def debounced_state_change(self, symbol, bucket, tf, candidate, confirmations=2):
+        """Require repeated confirmation before committing a state transition."""
+        symbol_state = self.state.setdefault(symbol, {})
+        symbol_state.setdefault(bucket, {})
+        symbol_state.setdefault("debounce", {})
+        current = symbol_state[bucket].get(tf, "Unknown")
+        next_state, changed = apply_debounced_state_change(
+            debounce_state=symbol_state["debounce"],
+            key=f"{bucket}:{tf}",
+            current=current,
+            candidate=candidate,
+            confirmations=confirmations,
+        )
+        if changed:
+            symbol_state[bucket][tf] = next_state
+        return current, next_state, changed
+
+    def should_fire_threshold(self, symbol, key, condition, enter_confirmations=2, exit_confirmations=2):
+        """Latch threshold alerts until the condition is clearly reset."""
+        symbol_state = self.state.setdefault(symbol, {})
+        symbol_state.setdefault("threshold_latches", {})
+        return threshold_trigger(
+            threshold_state=symbol_state["threshold_latches"],
+            key=key,
+            condition=condition,
+            enter_confirmations=enter_confirmations,
+            exit_confirmations=exit_confirmations,
+        )
         
     async def get_bot_config(self):
         """Polls the bot for updated configuration."""
@@ -76,7 +106,11 @@ class MarketEngine:
             "volatility": {},
             "levels": {},
             "klines": {tf: [] for tf in ALL_TIMEFRAMES},
-            "funding_rate": 0
+            "funding_rate": 0,
+            "rsi_state": {},
+            "summary_hash": {},
+            "debounce": {},
+            "threshold_latches": {},
         }
         
         # Fetch history for all timeframes to populate indicators immediately
@@ -108,26 +142,17 @@ class MarketEngine:
         return current in allowed
 
     async def send_alert(self, title, message, category, symbol, severity="info", cooldown=60, tf=None):
-        """Proxies alerts to the bot API if sessions and global toggles allow."""
-        if not self.config.get("globalEnabled", True): return
-        if not self.is_session_active(): return
-        
-        # Check category toggle
-        if not self.config.get("categories", {}).get(category, True): return
-
-        # Check timeframe toggle if applicable
-        if tf:
-            enabled_tfs = self.config.get("timeframes", {}).get(category, ALL_TIMEFRAMES)
-            if tf not in enabled_tfs:
-                return
+        """Proxies alerts to bot API; policy checks are centralized in bot.py."""
 
         session_name = self.get_active_session()
         payload = {
             "message": f"<b>🚨 {title}</b>\n\n{message}\n\n<i>Session: {session_name}</i>",
             "type": category,
+            "category": category,
             "severity": severity,
             "symbol": symbol,
-            "cooldown": cooldown
+            "cooldown": cooldown,
+            "tf": tf
         }
         
         async with ClientSession() as session:
@@ -204,7 +229,8 @@ class MarketEngine:
                         "oi_history": [], "spread_history": [],
                         "whale_delta": 0, "funding_rate": 0,
                         "volume_profile": {}, "last_vah": 0, "last_val": 0,
-                        "summary_hash": {}, "last_daily_wrap": 0, "last_periodic_summary": 0
+                        "summary_hash": {}, "last_daily_wrap": 0, "last_periodic_summary": 0,
+                        "debounce": {}, "threshold_latches": {}
                     }
 
             streams = []
@@ -399,16 +425,25 @@ class MarketEngine:
                     if oldest > 0:
                         oi_change_pct = ((newest - oldest) / abs(oldest)) * 100
                         
-                        if abs(oi_change_pct) > oi_threshold:
-                             is_up = oi_change_pct > 0
-                             title = f"OI SPIKE DETECTED ({tf_str})" if is_up else f"OI FLUSH DETECTED ({tf_str})"
-                             icon = "🌋" if is_up else "💧"
-                             
-                             await self.send_alert(
+                        condition = abs(oi_change_pct) > oi_threshold
+                        should_fire = self.should_fire_threshold(
+                            symbol=symbol,
+                            key=f"oi_spike:{tf_str}",
+                            condition=condition,
+                            enter_confirmations=2,
+                            exit_confirmations=2,
+                        )
+
+                        if should_fire:
+                            is_up = oi_change_pct > 0
+                            title = f"OI SPIKE DETECTED ({tf_str})" if is_up else f"OI FLUSH DETECTED ({tf_str})"
+                            icon = "UP" if is_up else "DOWN"
+
+                            await self.send_alert(
                                 f"[{symbol}] {icon} {title}",
                                 f"Open Interest {'increased' if is_up else 'dropped'} by {abs(oi_change_pct):.2f}% in {tf_str}.",
                                 "oi_spike", symbol, "info", cooldown, tf=tf_str
-                             )
+                            )
 
         # 4. Funding Rate
         elif stream == "markPriceUpdate":
@@ -448,6 +483,7 @@ class MarketEngine:
         elif stream == "kline":
             k = data['k']
             tf = k['i']
+            now = time.time()
             if not k['x']: return # Wait for candle close
             
             # Maintain history
@@ -469,15 +505,20 @@ class MarketEngine:
                 elif atr_ratio > exp_ratio: vol_state = "Expanding"
                 elif atr_ratio < 0.75: vol_state = "Squeeze/Compacting"
                 
-                old_vol = self.state[symbol]["volatility"].get(tf, "Unknown")
-                if vol_state != old_vol:
-                    color = "⚠️" if vol_state in ["Extreme", "Squeeze/Compacting"] else "🌊"
+                old_vol, next_vol, vol_changed = self.debounced_state_change(
+                    symbol=symbol,
+                    bucket="volatility",
+                    tf=tf,
+                    candidate=vol_state,
+                    confirmations=2,
+                )
+                if vol_changed:
+                    color = "HIGH-RISK" if next_vol in ["Extreme", "Squeeze/Compacting"] else "SHIFT"
                     await self.send_alert(
                         f"[{symbol}] {color} Volatility Shift ({tf})",
-                        f"<b>State:</b> {old_vol} → {vol_state}\n<b>ATR Ratio:</b> {atr_ratio:.2f}x\n<b>Risk:</b> {'High' if vol_state != 'Normal' else 'Low'}",
+                        f"<b>State:</b> {old_vol} -> {next_vol}\n<b>ATR Ratio:</b> {atr_ratio:.2f}x\n<b>Risk:</b> {'High' if next_vol != 'Normal' else 'Low'}",
                         "atr_expand", symbol, "info", 300, tf=tf
                     )
-                self.state[symbol]["volatility"][tf] = vol_state
 
                 # B. Regime & Bias Shift
                 new_regime = "Range"
@@ -490,41 +531,56 @@ class MarketEngine:
                 if price > ema21 > ema50: new_regime = f"Uptrend ({strength})"
                 elif price < ema21 < ema50: new_regime = f"Downtrend ({strength})"
                 
-                old_regime = self.state[symbol]["regime"].get(tf, "Unknown")
-                if new_regime != old_regime:
-                    icon = "🟢" if "Uptrend" in new_regime else ("🔴" if "Downtrend" in new_regime else "⚖️")
+                old_regime, next_regime, regime_changed = self.debounced_state_change(
+                    symbol=symbol,
+                    bucket="regime",
+                    tf=tf,
+                    candidate=new_regime,
+                    confirmations=2,
+                )
+                if regime_changed:
+                    icon = "BULL" if "Uptrend" in next_regime else ("BEAR" if "Downtrend" in next_regime else "RANGE")
                     await self.send_alert(
                         f"[{symbol}] {icon} Regime Shift ({tf})",
-                        f"<b>Bias:</b> {old_regime} → {new_regime}\n<b>RSI:</b> {rsi:.1f}\n<b>EMA Sep:</b> {sep:.2f}%",
+                        f"<b>Bias:</b> {old_regime} -> {next_regime}\n<b>RSI:</b> {rsi:.1f}\n<b>EMA Sep:</b> {sep:.2f}%",
                         "ema_cross", symbol, "info", 900, tf=tf
                     )
-                self.state[symbol]["regime"][tf] = new_regime
 
                 # B2. RSI Extremes
                 rsi_ob = float(thresholds.get("rsiOverbought", 70))
                 rsi_os = float(thresholds.get("rsiOversold", 30))
-                
-                old_rsi_state = self.state[symbol].get("rsi_state", {}).get(tf, "Neutral")
                 new_rsi_state = "Neutral"
                 if rsi >= rsi_ob: new_rsi_state = "Overbought"
                 elif rsi <= rsi_os: new_rsi_state = "Oversold"
                 
-                if new_rsi_state != old_rsi_state and new_rsi_state != "Neutral" and old_rsi_state != "Unknown":
-                    rsi_icon = "🔥" if new_rsi_state == "Overbought" else "🧊"
+                old_rsi_state, next_rsi_state, rsi_changed = self.debounced_state_change(
+                    symbol=symbol,
+                    bucket="rsi_state",
+                    tf=tf,
+                    candidate=new_rsi_state,
+                    confirmations=2,
+                )
+                if rsi_changed and next_rsi_state != "Neutral" and old_rsi_state != "Unknown":
+                    rsi_icon = "OVERBOUGHT" if next_rsi_state == "Overbought" else "OVERSOLD"
                     await self.send_alert(
                         f"[{symbol}] {rsi_icon} RSI Extreme ({tf})",
-                        f"<b>State:</b> {new_rsi_state}\n<b>Current RSI:</b> {rsi:.1f}\n<b>Threshold:</b> {rsi_ob if new_rsi_state == 'Overbought' else rsi_os}",
+                        f"<b>State:</b> {next_rsi_state}\n<b>Current RSI:</b> {rsi:.1f}\n<b>Threshold:</b> {rsi_ob if next_rsi_state == 'Overbought' else rsi_os}",
                         "rsi_extreme", symbol, "info", 600, tf=tf
                     )
-                
-                if "rsi_state" not in self.state[symbol]: self.state[symbol]["rsi_state"] = {}
-                self.state[symbol]["rsi_state"][tf] = new_rsi_state
 
                 # B3. Relative Volume (RVOL) Spike
                 rvol_mult = float(thresholds.get("rvolMultiplier", 3.0))
-                if rvol >= rvol_mult:
-                     await self.send_alert(
-                        f"[{symbol}] 🌋 RVOL Spike ({tf})",
+                rvol_condition = rvol >= rvol_mult
+                rvol_fire = self.should_fire_threshold(
+                    symbol=symbol,
+                    key=f"rvol_spike:{tf}",
+                    condition=rvol_condition,
+                    enter_confirmations=2,
+                    exit_confirmations=2,
+                )
+                if rvol_fire:
+                    await self.send_alert(
+                        f"[{symbol}] RVOL Spike ({tf})",
                         f"<b>Relative Volume:</b> {rvol:.1f}x average\n<b>Price:</b> ${price:,.2f}",
                         "rvol_spike", symbol, "info", 600, tf=tf
                     )
@@ -556,14 +612,19 @@ class MarketEngine:
                             elif oi_delta < 0 and price_delta > 0: flow = "Short Covering Rally"
                             elif oi_delta < 0 and price_delta < 0: flow = "Long Liquidations"
                         
-                        old_flow = self.state[symbol]["flow"].get(tf, "Unknown")
-                        if flow != old_flow and flow != "Neutral/Stable":
+                        old_flow, next_flow, flow_changed = self.debounced_state_change(
+                            symbol=symbol,
+                            bucket="flow",
+                            tf=tf,
+                            candidate=flow,
+                            confirmations=2,
+                        )
+                        if flow_changed and next_flow != "Neutral/Stable":
                             await self.send_alert(
-                                f"[{symbol}] 📊 Flow Shift ({tf})",
-                                f"<b>Dynamics:</b> {flow}\n<b>OI Delta:</b> {oi_delta:+.2f}%\n<b>Price Delta:</b> {price_delta:+.2f}%",
+                                f"[{symbol}] Flow Shift ({tf})",
+                                f"<b>Dynamics:</b> {next_flow}\n<b>OI Delta:</b> {oi_delta:+.2f}%\n<b>Price Delta:</b> {price_delta:+.2f}%",
                                 "order_flow", symbol, "info", 900, tf=tf
                             )
-                        self.state[symbol]["flow"][tf] = flow
 
                 # D. Level Interaction Interaction
                 levels = [("POC", poc), ("VWAP", vwap)]
@@ -577,14 +638,19 @@ class MarketEngine:
                         active_level = f"Testing {name}"
                         break
                 
-                old_level = self.state[symbol]["levels"].get(tf, "Unknown")
-                if active_level != old_level and active_level != "In Vacuum":
+                old_level, next_level, level_changed = self.debounced_state_change(
+                    symbol=symbol,
+                    bucket="levels",
+                    tf=tf,
+                    candidate=active_level,
+                    confirmations=2,
+                )
+                if level_changed and next_level != "In Vacuum":
                     await self.send_alert(
-                        f"[{symbol}] 🎯 Level Interaction ({tf})",
-                        f"<b>Status:</b> {active_level}\n<b>Price:</b> ${price:,.2f}",
+                        f"[{symbol}] Level Interaction ({tf})",
+                        f"<b>Status:</b> {next_level}\n<b>Price:</b> ${price:,.2f}",
                         "level_testing", symbol, "info", 600, tf=tf
                     )
-                self.state[symbol]["levels"][tf] = active_level
 
                 # E. Context Summary Shift Evaluator
                 if True: # Run for all TFs, but only alert if enabled in config for that TF
@@ -599,22 +665,27 @@ class MarketEngine:
                     if "summary_hash" not in self.state[symbol]: 
                         self.state[symbol]["summary_hash"] = {}
                         
-                    old_summary_hash = self.state[symbol]["summary_hash"].get(tf, "Unknown")
-                    
+                    old_summary_hash, next_summary_hash, summary_changed = self.debounced_state_change(
+                        symbol=symbol,
+                        bucket="summary_hash",
+                        tf=tf,
+                        candidate=new_summary_hash,
+                        confirmations=2,
+                    )
+
                     # Only alert if we actually have state built up and it changes
-                    if new_summary_hash != old_summary_hash and old_summary_hash != "Unknown" and regime != "Unknown":
+                    if summary_changed and old_summary_hash != "Unknown" and regime != "Unknown":
                         msg = (
-                            f"<b>{regime} → {flow}</b>\n\n"
+                            f"<b>{regime} -> {flow}</b>\n\n"
                             f"<b>Regime & Bias:</b> {regime}\n"
                             f"<b>Volatility:</b> {volatility}\n"
                             f"<b>Positioning:</b> {flow}"
                         )
                         await self.send_alert(
-                            f"[{symbol}] ⚡ Context Summary Shift ({tf})",
+                            f"[{symbol}] Context Summary Shift ({tf})",
                             msg,
                             "context_summary", symbol, "info", 900, tf=tf
                         )
-                    self.state[symbol]["summary_hash"][tf] = new_summary_hash
             
             # F. Daily Wrap-Up (Check once per minute)
             now_dt = datetime.now(timezone.utc)

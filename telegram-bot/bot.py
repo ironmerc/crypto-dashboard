@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from collections import deque
 import json
 from aiohttp import web, ClientSession
+from alert_policy import build_cooldown_key, should_accept_alert
 
 # Configure logging
 logging.basicConfig(
@@ -25,7 +26,7 @@ if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
 # In-memory queue for alerts
 alert_queue = asyncio.Queue()
 
-# Simple cooldown tracker: { "alert_type": timestamp_of_last_send }
+# Cooldown tracker keyed by type+symbol+timeframe to avoid cross-symbol suppression
 cooldown_tracker = {}
 
 # Persistent Bot Configuration
@@ -156,17 +157,29 @@ async def process_queue():
             try:
                 alert = await alert_queue.get()
                 message = alert.get("message", "Alert from Crypto Terminal")
-                alert_type = alert.get("type", "default")
-                cooldown_sec = alert.get("cooldown", 0)
+                alert_type = str(alert.get("type", "default"))
+                alert["type"] = alert_type  # normalize for downstream policy helpers
+                cooldown_sec = float(alert.get("cooldown", 0) or 0)
                 severity = alert.get("severity", "info")
                 symbol = alert.get("symbol", "")
+                category = str(alert.get("category", alert_type))
+                tf = alert.get("tf")
+
+                # Centralized gate checks: backend is source of truth.
+                if not should_accept_alert(alert=alert, config=bot_config):
+                    logger.info(
+                        f"Dropped alert by policy: type={alert_type} symbol={symbol} tf={tf or '*'}"
+                    )
+                    alert_queue.task_done()
+                    continue
 
                 # Check cooldown to prevent spam
                 current_time = asyncio.get_event_loop().time()
-                last_sent = cooldown_tracker.get(alert_type, 0)
+                cooldown_key = build_cooldown_key(alert)
+                last_sent = cooldown_tracker.get(cooldown_key, 0)
                 
                 if current_time - last_sent < cooldown_sec:
-                    logger.info(f"Alert of type '{alert_type}' is on cooldown. Dropping message.")
+                    logger.info(f"Alert '{cooldown_key}' is on cooldown. Dropping message.")
                     alert_queue.task_done()
                     continue
 
@@ -175,9 +188,10 @@ async def process_queue():
                 alert_history.appendleft({
                     "timestamp": get_iso_now(),
                     "symbol": symbol,
-                    "category": alert_type,
+                    "category": category,
                     "severity": severity,
-                    "message": message
+                    "message": message,
+                    "tf": tf
                 })
 
                 # Send message
@@ -185,7 +199,7 @@ async def process_queue():
                 
                 if success:
                     # Update cooldown tracker on success
-                    cooldown_tracker[alert_type] = current_time
+                    cooldown_tracker[cooldown_key] = current_time
 
                 alert_queue.task_done()
             except asyncio.CancelledError:

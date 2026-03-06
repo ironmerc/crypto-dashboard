@@ -28,6 +28,7 @@ describe('useFuturesStream', () => {
         expect(sendMessage).toHaveBeenCalledWith(expect.stringContaining('openInterest@500ms'));
         expect(sendMessage).toHaveBeenCalledWith(expect.stringContaining('aggTrade'));
         expect(sendMessage).toHaveBeenCalledWith(expect.stringContaining('forceOrder'));
+        expect(sendMessage).toHaveBeenCalledWith(expect.stringContaining('markPrice'));
     });
 
     it('handles openInterestUpdate messages', () => {

@@ -10,7 +10,7 @@ export function ActionAlertStrip() {
     // Get the most recent event
     const latestEvent = useMemo(() => {
         if (events.length === 0) return null;
-        return events[events.length - 1]; // Assuming appended to end
+        return events[0]; // Store prepends newest events first
     }, [events]);
 
     useEffect(() => {
