@@ -2,18 +2,37 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-SCHEMAS_DIR = Path(__file__).resolve().parent.parent / "schemas"
+SCHEMA_SEARCH_DIRS = [
+    # Explicit override for production/custom deployments.
+    Path(os.getenv("SCHEMAS_DIR", "")).resolve() if os.getenv("SCHEMAS_DIR") else None,
+    # Local to telegram-bot directory.
+    Path(__file__).resolve().parent / "schemas",
+    # Repo-root schemas directory (dev/tests).
+    Path(__file__).resolve().parent.parent / "schemas",
+    # Docker-mounted shared schemas directory.
+    Path("/schemas"),
+]
 
 
 def load_schema(schema_filename: str) -> dict[str, Any]:
-    schema_path = SCHEMAS_DIR / schema_filename
-    with open(schema_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    for schema_dir in SCHEMA_SEARCH_DIRS:
+        if not schema_dir:
+            continue
+        schema_path = schema_dir / schema_filename
+        if schema_path.exists():
+            with open(schema_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+
+    searched = [str(p) for p in SCHEMA_SEARCH_DIRS if p]
+    raise FileNotFoundError(
+        f"Schema '{schema_filename}' not found in search paths: {searched}"
+    )
 
 
 def _matches_type(value: Any, expected: str) -> bool:
@@ -130,4 +149,3 @@ def validate_by_schema_warn_only(
 def log_schema_warnings(scope: str, warnings: list[str]) -> None:
     for warning in warnings:
         logger.warning(f"[SchemaWarn:{scope}] {warning}")
-
