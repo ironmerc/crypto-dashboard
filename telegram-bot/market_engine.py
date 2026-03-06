@@ -295,33 +295,50 @@ class MarketEngine:
 
 
         # 3. Open Interest Flow History
-        elif stream == "openInterestUpdate": # Stream name is openInterestUpdate
+        elif stream == "openInterestUpdate":
             now = time.time()
             self.state[symbol]["oi_history"].append({'t': now, 'v': float(data['o'])})
-            self.state[symbol]["oi_history"] = [h for h in self.state[symbol]["oi_history"] if now - h['t'] <= 1800] # 30m window
+            # Keep 1 hour of OI history for MTF support (max window 1h)
+            self.state[symbol]["oi_history"] = [h for h in self.state[symbol]["oi_history"] if now - h['t'] <= 3600]
             
-            # --- 5m OI Spike Detection (Matches useSmartAlerts.ts) ---
-            window_5m = [h for h in self.state[symbol]["oi_history"] if now - h['t'] <= 300]
-            if len(window_5m) > 1:
-                oldest = window_5m[0]['v']
-                newest = window_5m[-1]['v']
-                if oldest > 0:
-                    oi_change_pct = ((newest - oldest) / abs(oldest)) * 100
-                    
-                    thresholds = self.config.get("thresholds", {}).get(symbol, 
-                                 self.config.get("thresholds", {}).get("global", {}))
-                    oi_threshold = float(thresholds.get("oiSpikePercentage", 1.5))
-                    
-                    if abs(oi_change_pct) > oi_threshold:
-                         is_up = oi_change_pct > 0
-                         title = "OI SPIKE DETECTED" if is_up else "OI FLUSH DETECTED"
-                         icon = "🌋" if is_up else "💧"
-                         cooldown = self.config.get("cooldowns", {}).get("oi_spike", 600)
-                         await self.send_alert(
-                            f"[{symbol}] {icon} {title}",
-                            f"Open Interest {'increased' if is_up else 'dropped'} by {abs(oi_change_pct):.2f}% in 5m.",
-                            "oi_spike", symbol, "info", cooldown
-                         )
+            # --- MTF OI Spike Detection ---
+            # Check enabled timeframes for 'oi_spike'
+            enabled_tfs = self.config.get("timeframes", {}).get("oi_spike", ["5m"])
+            
+            seconds_map = {
+                "1m": 60,
+                "3m": 180,
+                "5m": 300,
+                "15m": 900,
+                "30m": 1800
+            }
+            
+            thresholds = self.config.get("thresholds", {}).get(symbol, 
+                         self.config.get("thresholds", {}).get("global", {}))
+            oi_threshold = float(thresholds.get("oiSpikePercentage", 1.5))
+            cooldown = self.config.get("cooldowns", {}).get("oi_spike", 600)
+            
+            for tf_str in enabled_tfs:
+                if tf_str not in seconds_map: continue
+                window_seconds = seconds_map[tf_str]
+                
+                window = [h for h in self.state[symbol]["oi_history"] if now - h['t'] <= window_seconds]
+                if len(window) > 1:
+                    oldest = window[0]['v']
+                    newest = window[-1]['v']
+                    if oldest > 0:
+                        oi_change_pct = ((newest - oldest) / abs(oldest)) * 100
+                        
+                        if abs(oi_change_pct) > oi_threshold:
+                             is_up = oi_change_pct > 0
+                             title = f"OI SPIKE DETECTED ({tf_str})" if is_up else f"OI FLUSH DETECTED ({tf_str})"
+                             icon = "🌋" if is_up else "💧"
+                             
+                             await self.send_alert(
+                                f"[{symbol}] {icon} {title}",
+                                f"Open Interest {'increased' if is_up else 'dropped'} by {abs(oi_change_pct):.2f}% in {tf_str}.",
+                                "oi_spike", symbol, "info", cooldown, tf=tf_str
+                             )
 
         # 4. Funding Rate
         elif stream == "markPriceUpdate":
@@ -440,31 +457,41 @@ class MarketEngine:
                         "rvol_spike", symbol, "info", 600, tf=tf
                     )
 
-                # C. Positioning & Flow Shift (15m window typically)
-                if tf == "15m" and len(self.state[symbol]["oi_history"]) >= 2:
+                # C. Positioning & Flow Shift (MTF)
+                enabled_flow_tfs = self.config.get("timeframes", {}).get("order_flow", ["15m"])
+                if tf in enabled_flow_tfs and len(self.state[symbol]["oi_history"]) >= 2:
                     oi_history = self.state[symbol]["oi_history"]
-                    oi_delta = ((oi_history[-1]['v'] - oi_history[0]['v']) / oi_history[0]['v']) * 100
-                    price_delta = ((price - float(self.state[symbol]["klines"][tf][0][1])) / float(self.state[symbol]["klines"][tf][0][1])) * 100
+                    # Get OI from start of this candle timeframe
+                    window_seconds = 60 if tf == "1m" else (300 if tf == "5m" else 900) # Simple map for common TFs
+                    if tf == "1h": window_seconds = 3600
                     
-                    thresholds = self.config.get("thresholds", {}).get(symbol, 
-                                 self.config.get("thresholds", {}).get("global", {}))
-                    oi_threshold = float(thresholds.get("oiSpikePercentage", 1.5))
-                    
-                    flow = "Neutral/Stable"
-                    if abs(oi_delta) > oi_threshold:
-                        if oi_delta > 0 and price_delta > 0: flow = "Active Long Building"
-                        elif oi_delta > 0 and price_delta < 0: flow = "Active Short Building"
-                        elif oi_delta < 0 and price_delta > 0: flow = "Short Covering Rally"
-                        elif oi_delta < 0 and price_delta < 0: flow = "Long Liquidations"
-                    
-                    old_flow = self.state[symbol]["flow"].get(tf, "Unknown")
-                    if flow != old_flow and flow != "Neutral/Stable":
-                        await self.send_alert(
-                            f"[{symbol}] 📊 Flow Shift ({tf})",
-                            f"<b>Dynamics:</b> {flow}\n<b>OI Delta:</b> {oi_delta:+.2f}%\n<b>Price Delta:</b> {price_delta:+.2f}%",
-                            "order_flow", symbol, "info", 900, tf=tf
-                        )
-                    self.state[symbol]["flow"][tf] = flow
+                    # Search for OI at start of interval
+                    oi_start_window = [h for h in oi_history if (now - h['t']) >= window_seconds]
+                    if oi_start_window:
+                        oi_start = oi_start_window[-1]['v']
+                        oi_now = oi_history[-1]['v']
+                        oi_delta = ((oi_now - oi_start) / oi_start) * 100
+                        
+                        price_start = float(self.state[symbol]["klines"][tf][0][1])
+                        price_delta = ((price - price_start) / price_start) * 100
+                        
+                        oi_threshold = float(thresholds.get("oiSpikePercentage", 1.5))
+                        
+                        flow = "Neutral/Stable"
+                        if abs(oi_delta) > oi_threshold:
+                            if oi_delta > 0 and price_delta > 0: flow = "Active Long Building"
+                            elif oi_delta > 0 and price_delta < 0: flow = "Active Short Building"
+                            elif oi_delta < 0 and price_delta > 0: flow = "Short Covering Rally"
+                            elif oi_delta < 0 and price_delta < 0: flow = "Long Liquidations"
+                        
+                        old_flow = self.state[symbol]["flow"].get(tf, "Unknown")
+                        if flow != old_flow and flow != "Neutral/Stable":
+                            await self.send_alert(
+                                f"[{symbol}] 📊 Flow Shift ({tf})",
+                                f"<b>Dynamics:</b> {flow}\n<b>OI Delta:</b> {oi_delta:+.2f}%\n<b>Price Delta:</b> {price_delta:+.2f}%",
+                                "order_flow", symbol, "info", 900, tf=tf
+                            )
+                        self.state[symbol]["flow"][tf] = flow
 
                 # D. Level Interaction Interaction
                 levels = [("POC", poc), ("VWAP", vwap)]

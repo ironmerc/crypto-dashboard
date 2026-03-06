@@ -8,31 +8,42 @@ import { fetchConfigFromBot } from '../utils/syncConfig';
 const ALL_TIMEFRAMES = ["1m", "3m", "5m", "15m", "1h", "4h", "1d"];
 const ALL_SESSIONS = ["London", "US", "Asia"];
 
+// Categories that depend on specific candle intervals (MTF)
+const TIMEFRAME_SUPPORTED_CATEGORIES = [
+    'atr_expand',
+    'context_summary',
+    'ema_cross',
+    'level_testing',
+    'oi_spike',
+    'order_flow',
+    'rsi_extreme',
+    'rvol_spike'
+];
+
 const HELP_CONTENT: Record<string, string> = {
     // Categories
-    'oi_spike': 'Monitors sudden leverage changes. Spikes suggest new aggressive positioning; Flushes suggest liquidations or mass profit-taking.',
-    'whale': 'Tracks large individual orders and net flows. Can signal localized support/resistance or institutional aggression.',
-    'liquidation': 'Alerts on forced order closures. High clusters of liquidations often mark local price exhaustion.',
     'atr_expand': 'Uses ATR Ratio to detect when price ranges are expanding rapidly (high risk) or contracting (breakout potential).',
-    'rvol_spike': 'Alerts when volume is significantly higher than the 20-period average, indicating high conviction.',
-    'ema_cross': 'Identifies Trend vs. Range conditions based on EMA 21/50 crossovers and price positioning.',
-    'rsi_extreme': 'Signals overbought (>70) or oversold (<30) conditions where momentum may be exhausted.',
-    'extreme_funding': 'Alerts on unbalanced leverage. Extremely high/low rates increase the risk of cascading squeeze events.',
-    'order_flow': 'Combines Price and OI delta to identify Active Long Building vs Short Covering dynamics.',
-    'level_testing': 'Detects when price interacts with high-volume nodes like POC or technical anchors like VWAP.',
     'context_summary': 'A state analyzer that alerts only when the combined Regime, Flow, and Volatility states shift.',
+    'ema_cross': 'Identifies Trend vs. Range conditions based on EMA 21/50 crossovers and price positioning.',
+    'extreme_funding': 'Alerts on unbalanced leverage. Extremely high/low rates increase the risk of cascading squeeze events.',
+    'level_testing': 'Detects when price interacts with high-volume nodes like POC or technical anchors like VWAP.',
+    'liquidation': 'Alerts on forced order closures. High clusters of liquidations often mark local price exhaustion.',
     'market_context': 'Periodic (4h) and Daily (24h) summaries of overall market health and cumulative flows.',
+    'oi_spike': 'Monitors sudden leverage changes. Spikes suggest new aggressive positioning; Flushes suggest liquidations or mass profit-taking.',
+    'order_flow': 'Combines Price and OI delta to identify Active Long Building vs Short Covering dynamics.',
+    'rsi_extreme': 'Signals overbought (>70) or oversold (<30) conditions where momentum may be exhausted.',
+    'rvol_spike': 'Alerts when volume is significantly higher than the 20-period average, indicating high conviction.',
+    'whale': 'Tracks large individual orders and net flows. Can signal localized support/resistance or institutional aggression.',
 
     // Thresholds
-    'whaleMinAmount': 'The minimum dollar volume required to trigger a individual Whale Trade notification.',
+    'atrExpansionRatio': 'The ratio of current candle range vs average range. 1.3x indicates significant volatility expansion.',
+    'emaSeparationPct': 'The percentage gap between EMA 21 and 50 required to classify a trend as "Strong."',
+    'fundingExtremeRate': 'The percentage rate at which funding is considered unbalanced (e.g., 0.05% per 8h).',
     'liquidationMinAmount': 'The minimum dollar volume of a forced order to trigger a Liquidation notification.',
     'oiSpikePercentage': 'The percentage change in Open Interest over a 5-minute rolling window required for an alert.',
-    'atrExpansionRatio': 'The ratio of current candle range vs average range. 1.3x indicates significant volatility expansion.',
-    'rvolMultiplier': 'The multiplier above average volume required to trigger an RVOL Spike alert.',
-    'fundingExtremeRate': 'The percentage rate at which funding is considered unbalanced (e.g., 0.05% per 8h).',
-    'emaSeparationPct': 'The percentage gap between EMA 21 and 50 required to classify a trend as "Strong."',
     'rsiOverbought': 'The RSI level above which the market is considered over-extended and vulnerable to a pullback.',
     'rsiOversold': 'The RSI level below which the market is considered oversold and potential for a relief bounce.',
+    'whaleMinAmount': 'The minimum dollar volume required to trigger a individual Whale Trade notification.',
     'whaleMomentumDelta': 'The net aggression floor ($) required to trigger a Whale Momentum Shift alert.'
 };
 
@@ -509,7 +520,7 @@ export default function TelegramSettings() {
                                             <div className="bg-terminal-surface/40 border border-terminal-border rounded-xl p-6 backdrop-blur-sm h-full hover:border-terminal-border/80 transition-all">
                                                 <div className="space-y-6">
                                                     {/* Subscription groups implementation... */}
-                                                    {['oi_spike', 'atr_expand', 'liquidation', 'whale', 'extreme_funding', 'ema_cross', 'rsi_extreme', 'rvol_spike', 'order_flow', 'level_testing', 'context_summary', 'market_context'].map(id => (
+                                                    {['atr_expand', 'context_summary', 'ema_cross', 'extreme_funding', 'level_testing', 'liquidation', 'market_context', 'oi_spike', 'order_flow', 'rsi_extreme', 'rvol_spike', 'whale'].map(id => (
                                                         <div key={id} className="p-4 bg-terminal-bg/50 border border-terminal-border/60 hover:border-terminal-blue/30 rounded-xl space-y-4 transition-all hover:shadow-[0_0_15px_var(--color-accent)_10]">
                                                             <div className="flex items-center justify-between">
                                                                 <div className="flex items-center space-x-3">
@@ -529,30 +540,32 @@ export default function TelegramSettings() {
                                                             </div>
 
                                                             <div className="flex flex-wrap items-center gap-4 pt-4 border-t border-terminal-border/30">
-                                                                <div className="flex-1 min-w-[200px]">
-                                                                    <label className="block text-[9px] font-bold text-terminal-muted/70 uppercase tracking-widest mb-2 px-1">Active Timeframes</label>
-                                                                    <div className="flex flex-wrap gap-1.5">
-                                                                        {ALL_TIMEFRAMES.map(tf => {
-                                                                            const isActive = config.timeframes?.[id]?.includes(tf);
-                                                                            return (
-                                                                                <button
-                                                                                    key={tf}
-                                                                                    onClick={() => {
-                                                                                        const current = config.timeframes?.[id] || [];
-                                                                                        const next = isActive ? current.filter(t => t !== tf) : [...current, tf];
-                                                                                        updateConfig({ timeframes: { ...config.timeframes, [id]: next } });
-                                                                                    }}
-                                                                                    className={`px-2 py-1 rounded text-[10px] font-mono border transition-all ${isActive
-                                                                                        ? "bg-terminal-blue/20 border-terminal-blue/50 text-terminal-fg ring-1 ring-terminal-blue/20 shadow-[0_0_10px_var(--color-accent)_20]"
-                                                                                        : "bg-terminal-surface border-terminal-border text-terminal-muted/70 hover:border-terminal-blue/30 hover:text-terminal-fg"
-                                                                                        }`}
-                                                                                >
-                                                                                    {tf}
-                                                                                </button>
-                                                                            );
-                                                                        })}
+                                                                {TIMEFRAME_SUPPORTED_CATEGORIES.includes(id) && (
+                                                                    <div className="flex-1 min-w-[200px]">
+                                                                        <label className="block text-[9px] font-bold text-terminal-muted/70 uppercase tracking-widest mb-2 px-1">Active Timeframes</label>
+                                                                        <div className="flex flex-wrap gap-1.5">
+                                                                            {ALL_TIMEFRAMES.map(tf => {
+                                                                                const isActive = config.timeframes?.[id]?.includes(tf);
+                                                                                return (
+                                                                                    <button
+                                                                                        key={tf}
+                                                                                        onClick={() => {
+                                                                                            const current = config.timeframes?.[id] || [];
+                                                                                            const next = isActive ? current.filter(t => t !== tf) : [...current, tf];
+                                                                                            updateConfig({ timeframes: { ...config.timeframes, [id]: next } });
+                                                                                        }}
+                                                                                        className={`px-2 py-1 rounded text-[10px] font-mono border transition-all ${isActive
+                                                                                            ? "bg-terminal-blue/20 border-terminal-blue/50 text-terminal-fg ring-1 ring-terminal-blue/20 shadow-[0_0_10px_var(--color-accent)_20]"
+                                                                                            : "bg-terminal-surface border-terminal-border text-terminal-muted/70 hover:border-terminal-blue/30 hover:text-terminal-fg"
+                                                                                            }`}
+                                                                                    >
+                                                                                        {tf}
+                                                                                    </button>
+                                                                                );
+                                                                            })}
+                                                                        </div>
                                                                     </div>
-                                                                </div>
+                                                                )}
 
                                                                 <div className="w-20">
                                                                     <label className="block text-[9px] font-bold text-terminal-muted/70 uppercase tracking-widest mb-2 px-1 text-center">Cooldown</label>
@@ -599,37 +612,57 @@ export default function TelegramSettings() {
                                                     </div>
 
                                                     <div className="space-y-8">
-                                                        {/* Whale Amount */}
+                                                        {/* ATR Range Surge */}
                                                         <div>
                                                             <label className="flex items-center text-[10px] font-bold text-terminal-muted/70 mb-3 uppercase tracking-wider">
-                                                                Whale Trade Floor ($) <InfoTooltip id="whaleMinAmount" />
+                                                                ATR Range Surge (x) <InfoTooltip id="atrExpansionRatio" />
                                                             </label>
                                                             <input
                                                                 type="range"
-                                                                min="10000"
-                                                                max="10000000"
-                                                                step="100000"
-                                                                value={config.thresholds?.[editingSymbol]?.whaleMinAmount || config.thresholds?.global?.whaleMinAmount || 500000}
+                                                                min="1.0"
+                                                                max="5.0"
+                                                                step="0.1"
+                                                                value={config.thresholds?.[editingSymbol]?.atrExpansionRatio || config.thresholds?.global?.atrExpansionRatio || 1.3}
                                                                 onChange={(e) => {
-                                                                    const val = parseInt(e.target.value);
+                                                                    const val = parseFloat(e.target.value);
                                                                     const current = config.thresholds?.[editingSymbol] || config.thresholds?.global;
-                                                                    updateConfig({
-                                                                        thresholds: {
-                                                                            ...config.thresholds,
-                                                                            [editingSymbol]: { ...current, whaleMinAmount: val }
-                                                                        }
-                                                                    });
+                                                                    updateConfig({ thresholds: { ...config.thresholds, [editingSymbol]: { ...current, atrExpansionRatio: val } } });
                                                                 }}
                                                                 className="w-full h-1.5 bg-terminal-border rounded-lg appearance-none cursor-pointer accent-terminal-blue"
                                                             />
                                                             <div className="flex justify-between mt-2 font-mono text-[10px] text-terminal-muted">
-                                                                <span>10k</span>
-                                                                <span className="text-terminal-blue font-bold">${((config.thresholds?.[editingSymbol]?.whaleMinAmount || config.thresholds?.global?.whaleMinAmount || 500000) / 1000000).toFixed(1)}M</span>
-                                                                <span>10M</span>
+                                                                <span>1.0x</span>
+                                                                <span className="text-terminal-blue font-bold">{config.thresholds?.[editingSymbol]?.atrExpansionRatio || config.thresholds?.global?.atrExpansionRatio || 1.3}x</span>
+                                                                <span>5.0x</span>
                                                             </div>
                                                         </div>
 
-                                                        {/* Liquidation Amount */}
+                                                        {/* Extreme Funding */}
+                                                        <div>
+                                                            <label className="flex items-center text-[10px] font-bold text-terminal-muted/70 mb-3 uppercase tracking-wider">
+                                                                Extreme Funding (%) <InfoTooltip id="fundingExtremeRate" />
+                                                            </label>
+                                                            <input
+                                                                type="range"
+                                                                min="0.01"
+                                                                max="0.5"
+                                                                step="0.01"
+                                                                value={config.thresholds?.[editingSymbol]?.fundingExtremeRate || config.thresholds?.global?.fundingExtremeRate || 0.05}
+                                                                onChange={(e) => {
+                                                                    const val = parseFloat(e.target.value);
+                                                                    const current = config.thresholds?.[editingSymbol] || config.thresholds?.global;
+                                                                    updateConfig({ thresholds: { ...config.thresholds, [editingSymbol]: { ...current, fundingExtremeRate: val } } });
+                                                                }}
+                                                                className="w-full h-1.5 bg-terminal-border rounded-lg appearance-none cursor-pointer accent-terminal-blue"
+                                                            />
+                                                            <div className="flex justify-between mt-2 font-mono text-[10px] text-terminal-muted">
+                                                                <span>0.01%</span>
+                                                                <span className="text-terminal-blue font-bold">{config.thresholds?.[editingSymbol]?.fundingExtremeRate || config.thresholds?.global?.fundingExtremeRate || 0.05}%</span>
+                                                                <span>0.5%</span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Liq. Event Floor */}
                                                         <div>
                                                             <label className="flex items-center text-[10px] font-bold text-terminal-muted/70 mb-3 uppercase tracking-wider">
                                                                 Liq. Event Floor ($) <InfoTooltip id="liquidationMinAmount" />
@@ -659,7 +692,7 @@ export default function TelegramSettings() {
                                                             </div>
                                                         </div>
 
-                                                        {/* OI Spike */}
+                                                        {/* OI Surge */}
                                                         <div>
                                                             <label className="flex items-center text-[10px] font-bold text-terminal-muted/70 mb-3 uppercase tracking-wider">
                                                                 OI Surge (%) <InfoTooltip id="oiSpikePercentage" />
@@ -686,108 +719,6 @@ export default function TelegramSettings() {
                                                                 <span>0.1%</span>
                                                                 <span className="text-terminal-blue font-bold">{config.thresholds?.[editingSymbol]?.oiSpikePercentage || config.thresholds?.global?.oiSpikePercentage || 1.5}%</span>
                                                                 <span>10%</span>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 pt-4 border-t border-terminal-border/50">
-                                                            {/* ATR Expansion */}
-                                                            <div>
-                                                                <label className="flex items-center text-[10px] font-bold text-terminal-muted/70 mb-3 uppercase tracking-wider">
-                                                                    ATR Range Surge (x) <InfoTooltip id="atrExpansionRatio" />
-                                                                </label>
-                                                                <input
-                                                                    type="range"
-                                                                    min="1.0"
-                                                                    max="5.0"
-                                                                    step="0.1"
-                                                                    value={config.thresholds?.[editingSymbol]?.atrExpansionRatio || config.thresholds?.global?.atrExpansionRatio || 1.3}
-                                                                    onChange={(e) => {
-                                                                        const val = parseFloat(e.target.value);
-                                                                        const current = config.thresholds?.[editingSymbol] || config.thresholds?.global;
-                                                                        updateConfig({ thresholds: { ...config.thresholds, [editingSymbol]: { ...current, atrExpansionRatio: val } } });
-                                                                    }}
-                                                                    className="w-full h-1.5 bg-terminal-border rounded-lg appearance-none cursor-pointer accent-terminal-blue"
-                                                                />
-                                                                <div className="flex justify-between mt-2 font-mono text-[10px] text-terminal-muted">
-                                                                    <span>1.0x</span>
-                                                                    <span className="text-terminal-blue font-bold">{config.thresholds?.[editingSymbol]?.atrExpansionRatio || config.thresholds?.global?.atrExpansionRatio || 1.3}x</span>
-                                                                    <span>5.0x</span>
-                                                                </div>
-                                                            </div>
-
-                                                            {/* RVOL Multiplier */}
-                                                            <div>
-                                                                <label className="flex items-center text-[10px] font-bold text-terminal-muted/70 mb-3 uppercase tracking-wider">
-                                                                    Volume Surge (x) <InfoTooltip id="rvolMultiplier" />
-                                                                </label>
-                                                                <input
-                                                                    type="range"
-                                                                    min="1.0"
-                                                                    max="10.0"
-                                                                    step="0.5"
-                                                                    value={config.thresholds?.[editingSymbol]?.rvolMultiplier || config.thresholds?.global?.rvolMultiplier || 3.0}
-                                                                    onChange={(e) => {
-                                                                        const val = parseFloat(e.target.value);
-                                                                        const current = config.thresholds?.[editingSymbol] || config.thresholds?.global;
-                                                                        updateConfig({ thresholds: { ...config.thresholds, [editingSymbol]: { ...current, rvolMultiplier: val } } });
-                                                                    }}
-                                                                    className="w-full h-1.5 bg-terminal-border rounded-lg appearance-none cursor-pointer accent-terminal-blue"
-                                                                />
-                                                                <div className="flex justify-between mt-2 font-mono text-[10px] text-terminal-muted">
-                                                                    <span>1.0x</span>
-                                                                    <span className="text-terminal-blue font-bold">{config.thresholds?.[editingSymbol]?.rvolMultiplier || config.thresholds?.global?.rvolMultiplier || 3.0}x</span>
-                                                                    <span>10.0x</span>
-                                                                </div>
-                                                            </div>
-
-                                                            {/* Funding Extreme */}
-                                                            <div>
-                                                                <label className="flex items-center text-[10px] font-bold text-terminal-muted/70 mb-3 uppercase tracking-wider">
-                                                                    Extreme Funding (%) <InfoTooltip id="fundingExtremeRate" />
-                                                                </label>
-                                                                <input
-                                                                    type="range"
-                                                                    min="0.01"
-                                                                    max="0.5"
-                                                                    step="0.01"
-                                                                    value={config.thresholds?.[editingSymbol]?.fundingExtremeRate || config.thresholds?.global?.fundingExtremeRate || 0.05}
-                                                                    onChange={(e) => {
-                                                                        const val = parseFloat(e.target.value);
-                                                                        const current = config.thresholds?.[editingSymbol] || config.thresholds?.global;
-                                                                        updateConfig({ thresholds: { ...config.thresholds, [editingSymbol]: { ...current, fundingExtremeRate: val } } });
-                                                                    }}
-                                                                    className="w-full h-1.5 bg-terminal-border rounded-lg appearance-none cursor-pointer accent-terminal-blue"
-                                                                />
-                                                                <div className="flex justify-between mt-2 font-mono text-[10px] text-terminal-muted">
-                                                                    <span>0.01%</span>
-                                                                    <span className="text-terminal-blue font-bold">{config.thresholds?.[editingSymbol]?.fundingExtremeRate || config.thresholds?.global?.fundingExtremeRate || 0.05}%</span>
-                                                                    <span>0.5%</span>
-                                                                </div>
-                                                            </div>
-
-                                                            {/* EMA Separation */}
-                                                            <div>
-                                                                <label className="flex items-center text-[10px] font-bold text-terminal-muted/70 mb-3 uppercase tracking-wider">
-                                                                    Trend Stretch (%) <InfoTooltip id="emaSeparationPct" />
-                                                                </label>
-                                                                <input
-                                                                    type="range"
-                                                                    min="0.05"
-                                                                    max="1.0"
-                                                                    step="0.05"
-                                                                    value={config.thresholds?.[editingSymbol]?.emaSeparationPct || config.thresholds?.global?.emaSeparationPct || 0.15}
-                                                                    onChange={(e) => {
-                                                                        const val = parseFloat(e.target.value);
-                                                                        const current = config.thresholds?.[editingSymbol] || config.thresholds?.global;
-                                                                        updateConfig({ thresholds: { ...config.thresholds, [editingSymbol]: { ...current, emaSeparationPct: val } } });
-                                                                    }}
-                                                                    className="w-full h-1.5 bg-terminal-border rounded-lg appearance-none cursor-pointer accent-terminal-blue"
-                                                                />
-                                                                <div className="flex justify-between mt-2 font-mono text-[10px] text-terminal-muted">
-                                                                    <span>0.05%</span>
-                                                                    <span className="text-terminal-blue font-bold">{config.thresholds?.[editingSymbol]?.emaSeparationPct || config.thresholds?.global?.emaSeparationPct || 0.15}%</span>
-                                                                    <span>1.0%</span>
-                                                                </div>
                                                             </div>
                                                         </div>
 
@@ -843,8 +774,60 @@ export default function TelegramSettings() {
                                                             </div>
                                                         </div>
 
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 pt-4 border-t border-terminal-border/50">
+                                                            {/* Trend Stretch */}
+                                                            <div>
+                                                                <label className="flex items-center text-[10px] font-bold text-terminal-muted/70 mb-3 uppercase tracking-wider">
+                                                                    Trend Stretch (%) <InfoTooltip id="emaSeparationPct" />
+                                                                </label>
+                                                                <input
+                                                                    type="range"
+                                                                    min="0.05"
+                                                                    max="1.0"
+                                                                    step="0.05"
+                                                                    value={config.thresholds?.[editingSymbol]?.emaSeparationPct || config.thresholds?.global?.emaSeparationPct || 0.15}
+                                                                    onChange={(e) => {
+                                                                        const val = parseFloat(e.target.value);
+                                                                        const current = config.thresholds?.[editingSymbol] || config.thresholds?.global;
+                                                                        updateConfig({ thresholds: { ...config.thresholds, [editingSymbol]: { ...current, emaSeparationPct: val } } });
+                                                                    }}
+                                                                    className="w-full h-1.5 bg-terminal-border rounded-lg appearance-none cursor-pointer accent-terminal-blue"
+                                                                />
+                                                                <div className="flex justify-between mt-2 font-mono text-[10px] text-terminal-muted">
+                                                                    <span>0.05%</span>
+                                                                    <span className="text-terminal-blue font-bold">{config.thresholds?.[editingSymbol]?.emaSeparationPct || config.thresholds?.global?.emaSeparationPct || 0.15}%</span>
+                                                                    <span>1.0%</span>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Volume Surge */}
+                                                            <div>
+                                                                <label className="flex items-center text-[10px] font-bold text-terminal-muted/70 mb-3 uppercase tracking-wider">
+                                                                    Volume Surge (x) <InfoTooltip id="rvolMultiplier" />
+                                                                </label>
+                                                                <input
+                                                                    type="range"
+                                                                    min="1.0"
+                                                                    max="10.0"
+                                                                    step="0.5"
+                                                                    value={config.thresholds?.[editingSymbol]?.rvolMultiplier || config.thresholds?.global?.rvolMultiplier || 3.0}
+                                                                    onChange={(e) => {
+                                                                        const val = parseFloat(e.target.value);
+                                                                        const current = config.thresholds?.[editingSymbol] || config.thresholds?.global;
+                                                                        updateConfig({ thresholds: { ...config.thresholds, [editingSymbol]: { ...current, rvolMultiplier: val } } });
+                                                                    }}
+                                                                    className="w-full h-1.5 bg-terminal-border rounded-lg appearance-none cursor-pointer accent-terminal-blue"
+                                                                />
+                                                                <div className="flex justify-between mt-2 font-mono text-[10px] text-terminal-muted">
+                                                                    <span>1.0x</span>
+                                                                    <span className="text-terminal-blue font-bold">{config.thresholds?.[editingSymbol]?.rvolMultiplier || config.thresholds?.global?.rvolMultiplier || 3.0}x</span>
+                                                                    <span>10.0x</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
                                                         <div className="pt-4 border-t border-terminal-border/50">
-                                                            {/* Whale Momentum Delta */}
+                                                            {/* Whale Net Aggression Floor */}
                                                             <div>
                                                                 <label className="flex items-center text-[10px] font-bold text-terminal-muted/70 mb-3 uppercase tracking-wider">
                                                                     Whale Net Aggression Floor ($) <InfoTooltip id="whaleMomentumDelta" />
@@ -865,6 +848,38 @@ export default function TelegramSettings() {
                                                                 <div className="flex justify-between mt-2 font-mono text-[10px] text-terminal-muted">
                                                                     <span>100k</span>
                                                                     <span className="text-terminal-blue font-bold">${(config.thresholds?.[editingSymbol]?.whaleMomentumDelta || config.thresholds?.global?.whaleMomentumDelta || 5000000).toLocaleString()}</span>
+                                                                    <span>10M</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="pt-4 border-t border-terminal-border/50">
+                                                            {/* Whale Trade Floor */}
+                                                            <div>
+                                                                <label className="flex items-center text-[10px] font-bold text-terminal-muted/70 mb-3 uppercase tracking-wider">
+                                                                    Whale Trade Floor ($) <InfoTooltip id="whaleMinAmount" />
+                                                                </label>
+                                                                <input
+                                                                    type="range"
+                                                                    min="10000"
+                                                                    max="10000000"
+                                                                    step="100000"
+                                                                    value={config.thresholds?.[editingSymbol]?.whaleMinAmount || config.thresholds?.global?.whaleMinAmount || 500000}
+                                                                    onChange={(e) => {
+                                                                        const val = parseInt(e.target.value);
+                                                                        const current = config.thresholds?.[editingSymbol] || config.thresholds?.global;
+                                                                        updateConfig({
+                                                                            thresholds: {
+                                                                                ...config.thresholds,
+                                                                                [editingSymbol]: { ...current, whaleMinAmount: val }
+                                                                            }
+                                                                        });
+                                                                    }}
+                                                                    className="w-full h-1.5 bg-terminal-border rounded-lg appearance-none cursor-pointer accent-terminal-blue"
+                                                                />
+                                                                <div className="flex justify-between mt-2 font-mono text-[10px] text-terminal-muted">
+                                                                    <span>10k</span>
+                                                                    <span className="text-terminal-blue font-bold">${((config.thresholds?.[editingSymbol]?.whaleMinAmount || config.thresholds?.global?.whaleMinAmount || 500000) / 1000000).toFixed(1)}M</span>
                                                                     <span>10M</span>
                                                                 </div>
                                                             </div>
@@ -891,15 +906,15 @@ export default function TelegramSettings() {
                                                         onChange={(e) => setSelectedTest(e.target.value)}
                                                         className="w-full bg-terminal-bg/50 border border-terminal-border rounded-lg px-3 py-3 text-xs md:text-sm text-terminal-fg/80 focus:border-terminal-blue focus:ring-1 focus:ring-terminal-blue/50 outline-none cursor-pointer transition-all shadow-inner"
                                                     >
-                                                        <option value="oi_spike">OI Spike/Flush</option>
-                                                        <option value="atr_expand">Volatility Expansion</option>
-                                                        <option value="liquidation">Liquidations</option>
-                                                        <option value="whale">Whale Activity</option>
-                                                        <option value="order_flow">Order Flow Shift</option>
-                                                        <option value="level_testing">Level Testing</option>
-                                                        <option value="context_summary">Context Summary</option>
-                                                        <option value="market_context_summary">Market Wrap/Summary</option>
-                                                        <option value="ping">System Ping</option>
+                                                        <option value="atr_expand">ATR Expansion (Volatility)</option>
+                                                        <option value="context_summary">Context Summary Shift</option>
+                                                        <option value="level_testing">Level Interaction (POC/VWAP)</option>
+                                                        <option value="liquidation">Liquidations (Forced Orders)</option>
+                                                        <option value="market_context_summary">Market Wrap/Daily Summary</option>
+                                                        <option value="oi_spike">OI Spike/Flush (Leverage)</option>
+                                                        <option value="order_flow">Order Flow Shift (Aggression)</option>
+                                                        <option value="ping">System Connectivity Ping</option>
+                                                        <option value="whale">Whale Activity (Individual Blocks)</option>
                                                     </select>
                                                 </div>
                                                 <button
