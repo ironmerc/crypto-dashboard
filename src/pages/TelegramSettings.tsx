@@ -2,11 +2,66 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { sendTelegramAlert, getCurrentSession } from '../hooks/useSmartAlerts';
-import { ShieldAlert, ArrowLeft, Activity, Clock, Bell, Settings, Trash2, Sliders, Zap, Layers, Globe } from 'lucide-react';
+import { ShieldAlert, ArrowLeft, Activity, Clock, Bell, Settings, Trash2, Sliders, Zap, Layers, Globe, Info } from 'lucide-react';
 import { fetchConfigFromBot } from '../utils/syncConfig';
 
 const ALL_TIMEFRAMES = ["1m", "3m", "5m", "15m", "1h", "4h", "1d"];
 const ALL_SESSIONS = ["London", "US", "Asia"];
+
+const HELP_CONTENT: Record<string, string> = {
+    // Categories
+    'oi_spike': 'Monitors sudden leverage changes. Spikes suggest new aggressive positioning; Flushes suggest liquidations or mass profit-taking.',
+    'whale': 'Tracks large individual orders and net flows. Can signal localized support/resistance or institutional aggression.',
+    'liquidation': 'Alerts on forced order closures. High clusters of liquidations often mark local price exhaustion.',
+    'atr_expand': 'Uses ATR Ratio to detect when price ranges are expanding rapidly (high risk) or contracting (breakout potential).',
+    'rvol_spike': 'Alerts when volume is significantly higher than the 20-period average, indicating high conviction.',
+    'ema_cross': 'Identifies Trend vs. Range conditions based on EMA 21/50 crossovers and price positioning.',
+    'rsi_extreme': 'Signals overbought (>70) or oversold (<30) conditions where momentum may be exhausted.',
+    'extreme_funding': 'Alerts on unbalanced leverage. Extremely high/low rates increase the risk of cascading squeeze events.',
+    'order_flow': 'Combines Price and OI delta to identify Active Long Building vs Short Covering dynamics.',
+    'level_testing': 'Detects when price interacts with high-volume nodes like POC or technical anchors like VWAP.',
+    'context_summary': 'A state analyzer that alerts only when the combined Regime, Flow, and Volatility states shift.',
+    'market_context': 'Periodic (4h) and Daily (24h) summaries of overall market health and cumulative flows.',
+
+    // Thresholds
+    'whaleMinAmount': 'The minimum dollar volume required to trigger a individual Whale Trade notification.',
+    'liquidationMinAmount': 'The minimum dollar volume of a forced order to trigger a Liquidation notification.',
+    'oiSpikePercentage': 'The percentage change in Open Interest over a 5-minute rolling window required for an alert.',
+    'atrExpansionRatio': 'The ratio of current candle range vs average range. 1.3x indicates significant volatility expansion.',
+    'rvolMultiplier': 'The multiplier above average volume required to trigger an RVOL Spike alert.',
+    'fundingExtremeRate': 'The percentage rate at which funding is considered unbalanced (e.g., 0.05% per 8h).',
+    'emaSeparationPct': 'The percentage gap between EMA 21 and 50 required to classify a trend as "Strong."',
+    'rsiOverbought': 'The RSI level above which the market is considered over-extended and vulnerable to a pullback.',
+    'rsiOversold': 'The RSI level below which the market is considered oversold and potential for a relief bounce.',
+    'whaleMomentumDelta': 'The net aggression floor ($) required to trigger a Whale Momentum Shift alert.'
+};
+
+function InfoTooltip({ id }: { id: string }) {
+    const [show, setShow] = useState(false);
+    const content = HELP_CONTENT[id];
+    if (!content) return null;
+
+    return (
+        <div className="relative inline-block ml-2 group">
+            <button
+                onMouseEnter={() => setShow(true)}
+                onMouseLeave={() => setShow(false)}
+                onClick={() => setShow(!show)}
+                className="p-1 hover:text-indigo-400 text-slate-600 transition-colors"
+            >
+                <Info className="w-3 h-3" />
+            </button>
+            {show && (
+                <div className="absolute z-[100] bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-slate-900 border border-slate-800 rounded shadow-2xl animate-in fade-in zoom-in duration-200">
+                    <p className="text-[10px] text-slate-300 font-mono leading-relaxed pointer-events-none">
+                        {content}
+                    </p>
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800"></div>
+                </div>
+            )}
+        </div>
+    );
+}
 
 interface BotStatus {
     status: 'online' | 'offline' | 'unreachable';
@@ -439,6 +494,7 @@ export default function TelegramSettings() {
                                                         <div className="flex items-center space-x-3">
                                                             <div className={`w-2 h-2 rounded-full ${(config.categories?.[id] ?? true) ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]' : 'bg-slate-700'}`}></div>
                                                             <span className="text-sm font-bold text-slate-200 capitalize tracking-tight">{id.replace('_', ' ')}</span>
+                                                            <InfoTooltip id={id} />
                                                         </div>
                                                         <label className="relative inline-flex items-center cursor-pointer">
                                                             <input
@@ -522,7 +578,9 @@ export default function TelegramSettings() {
                                             <div className="space-y-8">
                                                 {/* Whale Amount */}
                                                 <div>
-                                                    <label className="block text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">Whale Trade Floor ($)</label>
+                                                    <label className="flex items-center text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">
+                                                        Whale Trade Floor ($) <InfoTooltip id="whaleMinAmount" />
+                                                    </label>
                                                     <input
                                                         type="range"
                                                         min="10000"
@@ -550,7 +608,9 @@ export default function TelegramSettings() {
 
                                                 {/* Liquidation Amount */}
                                                 <div>
-                                                    <label className="block text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">Liq. Event Floor ($)</label>
+                                                    <label className="flex items-center text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">
+                                                        Liq. Event Floor ($) <InfoTooltip id="liquidationMinAmount" />
+                                                    </label>
                                                     <input
                                                         type="range"
                                                         min="10000"
@@ -578,7 +638,9 @@ export default function TelegramSettings() {
 
                                                 {/* OI Spike */}
                                                 <div>
-                                                    <label className="block text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">OI Surge (%)</label>
+                                                    <label className="flex items-center text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">
+                                                        OI Surge (%) <InfoTooltip id="oiSpikePercentage" />
+                                                    </label>
                                                     <input
                                                         type="range"
                                                         min="0.1"
@@ -607,7 +669,9 @@ export default function TelegramSettings() {
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 pt-4 border-t border-slate-800/50">
                                                     {/* ATR Expansion */}
                                                     <div>
-                                                        <label className="block text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">ATR Range Surge (x)</label>
+                                                        <label className="flex items-center text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">
+                                                            ATR Range Surge (x) <InfoTooltip id="atrExpansionRatio" />
+                                                        </label>
                                                         <input
                                                             type="range"
                                                             min="1.0"
@@ -630,7 +694,9 @@ export default function TelegramSettings() {
 
                                                     {/* RVOL Multiplier */}
                                                     <div>
-                                                        <label className="block text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">Volume Surge (x)</label>
+                                                        <label className="flex items-center text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">
+                                                            Volume Surge (x) <InfoTooltip id="rvolMultiplier" />
+                                                        </label>
                                                         <input
                                                             type="range"
                                                             min="1.0"
@@ -653,7 +719,9 @@ export default function TelegramSettings() {
 
                                                     {/* Funding Extreme */}
                                                     <div>
-                                                        <label className="block text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">Extreme Funding (%)</label>
+                                                        <label className="flex items-center text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">
+                                                            Extreme Funding (%) <InfoTooltip id="fundingExtremeRate" />
+                                                        </label>
                                                         <input
                                                             type="range"
                                                             min="0.01"
@@ -676,7 +744,9 @@ export default function TelegramSettings() {
 
                                                     {/* EMA Separation */}
                                                     <div>
-                                                        <label className="block text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">Trend Stretch (%)</label>
+                                                        <label className="flex items-center text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">
+                                                            Trend Stretch (%) <InfoTooltip id="emaSeparationPct" />
+                                                        </label>
                                                         <input
                                                             type="range"
                                                             min="0.05"
@@ -701,7 +771,9 @@ export default function TelegramSettings() {
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 pt-4 border-t border-slate-800/50">
                                                     {/* RSI Overbought */}
                                                     <div>
-                                                        <label className="block text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">RSI Overbought</label>
+                                                        <label className="flex items-center text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">
+                                                            RSI Overbought <InfoTooltip id="rsiOverbought" />
+                                                        </label>
                                                         <input
                                                             type="range"
                                                             min="50"
@@ -724,7 +796,9 @@ export default function TelegramSettings() {
 
                                                     {/* RSI Oversold */}
                                                     <div>
-                                                        <label className="block text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">RSI Oversold</label>
+                                                        <label className="flex items-center text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">
+                                                            RSI Oversold <InfoTooltip id="rsiOversold" />
+                                                        </label>
                                                         <input
                                                             type="range"
                                                             min="10"
@@ -749,7 +823,9 @@ export default function TelegramSettings() {
                                                 <div className="pt-4 border-t border-slate-800/50">
                                                     {/* Whale Momentum Delta */}
                                                     <div>
-                                                        <label className="block text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">Whale Net Aggression Floor ($)</label>
+                                                        <label className="flex items-center text-[10px] font-bold text-slate-500 mb-3 uppercase tracking-wider">
+                                                            Whale Net Aggression Floor ($) <InfoTooltip id="whaleMomentumDelta" />
+                                                        </label>
                                                         <input
                                                             type="range"
                                                             min="100000"
