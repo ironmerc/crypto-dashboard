@@ -7,7 +7,10 @@ import json
 from aiohttp import web, ClientSession
 from alert_policy import build_cooldown_key, should_accept_alert
 from bot_identity import load_cached_username, save_cached_username
-from config_utils import normalize_config_shape
+from config_utils import (
+    default_timeframes_for_sensitive_categories,
+    normalize_config_shape,
+)
 from schema_validation import (
     load_schema,
     log_schema_warnings,
@@ -63,8 +66,8 @@ DEFAULT_CONFIG = {
             "emaSeparationPct": 0.15
         }
     },
-    "monitoredTimeframes": ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d"],
-    "timeframes": {},
+    "monitoredTimeframes": ["1m", "3m", "5m", "15m", "1h", "4h", "1d", "1w", "1M"],
+    "timeframes": default_timeframes_for_sensitive_categories(),
     "priceAlerts": [] # List of {id, symbol, price, side, createdAt}
 }
 

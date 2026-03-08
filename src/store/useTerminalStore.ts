@@ -80,6 +80,18 @@ export interface TelegramConfig {
     timeframes: Record<string, string[]>; // category -> enabled timeframes, e.g. { 'regime_shift': ['15m', '1h'] }
 }
 
+const DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES = ['1h', '4h', '1d', '1w', '1M'];
+const DEFAULT_TIMEFRAMES_BY_CATEGORY: Record<string, string[]> = {
+    atr_expand: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
+    context_summary: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
+    ema_cross: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
+    level_testing: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
+    oi_spike: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
+    order_flow: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
+    rsi_extreme: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
+    rvol_spike: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
+};
+
 interface TerminalState {
     // Global Timeframe Settings
     globalInterval: string;
@@ -397,7 +409,7 @@ export const useTerminalStore = create<TerminalState>()(
                 },
                 categories: {},
                 cooldowns: {},
-                timeframes: {},
+                timeframes: { ...DEFAULT_TIMEFRAMES_BY_CATEGORY },
                 thresholds: {
                     global: {
                         whaleMinAmount: 500000,
@@ -520,7 +532,7 @@ export const useTerminalStore = create<TerminalState>()(
                             quietHours: state.telegramConfig?.quietHours ?? { enabled: false, start: '22:00', end: '06:00' },
                             categories: state.telegramConfig?.categories ?? {},
                             cooldowns: state.telegramConfig?.cooldowns ?? {},
-                            timeframes: state.telegramConfig?.timeframes ?? {},
+                            timeframes: state.telegramConfig?.timeframes ?? { ...DEFAULT_TIMEFRAMES_BY_CATEGORY },
                             thresholds: state.telegramConfig?.thresholds ?? { global: { whaleMinAmount: 500000, liquidationMinAmount: 1000000, oiSpikePercentage: 1.5, fundingExtremeRate: 0.05, atrExpansionRatio: 1.3, whaleMomentumDelta: 5000000, rvolMultiplier: 3.0, rsiOverbought: 70, rsiOversold: 30, emaSeparationPct: 0.15 } },
                         };
                     }

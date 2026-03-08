@@ -56,8 +56,15 @@ def should_accept_alert(
     tf = alert.get("tf")
     if tf:
         enabled_tfs = config.get("timeframes", {}).get(category)
-        if isinstance(enabled_tfs, list) and enabled_tfs and tf not in enabled_tfs:
-            return False
+        if isinstance(enabled_tfs, list):
+            if not enabled_tfs:
+                return False
+            if tf not in enabled_tfs:
+                return False
+        else:
+            monitored_tfs = config.get("monitoredTimeframes")
+            if isinstance(monitored_tfs, list) and monitored_tfs and tf not in monitored_tfs:
+                return False
 
     quiet_hours = config.get("quietHours", {})
     if quiet_hours.get("enabled") and quiet_hours.get("start") and quiet_hours.get("end"):
@@ -65,4 +72,3 @@ def should_accept_alert(
             return False
 
     return True
-

@@ -5,7 +5,7 @@ import { sendTelegramAlert, getCurrentSession } from '../hooks/useSmartAlerts';
 import { ShieldAlert, ArrowLeft, Activity, Clock, Bell, Trash2, Sliders, Zap, Layers, Globe, Info } from 'lucide-react';
 import { fetchConfigFromBot } from '../utils/syncConfig';
 
-const ALL_TIMEFRAMES = ["1m", "3m", "5m", "15m", "1h", "4h", "1d"];
+const ALL_TIMEFRAMES = ["1m", "3m", "5m", "15m", "1h", "4h", "1d", "1w", "1M"];
 const ALL_SESSIONS = ["London", "US", "Asia"];
 
 // Categories that depend on specific candle intervals (MTF)

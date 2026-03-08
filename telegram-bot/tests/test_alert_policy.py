@@ -63,6 +63,36 @@ class AlertPolicyTests(unittest.TestCase):
         )
         self.assertFalse(allowed)
 
+    def test_category_timeframe_blocks_unlisted_tf(self):
+        allowed = alert_policy.should_accept_alert(
+            alert={"type": "atr_expand", "symbol": "BTCUSDT", "tf": "30m"},
+            config={
+                "globalEnabled": True,
+                "timeframes": {"atr_expand": ["1m", "5m", "15m"]},
+            },
+        )
+        self.assertFalse(allowed)
+
+    def test_empty_category_timeframes_blocks_all_tf_alerts(self):
+        allowed = alert_policy.should_accept_alert(
+            alert={"type": "atr_expand", "symbol": "BTCUSDT", "tf": "5m"},
+            config={
+                "globalEnabled": True,
+                "timeframes": {"atr_expand": []},
+            },
+        )
+        self.assertFalse(allowed)
+
+    def test_monitored_timeframes_fallback_blocks_hidden_tf(self):
+        allowed = alert_policy.should_accept_alert(
+            alert={"type": "rsi_extreme", "symbol": "BTCUSDT", "tf": "30m"},
+            config={
+                "globalEnabled": True,
+                "monitoredTimeframes": ["1m", "5m", "15m", "1h", "4h", "1d"],
+            },
+        )
+        self.assertFalse(allowed)
+
 
 if __name__ == "__main__":
     unittest.main()

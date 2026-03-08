@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 WATCH_SYMBOLS = ["BTCUSDT", "ETHUSDT"]
 BINANCE_FUTURES_WS = "wss://fstream.binance.com/ws/"
 BINANCE_API = "https://fapi.binance.com"
-ALL_TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d"]
+ALL_TIMEFRAMES = ["1m", "3m", "5m", "15m", "1h", "4h", "1d", "1w", "1M"]
 
 class MarketEngine:
     def __init__(self, bot_url="http://localhost:8888"):
@@ -465,8 +465,7 @@ class MarketEngine:
                 "1m": 60,
                 "3m": 180,
                 "5m": 300,
-                "15m": 900,
-                "30m": 1800
+                "15m": 900
             }
             
             thresholds = self.config.get("thresholds", {}).get(symbol, 
