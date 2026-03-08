@@ -6,6 +6,7 @@ from collections import deque
 import json
 from aiohttp import web, ClientSession
 from alert_policy import build_cooldown_key, should_accept_alert
+from bot_identity import load_cached_username, save_cached_username
 from config_utils import normalize_config_shape
 from schema_validation import (
     load_schema,
@@ -24,6 +25,9 @@ logger = logging.getLogger(__name__)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+BOT_IDENTITY_CACHE_FILE = os.getenv("BOT_IDENTITY_CACHE_FILE", "bot_identity.json")
+BOT_IDENTITY_RETRY_SEC = float(os.getenv("BOT_IDENTITY_RETRY_SEC", "30"))
+BOT_IDENTITY_REFRESH_SEC = float(os.getenv("BOT_IDENTITY_REFRESH_SEC", "600"))
 
 if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
     logger.error("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in the environment.")
@@ -111,6 +115,9 @@ def save_config():
 bot_username = "UnknownBot"
 last_successful_message_timestamp = None
 alert_history = deque(maxlen=50)
+cached_username = load_cached_username(BOT_IDENTITY_CACHE_FILE, logger)
+if cached_username:
+    bot_username = cached_username
 
 def get_iso_now():
     """Returns the current UTC time in ISO-8601 format."""
@@ -122,13 +129,44 @@ async def fetch_bot_username(session: ClientSession):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getMe"
         async with session.get(url, timeout=10) as response:
-            if response.status == 200:
-                data = await response.json()
-                if data.get("ok"):
-                    bot_username = data["result"].get("username", bot_username)
-                    logger.info(f"Verified Bot Username: @{bot_username}")
+            if response.status != 200:
+                error_text = await response.text()
+                logger.warning(f"Telegram getMe failed ({response.status}): {error_text}")
+                return False
+
+            data = await response.json()
+            if not data.get("ok"):
+                logger.warning(f"Telegram getMe returned ok=false: {data}")
+                return False
+
+            username = data.get("result", {}).get("username")
+            if isinstance(username, str) and username.strip():
+                username = username.strip()
+                if username != bot_username:
+                    logger.info(f"Verified Bot Username: @{username}")
+                bot_username = username
+                save_cached_username(BOT_IDENTITY_CACHE_FILE, bot_username, logger)
+                return True
+
+            logger.warning("Telegram getMe response missing username")
+            return False
     except Exception as e:
-        logger.error(f"Failed to fetch bot username: {e}")
+        logger.warning(f"Failed to fetch bot username: {e}")
+        return False
+
+async def maintain_bot_identity():
+    """Keeps bot username fresh with retry on transient Telegram/API failures."""
+    logger.info("Starting bot identity refresher...")
+    async with ClientSession() as session:
+        while True:
+            try:
+                ok = await fetch_bot_username(session)
+                await asyncio.sleep(BOT_IDENTITY_REFRESH_SEC if ok else BOT_IDENTITY_RETRY_SEC)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.warning(f"Bot identity refresher loop error: {e}")
+                await asyncio.sleep(BOT_IDENTITY_RETRY_SEC)
 
 async def send_to_telegram(session: ClientSession, text: str):
     """Sends a message to the Telegram API with basic retry logic."""
@@ -163,9 +201,6 @@ async def process_queue():
     """Background task to process alerts from the queue."""
     logger.info("Starting alert queue processor...")
     async with ClientSession() as session:
-        # Before entering the loop, fetch our own username.
-        await fetch_bot_username(session)
-
         while True:
             try:
                 alert = await alert_queue.get()
@@ -351,6 +386,20 @@ async def handle_post_price_alert(request):
     except Exception as e:
         return web.json_response({"error": str(e)}, status=400)
 
+async def shutdown_tasks(app: web.Application):
+    """Gracefully stop background tasks on app shutdown."""
+    for key in ("queue_processor", "identity_refresher"):
+        task = app.get(key)
+        if not task:
+            continue
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.warning(f"Task '{key}' failed during shutdown: {e}")
+
 async def init_app():
     """Initialize the aiohttp web application."""
     app = web.Application(middlewares=[cors_middleware])
@@ -368,6 +417,8 @@ async def init_app():
     
     # Start the background task
     app['queue_processor'] = asyncio.create_task(process_queue())
+    app['identity_refresher'] = asyncio.create_task(maintain_bot_identity())
+    app.on_cleanup.append(shutdown_tasks)
     
     return app
 
