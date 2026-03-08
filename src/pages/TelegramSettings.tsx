@@ -840,7 +840,7 @@ export default function TelegramSettings() {
                                                                 <input
                                                                     type="range"
                                                                     min="100000"
-                                                                    max="10000000"
+                                                                    max="500000000"
                                                                     step="100000"
                                                                     value={config.thresholds?.[editingSymbol]?.whaleMomentumDelta || config.thresholds?.global?.whaleMomentumDelta || 5000000}
                                                                     onChange={(e) => {
@@ -850,10 +850,25 @@ export default function TelegramSettings() {
                                                                     }}
                                                                     className="w-full h-1.5 bg-terminal-border rounded-lg appearance-none cursor-pointer accent-terminal-blue"
                                                                 />
+                                                                <input
+                                                                    type="number"
+                                                                    min="100000"
+                                                                    max="1000000000"
+                                                                    step="100000"
+                                                                    value={config.thresholds?.[editingSymbol]?.whaleMomentumDelta || config.thresholds?.global?.whaleMomentumDelta || 5000000}
+                                                                    onChange={(e) => {
+                                                                        const val = parseInt(e.target.value);
+                                                                        if (Number.isNaN(val)) return;
+                                                                        const bounded = Math.max(100000, Math.min(1000000000, val));
+                                                                        const current = config.thresholds?.[editingSymbol] || config.thresholds?.global;
+                                                                        updateConfig({ thresholds: { ...config.thresholds, [editingSymbol]: { ...current, whaleMomentumDelta: bounded } } });
+                                                                    }}
+                                                                    className="w-full mt-2 px-3 py-2 rounded border border-terminal-border bg-terminal-surface text-terminal-fg font-mono text-xs"
+                                                                />
                                                                 <div className="flex justify-between mt-2 font-mono text-[10px] text-terminal-muted">
                                                                     <span>100k</span>
                                                                     <span className="text-terminal-blue font-bold">${(config.thresholds?.[editingSymbol]?.whaleMomentumDelta || config.thresholds?.global?.whaleMomentumDelta || 5000000).toLocaleString()}</span>
-                                                                    <span>10M</span>
+                                                                    <span>500M</span>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -867,8 +882,8 @@ export default function TelegramSettings() {
                                                                 <input
                                                                     type="range"
                                                                     min="10000"
-                                                                    max="10000000"
-                                                                    step="100000"
+                                                                    max="100000000"
+                                                                    step="50000"
                                                                     value={config.thresholds?.[editingSymbol]?.whaleMinAmount || config.thresholds?.global?.whaleMinAmount || 500000}
                                                                     onChange={(e) => {
                                                                         const val = parseInt(e.target.value);
@@ -882,10 +897,30 @@ export default function TelegramSettings() {
                                                                     }}
                                                                     className="w-full h-1.5 bg-terminal-border rounded-lg appearance-none cursor-pointer accent-terminal-blue"
                                                                 />
+                                                                <input
+                                                                    type="number"
+                                                                    min="10000"
+                                                                    max="1000000000"
+                                                                    step="50000"
+                                                                    value={config.thresholds?.[editingSymbol]?.whaleMinAmount || config.thresholds?.global?.whaleMinAmount || 500000}
+                                                                    onChange={(e) => {
+                                                                        const val = parseInt(e.target.value);
+                                                                        if (Number.isNaN(val)) return;
+                                                                        const bounded = Math.max(10000, Math.min(1000000000, val));
+                                                                        const current = config.thresholds?.[editingSymbol] || config.thresholds?.global;
+                                                                        updateConfig({
+                                                                            thresholds: {
+                                                                                ...config.thresholds,
+                                                                                [editingSymbol]: { ...current, whaleMinAmount: bounded }
+                                                                            }
+                                                                        });
+                                                                    }}
+                                                                    className="w-full mt-2 px-3 py-2 rounded border border-terminal-border bg-terminal-surface text-terminal-fg font-mono text-xs"
+                                                                />
                                                                 <div className="flex justify-between mt-2 font-mono text-[10px] text-terminal-muted">
                                                                     <span>10k</span>
                                                                     <span className="text-terminal-blue font-bold">${((config.thresholds?.[editingSymbol]?.whaleMinAmount || config.thresholds?.global?.whaleMinAmount || 500000) / 1000000).toFixed(1)}M</span>
-                                                                    <span>10M</span>
+                                                                    <span>100M</span>
                                                                 </div>
                                                             </div>
                                                         </div>
