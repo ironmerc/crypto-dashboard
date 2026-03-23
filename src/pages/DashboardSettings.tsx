@@ -2,49 +2,54 @@ import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Plus, X, Search, CircleDot, Settings2, Zap, Loader2 } from 'lucide-react';
 import { useTerminalStore } from '../store/useTerminalStore';
-
-const BINANCE_FUTURES_API = 'https://fapi.binance.com/fapi/v1/exchangeInfo';
-
-// Top perpetuals shown when input is empty
-const DEFAULT_POPULAR = [
-    'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT',
-    'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT',
-    'MATICUSDT', 'LTCUSDT', 'UNIUSDT', 'ATOMUSDT', 'NEARUSDT',
-    'APTUSDT', 'ARBUSDT', 'OPUSDT', 'INJUSDT', 'SUIUSDT',
-];
+import { BINANCE_ENDPOINTS, DEFAULT_POPULAR_SYMBOLS, type MarketType } from '../constants/binance';
+import { MarketToggle } from '../components/common/MarketToggle';
 
 export default function DashboardSettings() {
-    const monitoredSymbols = useTerminalStore((s) => s.telegramConfig.monitoredSymbols);
+    const monitoredSymbolsStrings = useTerminalStore((s) => s.telegramConfig.monitoredSymbols);
+    const monitoredSymbols = monitoredSymbolsStrings.map(s => 
+        typeof s === 'string' ? { symbol: s, type: 'futures' as const } : s
+    );
     const addMonitoredSymbol = useTerminalStore((s) => s.addMonitoredSymbol);
     const removeMonitoredSymbol = useTerminalStore((s) => s.removeMonitoredSymbol);
     const theme = useTerminalStore((s) => s.theme);
     const setTheme = useTerminalStore((s) => s.setTheme);
 
+    const [marketType, setMarketType] = useState<MarketType>('futures');
     const [inputValue, setInputValue] = useState('');
     const [error, setError] = useState('');
     const [flash, setFlash] = useState<string | null>(null);
-    const [allFuturesSymbols, setAllFuturesSymbols] = useState<string[]>([]);
+    const [allSymbols, setAllSymbols] = useState<string[]>([]);
     const [loadingSymbols, setLoadingSymbols] = useState(true);
     const [showDropdown, setShowDropdown] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // Fetch all Binance Futures USDT-M perpetual symbols on mount
+    // Fetch Binance symbols based on marketType
     useEffect(() => {
-        fetch(BINANCE_FUTURES_API)
+        setLoadingSymbols(true);
+        const endpoint = marketType === 'futures' 
+            ? `${BINANCE_ENDPOINTS.FUTURES.REST}/fapi/v1/exchangeInfo`
+            : `${BINANCE_ENDPOINTS.SPOT.REST}/api/v3/exchangeInfo`;
+
+        fetch(endpoint)
             .then((r) => r.json())
             .then((data) => {
                 const symbols: string[] = data.symbols
-                    .filter((s: { contractType: string; quoteAsset: string }) =>
-                        s.contractType === 'PERPETUAL' && s.quoteAsset === 'USDT'
-                    )
-                    .map((s: { symbol: string }) => s.symbol)
+                    .filter((s: any) => {
+                        if (marketType === 'futures') {
+                            return s.contractType === 'PERPETUAL' && s.quoteAsset === 'USDT';
+                        } else {
+                            return s.status === 'TRADING' && s.quoteAsset === 'USDT';
+                        }
+                    })
+                    .map((s: any) => s.symbol)
                     .sort();
-                setAllFuturesSymbols(symbols);
+                setAllSymbols(symbols);
             })
-            .catch(() => setAllFuturesSymbols(DEFAULT_POPULAR))
+            .catch(() => setAllSymbols(DEFAULT_POPULAR_SYMBOLS))
             .finally(() => setLoadingSymbols(false));
-    }, []);
+    }, [marketType]);
 
     // Close dropdown on outside click
     useEffect(() => {
@@ -57,41 +62,71 @@ export default function DashboardSettings() {
         return () => document.removeEventListener('mousedown', handleClick);
     }, []);
 
-    const basePool = allFuturesSymbols.length ? allFuturesSymbols : DEFAULT_POPULAR;
+    const basePool = allSymbols.length ? allSymbols : DEFAULT_POPULAR_SYMBOLS;
 
     const suggestions = inputValue
         ? basePool.filter(
-            (s) => s.includes(inputValue.toUpperCase()) && !monitoredSymbols.includes(s)
+            (s) => s.includes(inputValue.toUpperCase()) && 
+            !monitoredSymbols.some(m => m.symbol === s && m.type === marketType)
         ).slice(0, 12)
-        : basePool.filter((s) => !monitoredSymbols.includes(s)).slice(0, 20);
+        : basePool.filter((s) => 
+            !monitoredSymbols.some(m => m.symbol === s && m.type === marketType)
+        ).slice(0, 20);
 
     function handleAdd(symbol?: string) {
-        const sym = (symbol ?? inputValue).trim().toUpperCase();
+        let sym = (symbol ?? inputValue).trim().toUpperCase();
         if (!sym) return;
-        if (monitoredSymbols.includes(sym)) {
-            setError(`${sym} is already monitored.`);
+
+        // Smart normalization: if user typed 'BTC', make it 'BTCUSDT'
+        // Most Binance pairs used in this dashboard are XXXUSDT
+        if (!basePool.includes(sym)) {
+            const withUsdt = `${sym}USDT`;
+            if (basePool.includes(withUsdt)) {
+                sym = withUsdt;
+            } else {
+                // Try to find the first symbol that starts with sym and ends with USDT
+                // Use a case-insensitive match just in case, though sym is already upper
+                const match = basePool.find(s => s === `${sym}USDT` || s.startsWith(sym) && s.endsWith('USDT'));
+                if (match) sym = match;
+            }
+        }
+        
+        // Final validation against pool if pool is loaded
+        if (allSymbols.length > 0 && !allSymbols.includes(sym)) {
+            setError(`Symbol ${sym} not found on Binance ${marketType.toUpperCase()}.`);
+            return;
+        }
+        
+        const isDuplicate = monitoredSymbols.some(m => 
+            m.symbol === sym && m.type === marketType
+        );
+
+        if (isDuplicate) {
+            setError(`${sym} is already monitored as ${marketType}.`);
             setShowDropdown(false);
             return;
         }
+        
         if (!/^[A-Z0-9]{3,16}$/.test(sym)) {
             setError('Invalid symbol format. Example: SOLUSDT');
             return;
         }
-        addMonitoredSymbol(sym);
+        
+        addMonitoredSymbol(sym, marketType);
         setInputValue('');
         setError('');
         setShowDropdown(false);
-        setFlash(sym);
+        setFlash(`${sym}:${marketType}`);
         setTimeout(() => setFlash(null), 1500);
         inputRef.current?.focus();
     }
 
-    function handleRemove(sym: string) {
+    function handleRemove(sym: string, type: 'spot' | 'futures') {
         if (monitoredSymbols.length <= 1) {
             setError('You must monitor at least one symbol.');
             return;
         }
-        removeMonitoredSymbol(sym);
+        removeMonitoredSymbol(sym, type);
         setError('');
     }
 
@@ -119,10 +154,8 @@ export default function DashboardSettings() {
                     </span>
                 </div>
 
-                {/* Futures badge */}
-                <div className="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded border border-terminal-blue/40 bg-terminal-blue/5 text-terminal-blue text-[10px] uppercase tracking-widest font-bold">
-                    <Zap size={10} />
-                    Binance USDT-M Perpetuals
+                <div className="ml-auto">
+                    <MarketToggle activeType={marketType} onChange={setMarketType} className="w-48" />
                 </div>
             </div>
 
@@ -133,7 +166,7 @@ export default function DashboardSettings() {
                     <div className="flex items-center gap-2 mb-1">
                         <CircleDot size={13} className="text-terminal-green" />
                         <h2 className="text-terminal-green text-xs font-bold uppercase tracking-widest">
-                            Monitored Perpetuals
+                            Monitored Assets
                         </h2>
                         <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full border border-terminal-border text-terminal-muted">
                             {monitoredSymbols.length} active
@@ -143,7 +176,7 @@ export default function DashboardSettings() {
                         )}
                     </div>
                     <p className="text-terminal-muted text-xs mb-5">
-                        These <span className="text-terminal-blue">USDT-M futures contracts</span> are tracked on the Dashboard Watchlist and drive Telegram alerts via the market engine.
+                        These <span className="text-terminal-blue">Binance Spot & Futures</span> assets are tracked on the Dashboard Watchlist and drive Telegram alerts.
                     </p>
 
                     {/* Active chips */}
@@ -151,26 +184,33 @@ export default function DashboardSettings() {
                         {monitoredSymbols.length === 0 && (
                             <span className="text-terminal-muted text-xs self-center">No assets monitored.</span>
                         )}
-                        {monitoredSymbols.map((sym) => (
-                            <span
-                                key={sym}
-                                className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-mono transition-all duration-300
-                  ${flash === sym
+                        {monitoredSymbols.map((m) => {
+                            const key = `${m.symbol}:${m.type}`;
+                            return (
+                                <span
+                                    key={key}
+                                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-mono transition-all duration-300
+                                    ${flash === key
                                         ? 'border-terminal-green text-terminal-green bg-terminal-green/10 scale-105 shadow-[0_0_8px_rgba(0,255,65,0.3)]'
                                         : 'border-terminal-border text-terminal-fg hover:border-terminal-muted'
                                     }`}
-                            >
-                                {sym.replace('USDT', '')}
-                                <span className="text-terminal-muted/50 text-[9px]">PERP</span>
-                                <button
-                                    onClick={() => handleRemove(sym)}
-                                    className="text-terminal-muted hover:text-terminal-red transition-colors ml-0.5"
-                                    aria-label={`Remove ${sym}`}
                                 >
-                                    <X size={11} />
-                                </button>
-                            </span>
-                        ))}
+                                    {m.symbol?.replace('USDT', '')}
+                                    <span className={`text-[9px] font-bold px-1 rounded ${
+                                        m.type === 'futures' ? 'text-terminal-blue bg-terminal-blue/10' : 'text-terminal-green bg-terminal-green/10'
+                                    }`}>
+                                        {m.type === 'futures' ? 'PERP' : 'SPOT'}
+                                    </span>
+                                    <button
+                                        onClick={() => handleRemove(m.symbol, m.type)}
+                                        className="text-terminal-muted hover:text-terminal-red transition-colors ml-0.5"
+                                        aria-label={`Remove ${m.symbol} ${m.type}`}
+                                    >
+                                        <X size={11} />
+                                    </button>
+                                </span>
+                            );
+                        })}
                     </div>
 
                     {/* Add input with dropdown */}
@@ -189,7 +229,7 @@ export default function DashboardSettings() {
                                     }}
                                     onFocus={() => setShowDropdown(true)}
                                     onKeyDown={handleKey}
-                                    placeholder="Search perpetual, e.g. SOL → SOLUSDT"
+                                    placeholder={`Search ${marketType}, e.g. SOL → SOLUSDT`}
                                     className="w-full bg-terminal-bg/50 border border-terminal-border/80 rounded-lg pl-9 pr-4 py-2.5 text-sm text-terminal-fg placeholder:text-terminal-muted/40 focus:outline-none focus:border-terminal-green focus:ring-1 focus:ring-terminal-green/50 transition-all shadow-inner"
                                 />
                             </div>
@@ -206,7 +246,7 @@ export default function DashboardSettings() {
                         {showDropdown && suggestions.length > 0 && (
                             <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 border border-terminal-border rounded-lg bg-[#0d0d0d] shadow-2xl overflow-hidden">
                                 <div className="px-3 py-1.5 text-[10px] text-terminal-muted uppercase tracking-widest border-b border-terminal-border flex justify-between">
-                                    <span>{inputValue ? `Matches for "${inputValue.toUpperCase()}"` : 'Popular Perpetuals'}</span>
+                                    <span>{inputValue ? `Matches for "${inputValue.toUpperCase()}"` : `Popular ${marketType.toUpperCase()}`}</span>
                                     <span>{suggestions.length} results</span>
                                 </div>
                                 <div className="max-h-52 overflow-y-auto">
@@ -217,7 +257,9 @@ export default function DashboardSettings() {
                                             className="w-full text-left px-4 py-2 text-xs flex items-center justify-between hover:bg-terminal-green/5 hover:text-terminal-green transition-colors border-b border-terminal-border/30 last:border-0"
                                         >
                                             <span className="font-bold">{sym.replace('USDT', '')}</span>
-                                            <span className="text-terminal-muted text-[10px]">USDT-PERP · Binance Futures</span>
+                                            <span className="text-terminal-muted text-[10px]">
+                                                {marketType === 'futures' ? 'USDT-PERP · Binance Futures' : 'USDT · Binance Spot'}
+                                            </span>
                                         </button>
                                     ))}
                                 </div>
@@ -284,12 +326,6 @@ export default function DashboardSettings() {
                         </button>
                     </div>
                 </section>
-
-                {/* Placeholder for future settings */}
-                <section className="border border-dashed border-terminal-border/40 rounded-lg p-6 text-center">
-                    <p className="text-terminal-muted/50 text-xs uppercase tracking-widest">More settings coming soon</p>
-                </section>
-
             </div>
         </div>
     );

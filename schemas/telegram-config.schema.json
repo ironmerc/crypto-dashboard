@@ -23,7 +23,19 @@
     },
     "monitoredSymbols": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "required": ["symbol"],
+            "properties": {
+              "symbol": { "type": "string" },
+              "type": { "type": "string" }
+            }
+          }
+        ]
+      }
     },
     "alertOnStateChange": { "type": "boolean" },
     "quietHours": {

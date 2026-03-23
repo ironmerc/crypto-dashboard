@@ -2,12 +2,16 @@ import { useMemo } from 'react';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { format } from 'date-fns';
 import { AlertTriangle, Activity, FishSymbol, Zap } from 'lucide-react';
+import { formatPrice, formatValue } from '../utils/formatters';
+
+import { type MarketType } from '../constants/binance';
 
 interface EventFeedProps {
     symbol: string;
+    type: MarketType;
 }
 
-export function EventFeed({ symbol }: EventFeedProps) {
+export function EventFeed({ symbol, type }: EventFeedProps) {
     const allEvents = useTerminalStore(state => state.events);
     const events = useMemo(() => allEvents.filter(e => e.symbol === symbol), [allEvents, symbol]);
     const whaleDeltaMap = useTerminalStore(state => state.whaleDelta);
@@ -39,7 +43,7 @@ export function EventFeed({ symbol }: EventFeedProps) {
             <h3 className="text-terminal-text/70 uppercase tracking-[0.2em] mb-2 text-xs flex justify-between items-center border-b border-terminal-border/30 pb-2 z-20 shrink-0">
                 <div className="flex items-center gap-2">
                     <Activity size={14} className="text-[#fbbf24] animate-pulse" />
-                    <span className="text-[#fbbf24] font-bold">Smart Money Feed</span>
+                    <span className="text-[#fbbf24] font-bold">Smart Money Feed <span className="text-[10px] opacity-50 ml-1">[{type.toUpperCase()}]</span></span>
                 </div>
             </h3>
 
@@ -48,7 +52,7 @@ export function EventFeed({ symbol }: EventFeedProps) {
                 <div className="flex justify-between">
                     <span className="text-terminal-text/50">Net Flow ({globalInterval}):</span>
                     <span className={`font-bold ${deltaColor}`}>
-                        {totalWhaleDelta > 0 ? '+' : ''}{(totalWhaleDelta / 1000000).toFixed(2)}M USD
+                        {totalWhaleDelta > 0 ? '+' : ''}{formatValue(totalWhaleDelta)} USD
                     </span>
                 </div>
                 <div className="flex justify-between">
@@ -164,8 +168,8 @@ export function EventFeed({ symbol }: EventFeedProps) {
                                         <div className="text-white font-bold text-sm">ALERT</div>
                                     ) : (
                                         <>
-                                            <div className="text-white font-bold text-sm">{(ev.value / 1000).toFixed(1)}k <span className="text-[10px] text-white/50 font-normal">USD</span></div>
-                                            <div className="text-[10px] opacity-50">@ {ev.price.toLocaleString()}</div>
+                                            <div className="text-white font-bold text-sm">{formatValue(ev.value)} <span className="text-[10px] text-white/50 font-normal">USD</span></div>
+                                            <div className="text-[10px] opacity-50">@ {formatPrice(ev.price)}</div>
                                         </>
                                     )}
                                 </div>

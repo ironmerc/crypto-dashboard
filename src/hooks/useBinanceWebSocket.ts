@@ -1,8 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import useWebSocket from 'react-use-websocket';
 import { usePageVisibility } from './usePageVisibility';
 
-const BINANCE_WS_URL = 'wss://fstream.binance.com/ws';
+import { type MonitoredSymbol } from '../store/useTerminalStore';
+import { formatPrice } from '../utils/formatters';
+
+const FUTURES_WS_URL = 'wss://fstream.binance.com/stream';
+const SPOT_WS_URL = 'wss://stream.binance.com:9443/stream';
 
 export interface TickerData {
     symbol: string;
@@ -12,34 +16,73 @@ export interface TickerData {
     volume24h: string;
 }
 
-export function useBinanceTickers(symbols: string[]) {
+export function useBinanceTickers(monitoredSymbols: MonitoredSymbol[]) {
     const [tickers, setTickers] = useState<Record<string, TickerData>>({});
     const isVisible = usePageVisibility();
-    const safeSymbols = symbols && symbols.length > 0 ? symbols : ['BTCUSDT'];
-    const streamName = safeSymbols.map(s => `${s.toLowerCase()}@ticker`).join('/');
+    const isVisibleRef = useRef(isVisible);
+    const tickerBufferRef = useRef<Record<string, TickerData>>({});
 
-    const { lastJsonMessage } = useWebSocket(`${BINANCE_WS_URL}/${streamName}`, {
+    useEffect(() => { isVisibleRef.current = isVisible; }, [isVisible]);
+
+    // Group symbols by type
+    const spotSymbols = monitoredSymbols
+        .filter(m => m.type === 'spot' && m.symbol.length >= 5)
+        .map(m => m.symbol.toLowerCase());
+    const futuresSymbols = monitoredSymbols
+        .filter(m => m.type === 'futures' && m.symbol.length >= 5)
+        .map(m => m.symbol.toLowerCase());
+
+    const spotStreamName = spotSymbols.map(s => `${s}@ticker`).join('/');
+    const futuresStreamName = futuresSymbols.map(s => `${s}@ticker`).join('/');
+
+    const handleTickerMessage = (event: MessageEvent) => {
+        if (!isVisibleRef.current) return;
+        let msg;
+        try {
+            msg = JSON.parse(event.data);
+        } catch (e) {
+            return;
+        }
+        
+        const data = msg.data || msg;
+        if (data && data.e === '24hrTicker') {
+            tickerBufferRef.current[data.s] = {
+                symbol: data.s,
+                price: formatPrice(parseFloat(data.c)),
+                change24h: formatPrice(parseFloat(data.p)),
+                changePercent24h: parseFloat(data.P).toFixed(2),
+                volume24h: (parseFloat(data.v) * parseFloat(data.c) / 1000000).toFixed(2), // In Millions
+            };
+        }
+    };
+
+    // Hook for Spot
+    useWebSocket(spotSymbols.length > 0 ? `${SPOT_WS_URL}?streams=${spotStreamName}` : null, {
         shouldReconnect: () => true,
         reconnectInterval: 3000,
+        onMessage: handleTickerMessage,
     });
 
+    // Hook for Futures
+    useWebSocket(futuresSymbols.length > 0 ? `${FUTURES_WS_URL}?streams=${futuresStreamName}` : null, {
+        shouldReconnect: () => true,
+        reconnectInterval: 3000,
+        onMessage: handleTickerMessage,
+    });
+
+    // Throttled update to UI state
     useEffect(() => {
-        if (lastJsonMessage && isVisible) {
-            const data = lastJsonMessage as any;
-            if (data.e === '24hrTicker') {
+        const timer = setInterval(() => {
+            if (Object.keys(tickerBufferRef.current).length > 0) {
                 setTickers(prev => ({
                     ...prev,
-                    [data.s]: {
-                        symbol: data.s,
-                        price: parseFloat(data.c).toFixed(4),
-                        change24h: parseFloat(data.p).toFixed(4),
-                        changePercent24h: parseFloat(data.P).toFixed(2),
-                        volume24h: parseFloat(data.v).toFixed(2),
-                    }
+                    ...tickerBufferRef.current
                 }));
+                tickerBufferRef.current = {};
             }
-        }
-    }, [lastJsonMessage, isVisible]);
+        }, 300); // Faster update (300ms) for better responsiveness
+        return () => clearInterval(timer);
+    }, []);
 
     return tickers;
 }
@@ -54,10 +97,11 @@ export interface OrderBookData {
     asks: SpotOrderBookLevel[];
 }
 
-export function useBinanceOrderBook(symbol: string, limit: number = 20) {
+export function useBinanceOrderBook(symbol: string, type: 'spot' | 'futures', limit: number = 20) {
     const [orderBook, setOrderBook] = useState<OrderBookData>({ bids: [], asks: [] });
     const isVisible = usePageVisibility();
-    const streamUrl = `${BINANCE_WS_URL}/${symbol.toLowerCase()}@depth${limit}@100ms`;
+    const baseUrl = type === 'spot' ? SPOT_WS_URL : FUTURES_WS_URL;
+    const streamUrl = symbol.length >= 5 ? `${baseUrl}?streams=${symbol.toLowerCase()}@depth${limit}@100ms` : null;
 
     const { lastJsonMessage } = useWebSocket(streamUrl, {
         shouldReconnect: () => true,

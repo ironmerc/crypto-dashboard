@@ -2,8 +2,9 @@ import { useEffect } from 'react';
 import axios from 'axios';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { usePageVisibility } from './usePageVisibility';
+import { type MarketType } from '../constants/binance';
 
-export function useOpenInterest(symbol: string) {
+export function useOpenInterest(symbol: string, type: MarketType) {
     const setOpenInterest = useTerminalStore(state => state.setOpenInterest);
     const setFundingRate = useTerminalStore(state => state.setFundingRate);
     const setLongShortRatio = useTerminalStore(state => state.setLongShortRatio);
@@ -11,7 +12,7 @@ export function useOpenInterest(symbol: string) {
     const isVisible = usePageVisibility();
 
     useEffect(() => {
-        if (!symbol) return;
+        if (!symbol || type !== 'futures') return;
 
         const symbolUpper = symbol.toUpperCase();
 

@@ -14,6 +14,18 @@ export const fetchConfigFromBot = async () => {
         const response = await fetch(botUrl);
         if (response.ok) {
             const botConfig = await response.json();
+            
+            // Normalize symbols from bot
+            if (botConfig.monitoredSymbols && Array.isArray(botConfig.monitoredSymbols)) {
+                botConfig.monitoredSymbols = botConfig.monitoredSymbols.map((m: any) => {
+                    const rawSym = typeof m === 'string' ? m : m.symbol;
+                    const type = typeof m === 'string' ? 'futures' : m.type;
+                    let s = rawSym.toUpperCase().trim();
+                    if (s.length >= 3 && s.length <= 5 && !s.endsWith('USDT')) s = `${s}USDT`;
+                    return { symbol: s, type };
+                });
+            }
+
             const warnings = validateBySchemaWarnOnly(botConfig, telegramConfigSchema as any, { partial: false });
             logSchemaWarnings('config:fetch', warnings);
             console.log('[Sync] Received config from bot:', botConfig);

@@ -1,157 +1,56 @@
 import { useEffect, useRef } from 'react';
 import useWebSocket from 'react-use-websocket';
-import { useTerminalStore } from '../store/useTerminalStore';
+import { useTerminalStore, type MonitoredSymbol, type OrderBookLevel, type Side, type Trade } from '../store/useTerminalStore';
 import { usePageVisibility } from './usePageVisibility';
-import type { OrderBookLevel, Side, MarketEvent } from '../store/useTerminalStore';
+import { type MarketType } from '../constants/binance';
 
-const BINANCE_FUTURES_WS = 'wss://fstream.binance.com/ws';
+const FUTURES_WS = 'wss://fstream.binance.com/ws';
+const SPOT_WS = 'wss://stream.binance.com:9443/ws';
 
-// Dynamic thresholds will be read from the store config
-
-export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
-    const activeSymbolL = activeSymbol.toLowerCase();
+export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: MonitoredSymbol[]) {
     const setPrice = useTerminalStore(state => state.setPrice);
     const setOrderBook = useTerminalStore(state => state.setOrderBook);
     const setOpenInterest = useTerminalStore(state => state.setOpenInterest);
     const setFundingRate = useTerminalStore(state => state.setFundingRate);
     const addEvent = useTerminalStore(state => state.addEvent);
-    const addTrade = useTerminalStore(state => state.addTrade);
+    const addTradesBatch = useTerminalStore(state => state.addTradesBatch);
     const isVisible = usePageVisibility();
 
-    const { sendMessage, lastJsonMessage } = useWebSocket(BINANCE_FUTURES_WS, {
-        shouldReconnect: () => true,
-        reconnectInterval: 3000,
-    });
+    const activeSymbolRef = useRef(activeSymbol);
+    const watchSymbolsRef = useRef(watchSymbols);
+    const isVisibleRef = useRef(isVisible);
 
-    const subscribedSymbols = useRef<string[]>([]);
+    useEffect(() => { activeSymbolRef.current = activeSymbol; }, [activeSymbol]);
+    useEffect(() => { watchSymbolsRef.current = watchSymbols; }, [watchSymbols]);
+    useEffect(() => { isVisibleRef.current = isVisible; }, [isVisible]);
 
+    // Cleanup refs on symbol change
     useEffect(() => {
-        const watchL = watchSymbols.map(s => s.toLowerCase());
-        const toUnsubscribe = subscribedSymbols.current.filter(sym => !watchL.includes(sym));
-        const toSubscribe = watchL.filter(sym => !subscribedSymbols.current.includes(sym));
+        fastBidsRef.current = [];
+        fastAsksRef.current = [];
+        tradeBufferRef.current = [];
+        // Force an immediate fetch/sync if needed
+    }, [activeSymbol.symbol, activeSymbol.type]);
 
-        if (toUnsubscribe.length > 0) {
-            sendMessage(JSON.stringify({
-                method: 'UNSUBSCRIBE',
-                params: toUnsubscribe.flatMap(s => [`${s}@aggTrade`, `${s}@forceOrder`, `${s}@openInterest@500ms`, `${s}@markPrice`]),
-                id: Date.now(),
-            }));
+    const handleMessage = (event: MessageEvent, type: MarketType) => {
+        let msg;
+        try {
+            msg = JSON.parse(event.data);
+        } catch (e) {
+            return;
         }
+        if (!msg || !msg.e) return;
 
-        if (toSubscribe.length > 0) {
-            sendMessage(JSON.stringify({
-                method: 'SUBSCRIBE',
-                params: toSubscribe.flatMap(s => [`${s}@aggTrade`, `${s}@forceOrder`, `${s}@openInterest@500ms`, `${s}@markPrice`]),
-                id: Date.now() + 1,
-            }));
-        }
-
-        // Sub/unsub to depth stream ONLY for activeSymbol
-        sendMessage(JSON.stringify({
-            method: 'SUBSCRIBE',
-            params: [`${activeSymbolL}@depth20@100ms`],
-            id: Date.now() + 2,
-        }));
-
-        subscribedSymbols.current = watchL;
-
-        // Cleanup on unmount handled by global connection closing
-    }, [watchSymbols.join(','), sendMessage, activeSymbolL]);
-
-    // Mutable refs to hold the separate books
-    const deepBidsRef = useRef<OrderBookLevel[]>([]);
-    const deepAsksRef = useRef<OrderBookLevel[]>([]);
-    const fastBidsRef = useRef<OrderBookLevel[]>([]);
-    const fastAsksRef = useRef<OrderBookLevel[]>([]);
-
-    const mergeBooks = (deep: OrderBookLevel[], fast: OrderBookLevel[], type: 'bids' | 'asks'): OrderBookLevel[] => {
-        if (!deep || deep.length === 0) return fast || [];
-        if (!fast || fast.length === 0) return deep;
-
-        // fast ends with the furthest price from mid
-        const furthestPrice = fast[fast.length - 1].price;
-        const remainingDeep = deep.filter(level =>
-            type === 'bids' ? level.price < furthestPrice : level.price > furthestPrice
-        );
-
-        return [...fast, ...remainingDeep];
-    };
-
-    const updateMergedBook = (lastUpdateId?: number) => {
-        const mergedBids = mergeBooks(deepBidsRef.current, fastBidsRef.current, 'bids');
-        const mergedAsks = mergeBooks(deepAsksRef.current, fastAsksRef.current, 'asks');
-
-        setOrderBook(activeSymbol, {
-            bids: mergedBids,
-            asks: mergedAsks,
-            lastUpdateId: lastUpdateId || 0
-        });
-    };
-
-    // --- Deep Liquidity REST Poller (Active Symbol Only) ---
-    useEffect(() => {
-        let isFetching = false;
-        const fetchDeepBook = async () => {
-            if (isFetching || !isVisible) return;
-            isFetching = true;
-            try {
-                // Use Spot API for deep liquidity (5000 levels gives ~10x wider view than Futures 1000 levels)
-                const res = await fetch(`https://api.binance.com/api/v3/depth?symbol=${activeSymbol.toUpperCase()}&limit=5000`);
-                if (!res.ok) throw new Error('Network response was not ok');
-                const data = await res.json();
-
-                const processLevels = (levels: any[]): OrderBookLevel[] => {
-                    return levels.map((level: any) => {
-                        const price = parseFloat(level[0]);
-                        const amount = parseFloat(level[1]);
-                        return { price, amount, value: price * amount };
-                    });
-                };
-
-                const bids = processLevels(data.bids);
-                const asks = processLevels(data.asks);
-
-                deepBidsRef.current = bids;
-                deepAsksRef.current = asks;
-
-                updateMergedBook(data.lastUpdateId);
-            } catch (error) {
-                console.error("Deep orderbook fetch error:", error);
-            } finally {
-                isFetching = false;
-            }
-        };
-
-        const depthInterval = setInterval(fetchDeepBook, 15000); // Poll every 15 seconds to save API weight
-        fetchDeepBook(); // Initial fetch
-
-        // Cleanup on unmount or symbol change
-        return () => {
-            clearInterval(depthInterval);
-        };
-    }, [activeSymbol, isVisible]);
-
-    useEffect(() => {
-        if (!lastJsonMessage) return;
-        const msg = lastJsonMessage as any;
-
-        if (!msg.e) return;
-
-        // 1. Trade Detection (@aggTrade)
         if (msg.e === 'aggTrade') {
             const price = parseFloat(msg.p);
             const qty = parseFloat(msg.q);
             const value = price * qty;
-            const isBuyerMaker = msg.m; // Maker is buyer -> Sell trade
-            const side: Side = isBuyerMaker ? 'SELL' : 'BUY';
+            const side: Side = msg.m ? 'SELL' : 'BUY';
 
             setPrice(msg.s, price);
+            if (!isVisibleRef.current) return;
 
-            // Skip heavy state updates if hidden to prevent background lag
-            if (!isVisible) return;
-
-            // Update Volume Delta (Tape)
-            addTrade(msg.s, {
+            tradeBufferRef.current.push({
                 id: Math.random().toString(36).substr(2, 9),
                 price,
                 amount: qty,
@@ -177,11 +76,8 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
             }
         }
 
-        // 2. Liquidation Detection (@forceOrder)
-        else if (msg.e === 'forceOrder') {
+        else if (msg.e === 'forceOrder' && type === 'futures') {
             const order = msg.o;
-            if (!order || !isVisible) return;
-
             const price = parseFloat(order.ap);
             const qty = parseFloat(order.q);
             const value = price * qty;
@@ -192,8 +88,7 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
             const liqThreshold = thresholdObj.liquidationMinAmount || 500000;
 
             if (value >= liqThreshold) {
-                const liqEvent: MarketEvent = {
-                    id: Math.random().toString(36).substr(2, 9),
+                addEvent({
                     type: 'Liquidation',
                     symbol: order.s,
                     price,
@@ -201,14 +96,11 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
                     value,
                     side: side as Side,
                     timestamp: order.T
-                };
-
-                addEvent(liqEvent);
+                });
             }
         }
 
-        // 3. WS Depth Updates (Active Symbol Only)
-        else if (msg.e === 'depthUpdate' && msg.s.toLowerCase() === activeSymbolL) {
+        else if (msg.e === 'depthUpdate' && msg.s.toUpperCase() === activeSymbolRef.current.symbol.toUpperCase()) {
             const processWSLevels = (levels: any[]): OrderBookLevel[] => {
                 return levels.map((level: any) => {
                     const price = parseFloat(level[0]);
@@ -216,37 +108,193 @@ export function useFuturesStream(activeSymbol: string, watchSymbols: string[]) {
                     return { price, amount, value: price * amount };
                 });
             };
-
-            const fastBids = processWSLevels(msg.b);
-            const fastAsks = processWSLevels(msg.a);
-
-            if (fastBids.length > 0) fastBidsRef.current = fastBids;
-            if (fastAsks.length > 0) fastAsksRef.current = fastAsks;
-
-            // Only merge and update state if visible
-            if (isVisible) {
-                updateMergedBook(msg.u);
-            }
+            fastBidsRef.current = processWSLevels(msg.b);
+            fastAsksRef.current = processWSLevels(msg.a);
+            if (isVisibleRef.current) updateMergedBook(msg.u);
         }
 
-        // 4. Open Interest Update (@openInterest@500ms)
         else if (msg.e === 'openInterestUpdate') {
             setOpenInterest(msg.s, parseFloat(msg.o));
         }
 
-        // 5. Mark Price / Funding Rate Update (@markPrice)
-        else if (msg.e === 'markPriceUpdate') {
-            if (msg.r) {
-                setFundingRate(msg.s, parseFloat(msg.r));
-            }
+        else if (msg.e === 'markPriceUpdate' && msg.r) {
+            setFundingRate(msg.s, parseFloat(msg.r));
         }
+    };
 
-    }, [lastJsonMessage, setPrice, setOpenInterest, setFundingRate, addEvent, addTrade, activeSymbolL, isVisible]);
+    // Group watch symbols
+    const spotWatch = watchSymbols.filter(m => m.type === 'spot').map(m => m.symbol.toLowerCase());
+    const futuresWatch = watchSymbols.filter(m => m.type === 'futures').map(m => m.symbol.toLowerCase());
 
-    // Force a full UI update when tab is focused again
+    // Separate WS connections
+    const { sendMessage: sendSpot } = useWebSocket(SPOT_WS, {
+        shouldReconnect: () => true,
+        reconnectInterval: 3000,
+        onMessage: (event: MessageEvent) => handleMessage(event, 'spot'),
+    });
+
+    const { sendMessage: sendFutures } = useWebSocket(FUTURES_WS, {
+        shouldReconnect: () => true,
+        reconnectInterval: 3000,
+        onMessage: (event: MessageEvent) => handleMessage(event, 'futures'),
+    });
+
+    const subscribedSpot = useRef<string[]>([]);
+    const subscribedFutures = useRef<string[]>([]);
+
     useEffect(() => {
-        if (isVisible) {
-            updateMergedBook();
+        // Handle Spot Subscriptions
+        const toUnsubSpot = subscribedSpot.current.filter(s => !spotWatch.includes(s));
+        const toSubSpot = spotWatch.filter(s => !subscribedSpot.current.includes(s));
+
+        if (toUnsubSpot.length > 0) {
+            sendSpot(JSON.stringify({
+                method: 'UNSUBSCRIBE',
+                params: toUnsubSpot.flatMap(s => [`${s}@aggTrade`]),
+                id: Date.now(),
+            }));
         }
-    }, [isVisible]);
+        if (toSubSpot.length > 0) {
+            sendSpot(JSON.stringify({
+                method: 'SUBSCRIBE',
+                params: toSubSpot.flatMap(s => [`${s}@aggTrade`]),
+                id: Date.now() + 1,
+            }));
+        }
+
+        // Depth for active Spot
+        if (activeSymbol.type === 'spot') {
+            sendSpot(JSON.stringify({
+                method: 'SUBSCRIBE',
+                params: [`${activeSymbol.symbol.toLowerCase()}@depth20@100ms`],
+                id: Date.now() + 2,
+            }));
+        }
+
+        subscribedSpot.current = spotWatch;
+    }, [spotWatch.join(','), sendSpot, activeSymbol.symbol, activeSymbol.type]);
+
+    useEffect(() => {
+        // Handle Futures Subscriptions
+        const toUnsubFut = subscribedFutures.current.filter(s => !futuresWatch.includes(s));
+        const toSubFut = futuresWatch.filter(s => !subscribedFutures.current.includes(s));
+
+        if (toUnsubFut.length > 0) {
+            sendFutures(JSON.stringify({
+                method: 'UNSUBSCRIBE',
+                params: toUnsubFut.flatMap(s => [`${s}@aggTrade`, `${s}@forceOrder`, `${s}@openInterest@500ms`, `${s}@markPrice`]),
+                id: Date.now() + 3,
+            }));
+        }
+        if (toSubFut.length > 0) {
+            sendFutures(JSON.stringify({
+                method: 'SUBSCRIBE',
+                params: toSubFut.flatMap(s => [`${s}@aggTrade`, `${s}@forceOrder`, `${s}@openInterest@500ms`, `${s}@markPrice`]),
+                id: Date.now() + 4,
+            }));
+        }
+
+        // Depth for active Futures
+        if (activeSymbol.type === 'futures') {
+            sendFutures(JSON.stringify({
+                method: 'SUBSCRIBE',
+                params: [`${activeSymbol.symbol.toLowerCase()}@depth20@100ms`],
+                id: Date.now() + 5,
+            }));
+        }
+
+        subscribedFutures.current = futuresWatch;
+    }, [futuresWatch.join(','), sendFutures, activeSymbol.symbol, activeSymbol.type]);
+
+    const deepBidsRef = useRef<OrderBookLevel[]>([]);
+    const deepAsksRef = useRef<OrderBookLevel[]>([]);
+    const fastBidsRef = useRef<OrderBookLevel[]>([]);
+    const fastAsksRef = useRef<OrderBookLevel[]>([]);
+    
+    const tradeBufferRef = useRef<Trade[]>([]);
+    const lastBookSyncRef = useRef<number>(0);
+    const SYNC_INTERVAL_MS = 250;
+
+    const updateMergedBook = (lastUpdateId?: number, force = false) => {
+        if (!isVisibleRef.current || !activeSymbolRef.current) return;
+        
+        const now = Date.now();
+        if (!force && now - lastBookSyncRef.current < SYNC_INTERVAL_MS) return;
+        lastBookSyncRef.current = now;
+
+        const currentActive = activeSymbolRef.current;
+        const mergedBids = [...fastBidsRef.current, ...deepBidsRef.current.filter(l => 
+            currentActive.type === 'spot' ? true : l.price < (fastBidsRef.current[fastBidsRef.current.length - 1]?.price || 0)
+        )].slice(0, 100);
+        const mergedAsks = [...fastAsksRef.current, ...deepAsksRef.current.filter(l => 
+            currentActive.type === 'spot' ? true : l.price > (fastAsksRef.current[fastAsksRef.current.length - 1]?.price || 0)
+        )].slice(0, 100);
+
+        setOrderBook(currentActive.symbol, {
+            bids: mergedBids,
+            asks: mergedAsks,
+            lastUpdateId: lastUpdateId || 0
+        });
+    };
+
+    // --- Deep Liquidity REST Poller ---
+    useEffect(() => {
+        let isFetching = false;
+        const fetchDeepBook = async () => {
+            if (isFetching || !isVisibleRef.current) return;
+            
+            const currentSymbol = activeSymbol.symbol;
+            if (!currentSymbol || currentSymbol.length < 5) return; // Skip invalid symbols
+            isFetching = true;
+            try {
+                const apiBase = activeSymbol.type === 'spot' ? 'https://api.binance.com' : 'https://fapi.binance.com';
+                const apiPath = activeSymbol.type === 'spot' ? '/api/v3/depth' : '/fapi/v1/depth';
+                const limit = activeSymbol.type === 'spot' ? 1000 : 1000;
+
+                const res = await fetch(`${apiBase}${apiPath}?symbol=${currentSymbol.toUpperCase()}&limit=${limit}`);
+                if (!res.ok) throw new Error('Network response was not ok');
+                const data = await res.json();
+
+                // Double check if symbol is still active
+                if (activeSymbolRef.current.symbol !== currentSymbol) return;
+
+                const processLevels = (levels: any[]): OrderBookLevel[] => {
+                    return levels.map((level: any) => {
+                        const price = parseFloat(level[0]);
+                        const amount = parseFloat(level[1]);
+                        return { price, amount, value: price * amount };
+                    });
+                };
+
+                deepBidsRef.current = processLevels(data.bids);
+                deepAsksRef.current = processLevels(data.asks);
+                updateMergedBook(data.lastUpdateId);
+            } catch (error) {
+                console.error("Deep orderbook fetch error:", error);
+            } finally {
+                isFetching = false;
+            }
+        };
+
+        const depthInterval = setInterval(fetchDeepBook, activeSymbol.type === 'spot' ? 30000 : 15000);
+        fetchDeepBook();
+
+        return () => clearInterval(depthInterval);
+    }, [activeSymbol.symbol, activeSymbol.type, isVisible]);
+
+    // --- Trade Batch Flusher ---
+    useEffect(() => {
+        const currentSymbol = activeSymbol.symbol;
+        if (!currentSymbol) return;
+        
+        const flushTrades = () => {
+            if (activeSymbolRef.current.symbol !== currentSymbol || tradeBufferRef.current.length === 0 || !isVisibleRef.current) return;
+            addTradesBatch(currentSymbol, [...tradeBufferRef.current]);
+            tradeBufferRef.current = [];
+        };
+        const interval = setInterval(flushTrades, SYNC_INTERVAL_MS);
+        return () => clearInterval(interval);
+    }, [activeSymbol?.symbol, addTradesBatch]);
+
+    useEffect(() => { if (isVisible) updateMergedBook(); }, [isVisible]);
 }

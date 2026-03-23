@@ -7,7 +7,7 @@ describe('schemaValidation', () => {
         const payload = {
             globalEnabled: true,
             activeSessions: ['US'],
-            monitoredSymbols: ['BTCUSDT'],
+            monitoredSymbols: ['BTCUSDT', { symbol: 'ETHUSDT', type: 'futures' }],
             alertOnStateChange: true,
             quietHours: { enabled: false, start: '22:00', end: '06:00' },
             categories: {},

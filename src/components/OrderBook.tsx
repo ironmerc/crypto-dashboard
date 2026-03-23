@@ -1,20 +1,23 @@
 import { useMemo } from 'react';
 import { useTerminalStore } from '../store/useTerminalStore';
+import { BarChart2 } from 'lucide-react';
+import { type MarketType } from '../constants/binance';
+import { formatPrice, formatAmount } from '../utils/formatters';
 
 interface OrderBookProps {
     symbol: string;
+    type: MarketType;
 }
 
-export function OrderBook({ symbol }: OrderBookProps) {
+export function OrderBook({ symbol, type }: OrderBookProps) {
     const orderBook = useTerminalStore(state => state.orderBook[symbol]);
     const currentPrice = useTerminalStore(state => state.prices[symbol]) || 0;
-
     const globalInterval = useTerminalStore(state => state.globalInterval);
 
     // Calculate grouping tick size based on timeframe
     const getTickSize = (interval: string, price: number) => {
         let base = Number((price * 0.0001).toPrecision(1)); // Base ~0.01%
-        if (base === 0) base = 0.01;
+        if (base === 0) base = price < 0.1 ? 0.000001 : 0.01;
 
         switch (interval) {
             case '1m': return base;
@@ -73,7 +76,11 @@ export function OrderBook({ symbol }: OrderBookProps) {
     const WALL_THRESHOLD = 500000; // Highlight anything > $500k
 
     return (
-        <div className="flex flex-col h-full font-mono text-[11px] leading-tight flex-grow overflow-hidden">
+        <div className="bg-terminal-surface/20 backdrop-blur-md border border-terminal-border/60 rounded-xl p-4 h-full flex flex-col font-mono text-[11px] leading-tight flex-grow overflow-hidden group shadow-sm transition-all duration-300 hover:border-terminal-border relative">
+            <h3 className="text-terminal-text/70 uppercase tracking-[0.2em] mb-2 text-[10px] flex items-center gap-2 border-b border-terminal-border/30 pb-2 shrink-0 z-10">
+                <BarChart2 size={14} className="text-terminal-blue" />
+                <span className="text-terminal-blue font-bold tracking-widest">DOM Visualizer <span className="opacity-50 ml-1">[{type.toUpperCase()}]</span></span>
+            </h3>
 
             {/* Book Data */}
             <div className="flex h-full overflow-hidden">
@@ -81,7 +88,7 @@ export function OrderBook({ symbol }: OrderBookProps) {
                 <div className="w-1/2 pr-2 overflow-hidden flex flex-col pt-1">
                     <div className="flex justify-between text-terminal-muted text-[10px] mb-1 uppercase opacity-60 px-2 shrink-0 bg-terminal-surface/40 py-1 rounded-md border border-terminal-border/20 shadow-inner">
                         <span>Amount</span>
-                        <span className="flex items-center gap-1">Bid <span className="text-[8px] tracking-normal opacity-70">({tickSize})</span></span>
+                        <span className="flex items-center gap-1">Bid <span className="text-[8px] tracking-normal opacity-70">({formatPrice(tickSize)})</span></span>
                     </div>
                     <div className="overflow-y-auto scrollbar-thin flex-grow">
                         {bids.map((bid, i) => {
@@ -92,8 +99,8 @@ export function OrderBook({ symbol }: OrderBookProps) {
                                     className={`flex justify-between px-1 hover:bg-[#00cc3322] cursor-default ${isWall ? 'bg-terminal-green/20 font-bold border-l-2 border-terminal-green text-white shadow-[inset_4px_0_10px_rgba(0,204,51,0.2)]' : 'text-terminal-green'
                                         }`}
                                 >
-                                    <span>{bid.amount.toFixed(4)}</span>
-                                    <span>{bid.price.toFixed(2)}</span>
+                                    <span>{formatAmount(bid.amount)}</span>
+                                    <span>{formatPrice(bid.price)}</span>
                                 </div>
                             );
                         })}
@@ -103,7 +110,7 @@ export function OrderBook({ symbol }: OrderBookProps) {
                 {/* Asks (Sellers - Resistance) */}
                 <div className="w-1/2 pl-2 overflow-hidden flex flex-col border-l border-terminal-border/40 pt-1">
                     <div className="flex justify-between text-terminal-muted text-[10px] mb-1 uppercase opacity-60 px-2 shrink-0 bg-terminal-surface/40 py-1 rounded-md border border-terminal-border/20 shadow-inner">
-                        <span className="flex items-center gap-1">Ask <span className="text-[8px] tracking-normal opacity-70">({tickSize})</span></span>
+                        <span className="flex items-center gap-1">Ask <span className="text-[8px] tracking-normal opacity-70">({formatPrice(tickSize)})</span></span>
                         <span>Amount</span>
                     </div>
                     <div className="overflow-y-auto scrollbar-thin flex-grow">
@@ -115,8 +122,8 @@ export function OrderBook({ symbol }: OrderBookProps) {
                                     className={`flex justify-between px-1 hover:bg-[#ff333322] cursor-default ${isWall ? 'bg-terminal-red/20 font-bold border-r-2 border-terminal-red text-white shadow-[inset_-4px_0_10px_rgba(255,51,51,0.2)]' : 'text-terminal-red'
                                         }`}
                                 >
-                                    <span>{ask.price.toFixed(2)}</span>
-                                    <span>{ask.amount.toFixed(4)}</span>
+                                    <span>{formatPrice(ask.price)}</span>
+                                    <span>{formatAmount(ask.amount)}</span>
                                 </div>
                             );
                         })}

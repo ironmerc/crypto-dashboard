@@ -47,7 +47,10 @@ CONFIG_FILE = "config.json"
 DEFAULT_CONFIG = {
     "globalEnabled": True,
     "activeSessions": ["London", "US", "Asia"],
-    "monitoredSymbols": ["BTCUSDT", "ETHUSDT"],
+    "monitoredSymbols": [
+        {"symbol": "BTCUSDT", "type": "futures"},
+        {"symbol": "ETHUSDT", "type": "futures"}
+    ],
     "alertOnStateChange": True,
     "quietHours": {"enabled": False, "start": "22:00", "end": "06:00"},
     "categories": {},
@@ -235,7 +238,6 @@ async def process_queue():
                     continue
 
                 # Record internally BEFORE attempting network
-                # Always append left (newest first) to maintain descending sorting naturally
                 alert_history.appendleft({
                     "timestamp": get_iso_now(),
                     "symbol": symbol,
@@ -372,12 +374,14 @@ async def handle_post_price_alert(request):
         if action == "add":
             alert = data.get("alert")
             if not alert: return web.json_response({"error": "Missing alert object"}, status=400)
-            if "priceAlerts" not in bot_config: bot_config["priceAlerts"] = []
+            if not isinstance(bot_config.get("priceAlerts"), list):
+                bot_config["priceAlerts"] = []
             bot_config["priceAlerts"].append(alert)
         elif action == "remove":
             alert_id = data.get("id")
             if not alert_id: return web.json_response({"error": "Missing alert id"}, status=400)
-            bot_config["priceAlerts"] = [a for a in bot_config.get("priceAlerts", []) if a.get("id") != alert_id]
+            if isinstance(bot_config.get("priceAlerts"), list):
+                bot_config["priceAlerts"] = [a for a in bot_config["priceAlerts"] if a.get("id") != alert_id]
             
         save_config()
         # Signal market engine to reload
@@ -418,7 +422,7 @@ async def init_app():
     # Load persistence
     load_config()
     
-    # Start the background task
+    # Start the background tasks
     app['queue_processor'] = asyncio.create_task(process_queue())
     app['identity_refresher'] = asyncio.create_task(maintain_bot_identity())
     app.on_cleanup.append(shutdown_tasks)

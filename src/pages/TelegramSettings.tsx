@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { sendTelegramAlert, getCurrentSession } from '../hooks/useSmartAlerts';
-import { ShieldAlert, ArrowLeft, Activity, Clock, Bell, Trash2, Sliders, Zap, Layers, Globe, Info } from 'lucide-react';
+import { ShieldAlert, ArrowLeft, Activity, Clock, Bell, Sliders, Zap, Globe, Info } from 'lucide-react';
 import { fetchConfigFromBot } from '../utils/syncConfig';
 
 const ALL_TIMEFRAMES = ["1m", "3m", "5m", "15m", "1h", "4h", "1d", "1w", "1M"];
@@ -85,15 +85,24 @@ interface BotStatus {
 export default function TelegramSettings() {
     const config = useTerminalStore((state) => state.telegramConfig);
     const updateConfig = useTerminalStore((state) => state.updateTelegramConfig);
-    const addMonitoredSymbol = useTerminalStore((state) => state.addMonitoredSymbol);
-    const removeMonitoredSymbol = useTerminalStore((state) => state.removeMonitoredSymbol);
 
     const [status, setStatus] = useState<BotStatus>({ status: 'unreachable' });
     const [history, setHistory] = useState<{ timestamp: string; symbol: string; category: string; severity: string; message: string; }[]>([]);
     const [selectedTest, setSelectedTest] = useState('oi_spike');
     const [editingSymbol, setEditingSymbol] = useState('global');
-    const [newSymbol, setNewSymbol] = useState('');
     const [activeTab, setActiveTab] = useState<'general' | 'alerts' | 'diagnostics'>('general');
+
+    // Safety check: if currently editing a symbol that was removed elsewhere, reset to 'global'
+    useEffect(() => {
+        if (editingSymbol !== 'global') {
+            const stillExists = config.monitoredSymbols?.some(m => 
+                (typeof m === 'string' ? m : m.symbol) === editingSymbol
+            );
+            if (!stillExists) {
+                setEditingSymbol('global');
+            }
+        }
+    }, [config.monitoredSymbols, editingSymbol]);
 
     useEffect(() => {
         const abortController = new AbortController();
@@ -137,17 +146,6 @@ export default function TelegramSettings() {
             abortController.abort();
         };
     }, []);
-
-    const addSymbol = () => {
-        if (!newSymbol) return;
-        addMonitoredSymbol(newSymbol);
-        setNewSymbol('');
-    };
-
-    const removeSymbol = (s: string) => {
-        removeMonitoredSymbol(s);
-        if (editingSymbol === s) setEditingSymbol('global');
-    };
 
     const fireMockAlert = async (type: string, inputCategory: string) => {
         let title = "";
@@ -423,48 +421,6 @@ export default function TelegramSettings() {
 
                                         {/* Right Side: Assets & Time */}
                                         <div className="space-y-8">
-                                            <section>
-                                                <h3 className="text-[10px] font-bold text-terminal-muted/70 uppercase tracking-[0.2em] mb-4 flex items-center">
-                                                    <Layers className="w-3.5 h-3.5 mr-2 text-terminal-blue" /> Monitored Assets
-                                                </h3>
-                                                <div className="bg-terminal-surface/40 border border-terminal-border rounded-xl p-6 backdrop-blur-sm relative overflow-hidden group hover:border-terminal-border/80 transition-all">
-                                                    <div className="flex gap-2 mb-4">
-                                                        <div className="relative flex-1">
-                                                            <Activity className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-terminal-muted" />
-                                                            <input
-                                                                type="text"
-                                                                value={newSymbol}
-                                                                onChange={(e) => setNewSymbol(e.target.value)}
-                                                                onKeyDown={(e) => e.key === 'Enter' && addSymbol()}
-                                                                placeholder="e.g. BTCUSDT"
-                                                                className="w-full bg-terminal-bg/50 border border-terminal-border focus:border-terminal-blue focus:ring-1 focus:ring-terminal-blue/50 rounded-lg pl-10 pr-4 py-2 text-xs md:text-sm text-terminal-fg placeholder:text-terminal-muted/50 transition-all font-mono outline-none"
-                                                            />
-                                                        </div>
-                                                        <button
-                                                            onClick={addSymbol}
-                                                            className="bg-terminal-blue/20 hover:bg-terminal-blue/30 text-terminal-blue border border-terminal-blue/50 rounded-lg px-4 py-2 text-sm font-bold transition-colors flex items-center gap-1 shadow-[0_0_10px_var(--color-accent)_10] hover:shadow-[0_0_15px_var(--color-accent)_20]"
-                                                        >
-                                                            <span className="text-xl leading-none">+</span> Add
-                                                        </button>
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-2">
-                                                        {(!config.monitoredSymbols || config.monitoredSymbols.length === 0) ? (
-                                                            <div className="w-full py-6 text-center border-2 border-dashed border-terminal-border/50 rounded-xl bg-terminal-bg/20">
-                                                                <p className="text-[11px] text-terminal-muted/50 font-mono">No active tickers monitored</p>
-                                                            </div>
-                                                        ) : (
-                                                            config.monitoredSymbols.map(s => (
-                                                                <span key={s} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-terminal-surface/60 border border-terminal-border/60 text-sm font-mono text-terminal-fg shadow-sm hover:border-terminal-blue/50 hover:shadow-[0_0_8px_var(--color-accent)_10] transition-all">
-                                                                    {s}
-                                                                    <button onClick={() => removeSymbol(s)} className="text-terminal-muted hover:text-red-400 transition-colors focus:outline-none">
-                                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                                    </button>
-                                                                </span>
-                                                            ))
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </section>
 
                                             <section>
                                                 <h3 className="text-[10px] font-bold text-terminal-muted/70 uppercase tracking-[0.2em] mb-4 flex items-center mt-8">
@@ -610,9 +566,11 @@ export default function TelegramSettings() {
                                                             className="w-full bg-terminal-surface border border-terminal-blue/50 rounded-lg px-3 py-2 text-xs md:text-sm text-terminal-fg focus:border-terminal-blue focus:ring-1 focus:ring-terminal-blue/50 outline-none transition-all cursor-pointer font-bold"
                                                         >
                                                             <option value="global">Global Defaults</option>
-                                                            {config.monitoredSymbols?.map(s => (
-                                                                <option key={s} value={s}>{s} Overrides</option>
-                                                            ))}
+                                                            {config.monitoredSymbols?.map(m => {
+                                                                const s = typeof m === 'string' ? m : m.symbol;
+                                                                const type = typeof m === 'string' ? 'futures' : m.type;
+                                                                return <option key={`${s}-${type}`} value={s}>{s} ({type.toUpperCase()}) Overrides</option>;
+                                                            })}
                                                         </select>
                                                     </div>
 
@@ -983,7 +941,7 @@ export default function TelegramSettings() {
                                             <div className="bg-terminal-surface/40 border border-terminal-border rounded-xl p-4 backdrop-blur-sm flex-1 overflow-y-auto custom-scrollbar hover:border-terminal-border/80 transition-all shadow-[0_0_15px_rgba(0,0,0,0.2)]">
                                                 {(!history || history.length === 0) ? (
                                                     <div className="h-full flex flex-col items-center justify-center text-terminal-muted/50 opacity-50">
-                                                        <Layers className="w-8 h-8 mb-3" />
+                                                        <Activity className="w-8 h-8 mb-3" />
                                                         <p className="text-[11px] font-mono tracking-wider uppercase">No recent activity detected</p>
                                                     </div>
                                                 ) : (

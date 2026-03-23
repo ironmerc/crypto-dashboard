@@ -22,31 +22,54 @@ describe('useFuturesStream', () => {
             sendJsonMessage: vi.fn(),
         } as any);
 
-        renderHook(() => useFuturesStream('BTCUSDT', ['BTCUSDT', 'ETHUSDT']));
+        renderHook(() => useFuturesStream(
+            { symbol: 'BTCUSDT', type: 'futures' },
+            [{ symbol: 'BTCUSDT', type: 'futures' }, { symbol: 'ETHUSDT', type: 'futures' }]
+        ));
 
-        // Check if SUBSCRIBE was called with @openInterest@500ms
+        // Since we have two useWebSocket calls in the hook, sendMessage will be mapped to both.
+        // The futures effect should trigger a SUBSCRIBE call.
         expect(sendMessage).toHaveBeenCalledWith(expect.stringContaining('openInterest@500ms'));
         expect(sendMessage).toHaveBeenCalledWith(expect.stringContaining('aggTrade'));
         expect(sendMessage).toHaveBeenCalledWith(expect.stringContaining('forceOrder'));
         expect(sendMessage).toHaveBeenCalledWith(expect.stringContaining('markPrice'));
+        
+        // Check for depth subscription for active symbol
+        expect(sendMessage).toHaveBeenCalledWith(expect.stringContaining('depth20@100ms'));
     });
 
     it('handles openInterestUpdate messages', () => {
         const setOpenInterest = vi.spyOn(useTerminalStore.getState(), 'setOpenInterest');
+        let capturedOnMessage: any = null;
 
-        mockedUseWebSocket.mockReturnValue({
-            sendMessage: vi.fn(),
-            lastJsonMessage: {
+        mockedUseWebSocket.mockImplementation((url, options) => {
+            if (typeof url === 'string' && url.includes('fstream.binance.com')) {
+                capturedOnMessage = (options as any).onMessage;
+            }
+            return {
+                sendMessage: vi.fn(),
+                lastJsonMessage: null,
+                readyState: 1,
+                getWebSocket: vi.fn(),
+                sendJsonMessage: vi.fn(),
+            } as any;
+        });
+
+        renderHook(() => useFuturesStream(
+            { symbol: 'BTCUSDT', type: 'futures' },
+            [{ symbol: 'BTCUSDT', type: 'futures' }]
+        ));
+
+        expect(capturedOnMessage).toBeDefined();
+
+        // Trigger message handling via onMessage
+        capturedOnMessage({
+            data: JSON.stringify({
                 e: 'openInterestUpdate',
                 s: 'BTCUSDT',
                 o: '123456.78'
-            },
-            readyState: 1,
-            getWebSocket: vi.fn(),
-            sendJsonMessage: vi.fn(),
-        } as any);
-
-        renderHook(() => useFuturesStream('BTCUSDT', ['BTCUSDT']));
+            })
+        });
 
         expect(setOpenInterest).toHaveBeenCalledWith('BTCUSDT', 123456.78);
     });

@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { Zap, AlertTriangle, FishSymbol, Flame } from 'lucide-react';
 import { format } from 'date-fns';
+import { formatPrice } from '../utils/formatters';
 
 export function ActionAlertStrip() {
     const events = useTerminalStore(state => state.events);
@@ -85,7 +86,7 @@ export function ActionAlertStrip() {
         Icon = FishSymbol;
         const isBuy = activeAlert.side === 'BUY';
         title = isBuy ? 'MASSIVE BUY WALL / MARKET BUY' : 'MASSIVE SELL WALL / MARKET SELL';
-        detail = `$${(activeAlert.value / 1000000).toFixed(2)}M @ ${activeAlert.price.toLocaleString()}`;
+        detail = `$${(activeAlert.value / 1000000).toFixed(2)}M @ ${formatPrice(activeAlert.price)}`;
 
         if (isBuy) {
             bgPulse = 'bg-terminal-green/20';
@@ -96,7 +97,7 @@ export function ActionAlertStrip() {
         Icon = Flame;
         const isLiqShort = activeAlert.side === 'BUY';
         title = isLiqShort ? 'CASCADE: SHORT SQUEEZE' : 'CASCADE: LONG FLUSH';
-        detail = `$${(activeAlert.value / 1000000).toFixed(2)}M Rekt @ ${activeAlert.price.toLocaleString()}`;
+        detail = `$${(activeAlert.value / 1000000).toFixed(2)}M Rekt @ ${formatPrice(activeAlert.price)}`;
 
         if (isLiqShort) {
             bgPulse = 'bg-terminal-green/20';

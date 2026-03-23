@@ -1,8 +1,13 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 export type EventType = 'Whale' | 'Liquidation' | 'Wall' | 'SmartAlert';
 export type Side = 'BUY' | 'SELL' | 'LONG' | 'SHORT' | 'NEUTRAL';
+
+export interface MonitoredSymbol {
+    symbol: string;
+    type: 'spot' | 'futures';
+}
 
 export interface PriceAlert {
     id: string;
@@ -67,7 +72,7 @@ export interface TelegramThresholds {
 export interface TelegramConfig {
     globalEnabled: boolean;
     activeSessions: string[]; // e.g., ['London', 'US', 'Asia']
-    monitoredSymbols: string[]; // e.g., ['BTCUSDT', 'ETHUSDT']
+    monitoredSymbols: (string | MonitoredSymbol)[]; // e.g., ['BTCUSDT', { symbol: 'ETHUSDT', type: 'spot' }]
     alertOnStateChange: boolean;
     quietHours: {
         enabled: boolean;
@@ -133,6 +138,7 @@ interface TerminalState {
     sessionVah: Record<string, number>; // Value Area High
     sessionVal: Record<string, number>; // Value Area Low
     addTrade: (symbol: string, trade: Trade) => void;
+    addTradesBatch: (symbol: string, trades: Trade[]) => void;
 
     // Computed Technical Indicators (from CandleChart)
     currentEMA21: Record<string, number>;
@@ -147,8 +153,8 @@ interface TerminalState {
     telegramConfig: TelegramConfig;
     isConfigFetched: boolean;
     updateTelegramConfig: (updates: Partial<TelegramConfig>, skipSync?: boolean) => void;
-    addMonitoredSymbol: (symbol: string) => void;
-    removeMonitoredSymbol: (symbol: string) => void;
+    addMonitoredSymbol: (symbol: string, type?: 'spot' | 'futures') => void;
+    removeMonitoredSymbol: (symbol: string, type?: 'spot' | 'futures') => void;
 
     // Theme Settings
     theme: 'terminal' | 'professional';
@@ -162,10 +168,25 @@ interface TerminalState {
     fetchPriceAlerts: () => Promise<void>;
 }
 
+const syncConfigToBot = async () => {
+    try {
+        const state = useTerminalStore.getState();
+        if (!state.isConfigFetched) return;
+        const resp = await fetch('/api/bot/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(state.telegramConfig)
+        });
+        if (!resp.ok) console.warn('Sync failed:', await resp.text());
+    } catch (e) {
+        console.error('Bot sync error:', e);
+    }
+};
+
 export const useTerminalStore = create<TerminalState>()(
     persist(
         (set, get) => ({
-            globalInterval: '5m', // Default to 5m
+            globalInterval: '5m',
             setGlobalInterval: (interval) => set({
                 globalInterval: interval,
                 events: [],
@@ -191,17 +212,13 @@ export const useTerminalStore = create<TerminalState>()(
             events: [],
             whaleDelta: {},
             addEvent: (eventData) => set((state) => {
-                // Keep max 100 events to prevent memory leaks
                 const newEvent = { ...eventData, id: Math.random().toString(36).substr(2, 9) };
                 const newEvents = [newEvent, ...state.events].slice(0, 100);
-
-                // Track Whale Net Aggression
                 let newWhaleDelta = state.whaleDelta[eventData.symbol] || 0;
                 if (eventData.type === 'Whale') {
                     if (eventData.side === 'BUY') newWhaleDelta += eventData.value;
                     else newWhaleDelta -= eventData.value;
                 }
-
                 return {
                     events: newEvents,
                     whaleDelta: { ...state.whaleDelta, [eventData.symbol]: newWhaleDelta }
@@ -214,7 +231,6 @@ export const useTerminalStore = create<TerminalState>()(
             setOpenInterest: (symbol, oi) => set((state) => {
                 const history = state.oiHistory[symbol] || [];
                 const now = Date.now();
-                // Keep 24 hours of history
                 const newHistory = [...history, { timestamp: now, value: oi }].filter(h => now - h.timestamp < 24 * 60 * 60 * 1000);
                 return {
                     openInterest: { ...state.openInterest, [symbol]: oi },
@@ -227,7 +243,6 @@ export const useTerminalStore = create<TerminalState>()(
             setFundingRate: (symbol, rate) => set((state) => {
                 const history = state.fundingHistory[symbol] || [];
                 const now = Date.now();
-                // Keep 24 hours of history
                 const newHistory = [...history, { timestamp: now, value: rate }].filter(h => now - h.timestamp < 24 * 60 * 60 * 1000);
                 return {
                     fundingRate: { ...state.fundingRate, [symbol]: rate },
@@ -246,51 +261,41 @@ export const useTerminalStore = create<TerminalState>()(
             sessionPoc: {},
             sessionVah: {},
             sessionVal: {},
-            addTrade: (symbol, trade) => set((state) => {
+            addTrade: (symbol, trade) => get().addTradesBatch(symbol, [trade]),
+
+            addTradesBatch: (symbol, newTradesBatch) => set((state) => {
                 const trades = state.recentTrades[symbol] || [];
-                const newTrades = [trade, ...trades].slice(0, 50); // Keep last 50 for tape
-
+                const updatedTrades = [...[...newTradesBatch].reverse(), ...trades].slice(0, 50);
                 const currentDelta = state.volumeDelta[symbol] || { buyVolume: 0, sellVolume: 0, delta: 0 };
-                const volume = trade.price * trade.amount;
-
                 let newBuyVolume = currentDelta.buyVolume;
                 let newSellVolume = currentDelta.sellVolume;
-
-                if (trade.side === 'BUY') {
-                    newBuyVolume += volume;
-                } else {
-                    newSellVolume += volume;
-                }
-
-                // Volume Profile Aggregation
                 const currentProfile = state.volumeProfile[symbol] || new Map<number, number>();
-                // Group by 10-tick increments to reduce map size (e.g. 64000, 64010)
-                // Dynamically find a good bucket size for POC
-                const bucketSize = trade.price > 1000 ? 10 : trade.price > 10 ? 0.1 : 0.001;
-                const bucketPrice = Math.round(trade.price / bucketSize) * bucketSize;
 
-                const currentVolAtPrice = currentProfile.get(bucketPrice) || 0;
-                currentProfile.set(bucketPrice, currentVolAtPrice + volume);
-
-                // Find new POC
+                newTradesBatch.forEach(trade => {
+                    const volume = trade.price * trade.amount;
+                    if (trade.side === 'BUY') newBuyVolume += volume;
+                    else newSellVolume += volume;
+                    let bucketSize = trade.price * 0.0001;
+                    if (trade.price > 1000) bucketSize = Math.max(1, Math.round(bucketSize));
+                    else if (trade.price > 1) bucketSize = Math.max(0.01, Number(bucketSize.toFixed(4)));
+                    else bucketSize = Math.max(0.000001, Number(bucketSize.toFixed(8)));
+                    const bucketPrice = Math.round(trade.price / bucketSize) * bucketSize;
+                    currentProfile.set(bucketPrice, (currentProfile.get(bucketPrice) || 0) + volume);
+                });
+                
                 let maxVol = 0;
-                let newPoc = state.sessionPoc[symbol] || bucketPrice;
+                let newPoc = state.sessionPoc[symbol] || 0;
+                let totalVol = 0;
                 for (const [p, v] of currentProfile.entries()) {
+                    totalVol += v;
                     if (v > maxVol) {
                         maxVol = v;
                         newPoc = p;
                     }
                 }
-
-                // Calculate VAH and VAL (70% of total volume)
-                let totalVol = 0;
-                for (const v of currentProfile.values()) totalVol += v;
                 const targetVol = totalVol * 0.7;
-
-                // Sort prices to build value area
                 const sortedPrices = Array.from(currentProfile.keys()).sort((a, b) => a - b);
                 const pocIndex = sortedPrices.indexOf(newPoc);
-
                 let accumulatedVol = currentProfile.get(newPoc) || 0;
                 let upIdx = pocIndex + 1;
                 let downIdx = pocIndex - 1;
@@ -298,7 +303,6 @@ export const useTerminalStore = create<TerminalState>()(
                 while (accumulatedVol < targetVol && (upIdx < sortedPrices.length || downIdx >= 0)) {
                     const upVol = upIdx < sortedPrices.length ? currentProfile.get(sortedPrices[upIdx]) || 0 : -1;
                     const downVol = downIdx >= 0 ? currentProfile.get(sortedPrices[downIdx]) || 0 : -1;
-
                     if (upVol > downVol) {
                         accumulatedVol += upVol;
                         upIdx++;
@@ -307,12 +311,11 @@ export const useTerminalStore = create<TerminalState>()(
                         downIdx--;
                     }
                 }
-
-                const newVah = sortedPrices[upIdx <= sortedPrices.length && upIdx > 0 ? upIdx - 1 : sortedPrices.length - 1] || newPoc;
-                const newVal = sortedPrices[downIdx >= -1 && downIdx < sortedPrices.length - 1 ? downIdx + 1 : 0] || newPoc;
+                const newVah = sortedPrices[Math.max(0, upIdx - 1)] || newPoc;
+                const newVal = sortedPrices[Math.min(sortedPrices.length - 1, downIdx + 1)] || newPoc;
 
                 return {
-                    recentTrades: { ...state.recentTrades, [symbol]: newTrades },
+                    recentTrades: { ...state.recentTrades, [symbol]: updatedTrades },
                     volumeProfile: { ...state.volumeProfile, [symbol]: currentProfile },
                     sessionPoc: { ...state.sessionPoc, [symbol]: newPoc },
                     sessionVah: { ...state.sessionVah, [symbol]: newVah },
@@ -359,15 +362,11 @@ export const useTerminalStore = create<TerminalState>()(
                         const data = await resp.json();
                         set({ priceAlerts: data.priceAlerts });
                     }
-                } catch (e) {
-                    console.error("Failed to add price alert:", e);
-                }
+                } catch (e) { console.error("Failed to add price alert:", e); }
             },
             removePriceAlert: async (id: string) => {
                 const previousAlerts = get().priceAlerts;
-                // Optimistic Update
                 set({ priceAlerts: previousAlerts.filter((a: PriceAlert) => a.id !== id) });
-
                 try {
                     const resp = await fetch(`/api/bot/alerts/price`, {
                         method: 'POST',
@@ -377,10 +376,7 @@ export const useTerminalStore = create<TerminalState>()(
                     if (resp.ok) {
                         const data = await resp.json();
                         set({ priceAlerts: data.priceAlerts });
-                    } else {
-                        // Rollback on failure
-                        set({ priceAlerts: previousAlerts });
-                    }
+                    } else { set({ priceAlerts: previousAlerts }); }
                 } catch (e) {
                     console.error("Failed to remove price alert:", e);
                     set({ priceAlerts: previousAlerts });
@@ -393,9 +389,7 @@ export const useTerminalStore = create<TerminalState>()(
                         const data = await resp.json();
                         set({ priceAlerts: data });
                     }
-                } catch (e) {
-                    console.error("Failed to fetch price alerts:", e);
-                }
+                } catch (e) { console.error("Failed to fetch price alerts:", e); }
             },
             telegramConfig: {
                 globalEnabled: true,
@@ -433,108 +427,101 @@ export const useTerminalStore = create<TerminalState>()(
                         telegramConfig: {
                             ...current,
                             ...updates,
-                            monitoredSymbols: updates.monitoredSymbols || current.monitoredSymbols || [],
                             categories: updates.categories ? { ...(current.categories || {}), ...updates.categories } : (current.categories || {}),
                             quietHours: updates.quietHours ? { ...(current.quietHours || {}), ...updates.quietHours } : (current.quietHours || {}),
                             cooldowns: updates.cooldowns ? { ...(current.cooldowns || {}), ...updates.cooldowns } : (current.cooldowns || {}),
                             timeframes: updates.timeframes ? { ...(current.timeframes || {}), ...updates.timeframes } : (current.timeframes || {}),
                             thresholds: updates.thresholds ? { ...(current.thresholds || {}), ...updates.thresholds } : (current.thresholds || {})
                         },
-                        isConfigFetched: updates.globalEnabled !== undefined || state.isConfigFetched // If we got a real config, mark as fetched
+                        isConfigFetched: updates.globalEnabled !== undefined || state.isConfigFetched
                     };
                 });
-
-                // Only sync if this wasn't an initial load/fetch AND we've already fetched once
-                if (!skipSync) {
-                    const state = useTerminalStore.getState();
-                    if (state.isConfigFetched) {
-                        import('../utils/syncConfig').then(m => m.syncConfigToBot());
-                    }
-                }
+                if (!skipSync) syncConfigToBot();
             },
 
-            addMonitoredSymbol: (symbol: string) => {
-                set((state) => {
-                    const current = state.telegramConfig;
-                    const s = symbol.toUpperCase().trim();
-                    if (!s || current.monitoredSymbols.includes(s)) return state;
+            addMonitoredSymbol: (symbol: string, type: 'spot' | 'futures' = 'futures') => {
+                set((state: TerminalState) => {
+                    const current = state.telegramConfig.monitoredSymbols;
+                    let s = symbol.toUpperCase().trim();
+                    if (!s) return state;
 
-                    const newSymbols = [...current.monitoredSymbols, s];
-                    const newThresholds = { ...current.thresholds };
-
-                    // Copy global defaults for the new symbol
+                    // Normalize symbol: append USDT if missing for base symbols
+                    if (s.length >= 3 && s.length <= 5 && !s.endsWith('USDT')) {
+                        s = `${s}USDT`;
+                    }
+                    
+                    const exists = current.some(m => {
+                        const sSym = typeof m === 'string' ? m : m.symbol;
+                        const sType = typeof m === 'string' ? 'futures' : m.type;
+                        return sSym === s && sType === type;
+                    });
+                    
+                    if (exists) return state;
+                    
+                    const newSymbols = [...current, { symbol: s, type }];
+                    const newThresholds = { ...state.telegramConfig.thresholds };
                     if (!newThresholds[s]) {
-                        newThresholds[s] = { ...current.thresholds.global };
+                        newThresholds[s] = { ...state.telegramConfig.thresholds.global };
                     }
-
-                    const updatedConfig = {
-                        ...current,
-                        monitoredSymbols: newSymbols,
-                        thresholds: newThresholds
+                    return {
+                        telegramConfig: {
+                            ...state.telegramConfig,
+                            monitoredSymbols: newSymbols,
+                            thresholds: newThresholds
+                        }
                     };
-
-                    return { telegramConfig: updatedConfig };
                 });
-                if (useTerminalStore.getState().isConfigFetched) {
-                    import('../utils/syncConfig').then(m => m.syncConfigToBot());
-                }
+                setTimeout(() => {
+                    syncConfigToBot();
+                }, 100);
             },
 
-            removeMonitoredSymbol: (symbol: string) => {
-                set((state) => {
+            removeMonitoredSymbol: (symbol: string, type?: 'spot' | 'futures') => {
+                set((state: TerminalState) => {
                     const current = state.telegramConfig;
-                    const newSymbols = current.monitoredSymbols.filter(s => s !== symbol);
+                    const newSymbols = current.monitoredSymbols.filter(m => {
+                        if (typeof m === 'string') return m !== symbol;
+                        if (type) return !(m.symbol === symbol && m.type === type);
+                        return m.symbol !== symbol;
+                    });
                     const newThresholds = { ...current.thresholds };
-                    delete newThresholds[symbol];
-
-                    const updatedConfig = {
-                        ...current,
-                        monitoredSymbols: newSymbols,
-                        thresholds: newThresholds
+                    // Only delete if no other type of same symbol exists
+                    const stillExists = newSymbols.some(m => (typeof m === 'string' ? m : m.symbol) === symbol);
+                    if (!stillExists) delete newThresholds[symbol];
+                    
+                    return {
+                        telegramConfig: {
+                            ...current,
+                            monitoredSymbols: newSymbols,
+                            thresholds: newThresholds
+                        }
                     };
-
-                    return { telegramConfig: updatedConfig };
                 });
-                if (useTerminalStore.getState().isConfigFetched) {
-                    import('../utils/syncConfig').then(m => m.syncConfigToBot());
-                }
+                syncConfigToBot();
             }
         }),
         {
             name: 'terminal-storage',
-            // Persist telegram config + smart feed events (market data like orderbook/trades is excluded)
+            storage: createJSONStorage(() => localStorage),
             partialize: (state) => ({
-                telegramConfig: state.telegramConfig,
-                events: state.events,
-                whaleDelta: state.whaleDelta,
                 theme: state.theme,
-                // Do NOT persist isConfigFetched - always re-fetch on page load
+                telegramConfig: state.telegramConfig,
+                priceAlerts: state.priceAlerts,
             }),
-            // On rehydration, prune events older than 1 hour so the feed stays contextually fresh
-            // Also migrate persisted state that may be missing fields (e.g. old deploy on RPi)
             onRehydrateStorage: () => (state) => {
                 if (state) {
                     const oneHourAgo = Date.now() - 60 * 60 * 1000;
-                    state.events = state.events?.filter(e => e.timestamp > oneHourAgo) ?? [];
-
-                    // Migration: ensure monitoredSymbols is always a non-empty array
-                    if (
-                        !state.telegramConfig ||
-                        !Array.isArray(state.telegramConfig.monitoredSymbols) ||
-                        state.telegramConfig.monitoredSymbols.length === 0
-                    ) {
-                        state.telegramConfig = {
-                            ...(state.telegramConfig || {}),
-                            monitoredSymbols: ['BTCUSDT', 'ETHUSDT'],
-                            activeSessions: state.telegramConfig?.activeSessions ?? ['London', 'US', 'Asia'],
-                            globalEnabled: state.telegramConfig?.globalEnabled ?? true,
-                            alertOnStateChange: state.telegramConfig?.alertOnStateChange ?? true,
-                            quietHours: state.telegramConfig?.quietHours ?? { enabled: false, start: '22:00', end: '06:00' },
-                            categories: state.telegramConfig?.categories ?? {},
-                            cooldowns: state.telegramConfig?.cooldowns ?? {},
-                            timeframes: state.telegramConfig?.timeframes ?? { ...DEFAULT_TIMEFRAMES_BY_CATEGORY },
-                            thresholds: state.telegramConfig?.thresholds ?? { global: { whaleMinAmount: 500000, liquidationMinAmount: 1000000, oiSpikePercentage: 1.5, fundingExtremeRate: 0.05, atrExpansionRatio: 1.3, whaleMomentumDelta: 5000000, rvolMultiplier: 3.0, rsiOverbought: 70, rsiOversold: 30, emaSeparationPct: 0.15 } },
-                        };
+                    state.events = (state.events || []).filter(e => e.timestamp > oneHourAgo);
+                    if (state.telegramConfig && Array.isArray(state.telegramConfig.monitoredSymbols)) {
+                        state.telegramConfig.monitoredSymbols = state.telegramConfig.monitoredSymbols.map(m => {
+                            const rawSym = typeof m === 'string' ? m : m.symbol;
+                            const type = typeof m === 'string' ? 'futures' : m.type;
+                            let s = rawSym.toUpperCase().trim();
+                            if (s.length >= 3 && s.length <= 5 && !s.endsWith('USDT')) {
+                                s = `${s}USDT`;
+                            }
+                            return { symbol: s, type };
+                        });
                     }
                 }
             },

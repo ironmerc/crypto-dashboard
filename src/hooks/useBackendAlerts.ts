@@ -63,7 +63,13 @@ export function useBackendAlerts() {
                 for (const row of ordered) {
                     if (cancelled) return;
 
-                    const symbol = row.symbol?.trim() || monitoredSymbols[0] || 'BTCUSDT';
+                    const found = monitoredSymbols.find(m => 
+                        (typeof m === 'string' ? m : m.symbol) === row.symbol?.trim()
+                    );
+                    const symbol = (typeof found === 'string' ? found : found?.symbol) || 
+                        (typeof monitoredSymbols[0] === 'string' ? monitoredSymbols[0] : monitoredSymbols[0]?.symbol) || 
+                        'BTCUSDT';
+
                     const { title, body } = parseBotHistoryMessage(row.message, row.category, row.tf);
                     const parsedTs = Date.parse(row.timestamp);
                     const timestamp = Number.isFinite(parsedTs) ? parsedTs : Date.now();
@@ -112,5 +118,5 @@ export function useBackendAlerts() {
             cancelled = true;
             clearInterval(interval);
         };
-    }, [addEvent, isVisible, monitoredSymbols.join(',')]);
+    }, [addEvent, isVisible, monitoredSymbols.map(m => typeof m === 'string' ? m : `${m.symbol}:${m.type}`).join(',')]);
 }

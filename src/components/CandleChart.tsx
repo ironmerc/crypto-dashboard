@@ -1,12 +1,16 @@
-import { useEffect, useRef, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createChart, ColorType, CandlestickSeries, LineSeries } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, IPriceLine } from 'lightweight-charts';
 import useWebSocket from 'react-use-websocket';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { calculateEMA, calculateVWAP, calculateRSI, calculateATR, calculateSMA } from '../utils/indicators';
+import { type MarketType } from '../constants/binance';
+import { getKlineUrl, getWsUrl } from '../utils/market';
+import { formatPrice } from '../utils/formatters';
 
 interface CandleChartProps {
     symbol: string; // e.g., 'BTCUSDT'
+    type: MarketType;
 }
 
 interface KlineData {
@@ -18,14 +22,13 @@ interface KlineData {
     volume: number;
 }
 
-export function CandleChart({ symbol }: CandleChartProps) {
+export function CandleChart({ symbol, type }: CandleChartProps) {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
     const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
     const pocLineRef = useRef<IPriceLine | null>(null);
     const vahLineRef = useRef<IPriceLine | null>(null);
     const valLineRef = useRef<IPriceLine | null>(null);
-    const liqLinesRef = useRef<IPriceLine[]>([]);
     const alertLinesRef = useRef<IPriceLine[]>([]);
 
     // Indicator Series Refs
@@ -52,12 +55,7 @@ export function CandleChart({ symbol }: CandleChartProps) {
     const fundingRate = useTerminalStore((state) => state.fundingRate[symbol]);
     const sessionVah = useTerminalStore(state => state.sessionVah[symbol]);
     const sessionVal = useTerminalStore(state => state.sessionVal[symbol]);
-    // Fix infinite loop: Zustand selector must return a stable reference
-    const events = useTerminalStore(state => state.events);
-    const liquidations = useMemo(() =>
-        events.filter(e => e.type === 'Liquidation' && e.symbol === symbol),
-        [events, symbol]
-    );
+    
 
     const priceAlerts = useTerminalStore(state => state.priceAlerts);
     const addPriceAlert = useTerminalStore(state => state.addPriceAlert);
@@ -106,6 +104,11 @@ export function CandleChart({ symbol }: CandleChartProps) {
             borderVisible: false,
             wickUpColor: '#00cc33',
             wickDownColor: '#ff3333',
+            priceFormat: {
+                type: 'price',
+                precision: 6, // High base precision for small coins
+                minMove: 0.000001, // Support penny coin increments
+            },
             autoscaleInfoProvider: (original: () => any) => {
                 const res = original();
                 return res;
@@ -141,7 +144,9 @@ export function CandleChart({ symbol }: CandleChartProps) {
         rsiSeriesRef.current = rsiSeries;
 
         // Fetch initial historical data
-        fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${globalInterval}&limit=100`)
+        if (symbol.length < 5) return;
+        const klinesUrl = getKlineUrl(symbol, globalInterval, type, 250);
+        fetch(klinesUrl)
             .then(res => res.json())
             .then(data => {
                 if (!Array.isArray(data)) return;
@@ -157,6 +162,33 @@ export function CandleChart({ symbol }: CandleChartProps) {
                 if (cdata.length > 0 && seriesRef.current) {
                     klinesDataRef.current = cdata;
                     seriesRef.current.setData(cdata as any);
+
+                    // Dynamic Precision adjustment based on first close price
+                    const firstPrice = cdata[cdata.length - 1].close;
+                    let precision = 2;
+                    let minMove = 0.01;
+
+                    if (firstPrice < 0.01) {
+                        precision = 8;
+                        minMove = 0.00000001;
+                    } else if (firstPrice < 0.1) {
+                        precision = 6;
+                        minMove = 0.000001;
+                    } else if (firstPrice < 1) {
+                        precision = 4;
+                        minMove = 0.0001;
+                    } else if (firstPrice < 10) {
+                        precision = 3;
+                        minMove = 0.001;
+                    }
+
+                    seriesRef.current.applyOptions({
+                        priceFormat: {
+                            type: 'price',
+                            precision: precision,
+                            minMove: minMove,
+                        },
+                    });
 
                     // Compute Indicators on history
                     const closes = cdata.map((d: any) => d.close);
@@ -201,9 +233,7 @@ export function CandleChart({ symbol }: CandleChartProps) {
 
         // 1.5 Click to set Alert
         const handleChartClick = (param: any) => {
-            // Support both Shift+Click and the dedicated toggle
             const isManualTrigger = isSettingAlertRef.current;
-            // Lightweight charts might use sourceEvent or originalEvent depending on version/environment
             const ev = param.sourceEvent || param.originalEvent;
             const isShiftTrigger = ev?.shiftKey;
 
@@ -213,7 +243,7 @@ export function CandleChart({ symbol }: CandleChartProps) {
                     const newAlert = {
                         id: Math.random().toString(36).substr(2, 9),
                         symbol: symbol,
-                        price: Number(price.toFixed(2)),
+                        price: price, // Maintain full precision
                         side: 'NEUTRAL' as const,
                         createdAt: Date.now()
                     };
@@ -223,7 +253,6 @@ export function CandleChart({ symbol }: CandleChartProps) {
             }
         };
 
-        // Escape to cancel setting alert
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape' && isSettingAlert) {
                 setIsSettingAlert(false);
@@ -234,7 +263,6 @@ export function CandleChart({ symbol }: CandleChartProps) {
         chart.subscribeClick(handleChartClick);
         fetchPriceAlerts(); // Initial fetch
 
-        // Poll for alerts every 3 seconds to sync with backend removal
         const pollInterval = setInterval(() => {
             fetchPriceAlerts();
         }, 3000);
@@ -247,12 +275,15 @@ export function CandleChart({ symbol }: CandleChartProps) {
             pocLineRef.current = null;
             vahLineRef.current = null;
             valLineRef.current = null;
-            liqLinesRef.current = [];
         };
-    }, [symbol, globalInterval]);
+    }, [symbol, type, globalInterval]);
 
     // 2. Real-time updates via WebSocket
-    const { lastJsonMessage } = useWebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@kline_${globalInterval}`);
+    const wsUrl = getWsUrl(symbol, globalInterval, type);
+    const lastUpdateTimeRef = useRef<number>(0);
+    const THROTTLE_MS = 150; // Update indicators/HUD every 150ms max
+    
+    const { lastJsonMessage } = useWebSocket(wsUrl);
 
     useEffect(() => {
         if (lastJsonMessage && seriesRef.current) {
@@ -271,6 +302,9 @@ export function CandleChart({ symbol }: CandleChartProps) {
                 if (!isNaN(updateData.open) && !isNaN(updateData.close)) {
                     seriesRef.current.update(updateData as any);
 
+                    const now = Date.now();
+                    const shouldUpdateFull = now - lastUpdateTimeRef.current > THROTTLE_MS;
+
                     // Maintain rolling klines array for indicators
                     const klines = klinesDataRef.current;
                     const existing = klines.findIndex(d => d.time === updateData.time);
@@ -278,57 +312,61 @@ export function CandleChart({ symbol }: CandleChartProps) {
                         klines[existing] = { ...klines[existing], ...updateData };
                     } else {
                         klines.push(updateData);
-                        if (klines.length > 200) klines.shift(); // Keep last 200
+                        if (klines.length > 250) klines.shift();
                     }
 
-                    // Compute Indicators on history
-                    const closes = klines.map(d => d.close);
-                    const highs = klines.map(d => d.high);
-                    const lows = klines.map(d => d.low);
-                    const typicals = klines.map(d => (d.high + d.low + d.close) / 3);
-                    const volumes = klines.map(d => d.volume);
+                    if (shouldUpdateFull) {
+                        lastUpdateTimeRef.current = now;
 
-                    const ema21 = calculateEMA(closes, 21);
-                    const ema50 = calculateEMA(closes, 50);
-                    const vwap = calculateVWAP(typicals, volumes);
-                    const rsi = calculateRSI(closes, 14);
-                    const atr = calculateATR(highs, lows, closes, 14);
+                        // Compute Indicators on history
+                        const closes = klines.map(d => d.close);
+                        const highs = klines.map(d => d.high);
+                        const lows = klines.map(d => d.low);
+                        const typicals = klines.map(d => (d.high + d.low + d.close) / 3);
+                        const volumes = klines.map(d => d.volume);
 
-                    const atrValues = atr.filter(a => a !== null) as number[];
-                    const atrSmaRaw = calculateSMA(atrValues, 14);
-                    const atrSmaPad = Array(atr.length - atrSmaRaw.length).fill(null);
-                    const atrSma = [...atrSmaPad, ...atrSmaRaw];
+                        const ema21 = calculateEMA(closes, 21);
+                        const ema50 = calculateEMA(closes, 50);
+                        const vwap = calculateVWAP(typicals, volumes);
+                        const rsi = calculateRSI(closes, 14);
+                        const atr = calculateATR(highs, lows, closes, 14);
 
-                    const lastIndex = klines.length - 1;
-                    const time = updateData.time as any;
+                        const atrValues = atr.filter(a => a !== null) as number[];
+                        const atrSmaRaw = calculateSMA(atrValues, 14);
+                        const atrSmaPad = Array(atr.length - atrSmaRaw.length).fill(null);
+                        const atrSma = [...atrSmaPad, ...atrSmaRaw];
 
-                    if (ema21[lastIndex] !== null && ema21SeriesRef.current) ema21SeriesRef.current.update({ time, value: ema21[lastIndex]! });
-                    if (ema50[lastIndex] !== null && ema50SeriesRef.current) ema50SeriesRef.current.update({ time, value: ema50[lastIndex]! });
-                    if (vwapSeriesRef.current) vwapSeriesRef.current.update({ time, value: vwap[lastIndex] });
-                    if (rsi[lastIndex] !== null && rsiSeriesRef.current) rsiSeriesRef.current.update({ time, value: rsi[lastIndex]! });
-                    if (atr[lastIndex] !== null) setLatestAtr(atr[lastIndex]);
+                        const lastIndex = klines.length - 1;
+                        const time = updateData.time as any;
 
-                    // Update global store
-                    useTerminalStore.getState().setIndicators(symbol, {
-                        ema21: ema21[lastIndex] ?? undefined,
-                        ema50: ema50[lastIndex] ?? undefined,
-                        vwap: vwap[lastIndex],
-                        atr: atr[lastIndex] ?? undefined,
-                        atrSma: atrSma[lastIndex] ?? undefined,
-                        rsi: rsi[lastIndex] ?? undefined,
-                    });
+                        if (ema21[lastIndex] !== null && ema21SeriesRef.current) ema21SeriesRef.current.update({ time, value: ema21[lastIndex]! });
+                        if (ema50[lastIndex] !== null && ema50SeriesRef.current) ema50SeriesRef.current.update({ time, value: ema50[lastIndex]! });
+                        if (vwapSeriesRef.current) vwapSeriesRef.current.update({ time, value: vwap[lastIndex] });
+                        if (rsi[lastIndex] !== null && rsiSeriesRef.current) rsiSeriesRef.current.update({ time, value: rsi[lastIndex]! });
+                        if (atr[lastIndex] !== null) setLatestAtr(atr[lastIndex]);
 
-                    // Force +/- 5% Y-Axis to match the Heatmap exactly
-                    const currentPrice = updateData.close;
-                    seriesRef.current.applyOptions({
-                        autoscaleInfoProvider: () => ({
-                            priceRange: {
-                                minValue: currentPrice * 0.95,
-                                maxValue: currentPrice * 1.05,
-                            },
-                            margins: { above: 0, below: 0 }
-                        })
-                    });
+                        // Update global store
+                        useTerminalStore.getState().setIndicators(symbol, {
+                            ema21: ema21[lastIndex] ?? undefined,
+                            ema50: ema50[lastIndex] ?? undefined,
+                            vwap: vwap[lastIndex],
+                            atr: atr[lastIndex] ?? undefined,
+                            atrSma: atrSma[lastIndex] ?? undefined,
+                            rsi: rsi[lastIndex] ?? undefined,
+                        });
+
+                        // Force +/- 5% Y-Axis to match the Heatmap exactly
+                        const currentPrice = updateData.close;
+                        seriesRef.current.applyOptions({
+                            autoscaleInfoProvider: () => ({
+                                priceRange: {
+                                    minValue: currentPrice * 0.95,
+                                    maxValue: currentPrice * 1.05,
+                                },
+                                margins: { above: 0, below: 0 }
+                            })
+                        });
+                    }
                 }
             }
         }
@@ -385,28 +423,15 @@ export function CandleChart({ symbol }: CandleChartProps) {
         }
     }, [sessionPoc, sessionVah, sessionVal]);
 
-    // 4. Draw Liquidation Clusters - REMOVED (User Request: "remove is long liq spam")
-    useEffect(() => {
-        if (!seriesRef.current) return;
-
-        // Ensure lines are cleared even if the effect is disabled
-        liqLinesRef.current.forEach(line => {
-            try { seriesRef.current?.removePriceLine(line); } catch (e) { }
-        });
-        liqLinesRef.current = [];
-    }, [liquidations]);
-
-    // 5. Draw Custom Price Alerts
+    // 4. Draw Custom Price Alerts
     useEffect(() => {
         if (!seriesRef.current || !chartRef.current) return;
 
-        // Clear old alert lines from the CURRENT series
         alertLinesRef.current.forEach(line => {
             try { seriesRef.current?.removePriceLine(line); } catch (e) { }
         });
         alertLinesRef.current = [];
 
-        // Case-insensitive symbol matching for robustness
         const currentSymbol = symbol.toUpperCase();
         const myAlerts = priceAlerts.filter(a => a.symbol.toUpperCase() === currentSymbol);
 
@@ -415,15 +440,13 @@ export function CandleChart({ symbol }: CandleChartProps) {
                 price: alert.price,
                 color: '#E040FB', // Purple for alerts
                 lineWidth: 2,
-                lineStyle: 0, // Solid (0 is Solid in Lightweight Charts)
+                lineStyle: 0, // Solid
                 axisLabelVisible: true,
-                title: `🔔 ALERT: $${alert.price.toLocaleString()}`,
+                title: `🔔 ALERT: ${formatPrice(alert.price)}`,
             });
             if (line) alertLinesRef.current.push(line);
         });
     }, [priceAlerts, symbol]);
-
-
 
     const handleAddManualAlert = () => {
         const p = parseFloat(manualAlertPrice);
@@ -446,15 +469,19 @@ export function CandleChart({ symbol }: CandleChartProps) {
                 <div className="flex gap-4 bg-[#18042B]/80 px-2 py-1.5 rounded w-fit border border-purple-500/30">
                     <div className="flex flex-col">
                         <span className="text-terminal-muted opacity-70 text-[9px]">ATR (14)</span>
-                        <span className="font-mono text-terminal-fg font-bold">{latestAtr !== null ? `$${latestAtr.toFixed(1)}` : '...'}</span>
+                        <span className="font-mono text-terminal-fg font-bold">{latestAtr !== null ? formatPrice(latestAtr) : '...'}</span>
                     </div>
-                    <div className="w-px h-full bg-terminal-border/30"></div>
-                    <div className="flex flex-col">
-                        <span className="text-terminal-muted opacity-70 text-[9px]">FUNDING</span>
-                        <span className={`font-mono font-bold ${fundingRate && fundingRate > 0 ? 'text-terminal-green' : fundingRate && fundingRate < 0 ? 'text-terminal-red' : 'text-terminal-fg'}`}>
-                            {fundingRate ? `${(fundingRate * 100).toFixed(4)}%` : '...'}
-                        </span>
-                    </div>
+                    {type === 'futures' && (
+                        <>
+                            <div className="w-px h-full bg-terminal-border/30"></div>
+                            <div className="flex flex-col">
+                                <span className="text-terminal-muted opacity-70 text-[9px]">FUNDING</span>
+                                <span className={`font-mono font-bold ${fundingRate && fundingRate > 0 ? 'text-terminal-green' : fundingRate && fundingRate < 0 ? 'text-terminal-red' : 'text-terminal-fg'}`}>
+                                    {fundingRate ? `${(fundingRate * 100).toFixed(4)}%` : '...'}
+                                </span>
+                            </div>
+                        </>
+                    )}
                     <div className="w-px h-full bg-terminal-border/30"></div>
                     <div className="flex flex-col">
                         <span className="text-terminal-muted opacity-70 text-[9px]">OI TREND</span>
@@ -527,7 +554,7 @@ export function CandleChart({ symbol }: CandleChartProps) {
                                     {priceAlerts.filter(a => a.symbol === symbol).map(alert => (
                                         <div key={alert.id} className="flex items-center justify-between px-3 py-2 border-b border-purple-500/10 hover:bg-white/5 transition-colors">
                                             <div className="flex flex-col">
-                                                <span className="text-terminal-fg font-mono font-bold">${alert.price.toLocaleString()}</span>
+                                                <span className="text-terminal-fg font-mono font-bold">{formatPrice(alert.price)}</span>
                                                 <span className="text-[9px] text-terminal-muted opacity-60">{new Date(alert.createdAt).toLocaleTimeString()}</span>
                                             </div>
                                             <button

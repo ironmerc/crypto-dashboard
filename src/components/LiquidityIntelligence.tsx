@@ -1,11 +1,16 @@
 import { useMemo } from 'react';
 import { useTerminalStore } from '../store/useTerminalStore';
+import { Layers } from 'lucide-react';
+
+import { type MarketType } from '../constants/binance';
+import { formatPrice } from '../utils/formatters';
 
 interface LiquidityIntelligenceProps {
     symbol: string;
+    type: MarketType;
 }
 
-export function LiquidityIntelligence({ symbol }: LiquidityIntelligenceProps) {
+export function LiquidityIntelligence({ symbol, type }: LiquidityIntelligenceProps) {
     const orderBook = useTerminalStore(state => state.orderBook[symbol]);
     const currentPrice = useTerminalStore(state => state.prices[symbol]) || 0;
     const globalInterval = useTerminalStore(state => state.globalInterval);
@@ -143,11 +148,12 @@ export function LiquidityIntelligence({ symbol }: LiquidityIntelligenceProps) {
     }, [orderBook, currentPrice]);
 
     return (
-        <div className="flex flex-col h-full w-full font-mono bg-terminal-surface/30 backdrop-blur-md text-[11px] leading-tight flex-grow overflow-hidden p-3 border border-terminal-border/60 rounded-xl shadow-sm gap-2 transition-all duration-300 hover:border-terminal-border">
-            <h2 className="text-[12px] uppercase text-accent-primary font-bold tracking-widest border-b border-terminal-border/40 pb-2 flex justify-between items-center shrink-0">
-                <span>Liquidity Intelligence</span>
-                <span className="text-[9px] text-terminal-muted">{globalInterval} SYNC</span>
-            </h2>
+        <div className="bg-terminal-surface/20 backdrop-blur-md border border-terminal-border/60 rounded-xl p-4 h-full flex flex-col font-mono text-xs overflow-hidden group shadow-sm transition-all duration-300 hover:border-terminal-border relative">
+            <h3 className="text-terminal-text/70 uppercase tracking-[0.2em] mb-3 text-[10px] flex items-center gap-2 border-b border-terminal-border/30 pb-2 z-10">
+                <Layers size={14} className="text-terminal-blue" />
+                <span className="text-terminal-blue font-bold tracking-widest">Liquidity Intelligence <span className="opacity-50 ml-1">[{type.toUpperCase()}]</span></span>
+            </h3>
+            <span className="text-[9px] text-terminal-muted absolute top-4 right-4">{globalInterval} SYNC</span>
 
             {/* Imbalance & Skew Panels */}
             <div className="flex flex-col gap-1.5 shrink-0">
@@ -193,7 +199,7 @@ export function LiquidityIntelligence({ symbol }: LiquidityIntelligenceProps) {
                 <div className="flex justify-between items-center bg-[#fbbf24]/10 p-1.5 rounded border-l-2 border-[#fbbf24]">
                     <span className="text-[#fbbf24] font-bold text-[10px]">L2 MAGNET ({analytics?.magnet?.label || 'NONE'})</span>
                     <div className="flex flex-col items-end">
-                        <span className={`${analytics?.magnet?.color || 'text-terminal-muted'} font-bold`}>{(analytics?.magnet?.price || 0).toFixed(1)}</span>
+                        <span className={`${analytics?.magnet?.color || 'text-terminal-muted'} font-bold`}>{formatPrice(analytics?.magnet?.price)}</span>
                         <span className="text-[9px] opacity-70">dist: {(analytics?.magnet?.dist || 0).toFixed(2)}% | ${((analytics?.magnet?.size || 0) / 1000000).toFixed(1)}M</span>
                     </div>
                 </div>
@@ -202,12 +208,12 @@ export function LiquidityIntelligence({ symbol }: LiquidityIntelligenceProps) {
                 <div className="grid grid-cols-2 gap-2 mt-1">
                     <div className="bg-black/30 p-1.5 rounded flex flex-col gap-0.5 border-t-2 border-[#ff3333]">
                         <span className="text-terminal-muted text-[9px]">Major Resistance</span>
-                        <span className={`${analytics?.resistance?.color} font-bold`}>{(analytics?.resistance?.price || 0).toFixed(1)}</span>
+                        <span className={`${analytics?.resistance?.color} font-bold`}>{formatPrice(analytics?.resistance?.price)}</span>
                         <span className="text-[9px] text-[#ff3333]">dist: +{(analytics?.resistance?.dist || 0).toFixed(2)}%<br />size: ${((analytics?.resistance?.size || 0) / 1000000).toFixed(1)}M</span>
                     </div>
                     <div className="bg-black/30 p-1.5 rounded flex flex-col gap-0.5 border-t-2 border-[#00cc33]">
                         <span className="text-terminal-muted text-[9px]">Major Support</span>
-                        <span className={`${analytics?.support?.color} font-bold`}>{(analytics?.support?.price || 0).toFixed(1)}</span>
+                        <span className={`${analytics?.support?.color} font-bold`}>{formatPrice(analytics?.support?.price)}</span>
                         <span className="text-[9px] text-[#00cc33]">dist: -{(analytics?.support?.dist || 0).toFixed(2)}%<br />size: ${((analytics?.support?.size || 0) / 1000000).toFixed(1)}M</span>
                     </div>
                 </div>
@@ -216,13 +222,13 @@ export function LiquidityIntelligence({ symbol }: LiquidityIntelligenceProps) {
                 <div className="flex justify-between items-center bg-black/30 p-1.5 rounded mt-1">
                     <span className="text-terminal-muted">Vacuum Up:</span>
                     {analytics?.vacuumUp ? (
-                        <span className="text-white/80 font-bold">{analytics.vacuumUp.start.toFixed(0)} - {analytics.vacuumUp.end.toFixed(0)}</span>
+                        <span className="text-white/80 font-bold">{formatPrice(analytics.vacuumUp.start)} - {formatPrice(analytics.vacuumUp.end)}</span>
                     ) : <span className="text-terminal-muted italic">Detecting...</span>}
                 </div>
                 <div className="flex justify-between items-center bg-black/30 p-1.5 rounded">
                     <span className="text-terminal-muted">Vacuum Down:</span>
                     {analytics?.vacuumDown ? (
-                        <span className="text-white/80 font-bold">{analytics.vacuumDown.start.toFixed(0)} - {analytics.vacuumDown.end.toFixed(0)}</span>
+                        <span className="text-white/80 font-bold">{formatPrice(analytics.vacuumDown.start)} - {formatPrice(analytics.vacuumDown.end)}</span>
                     ) : <span className="text-terminal-muted italic">Detecting...</span>}
                 </div>
             </div>

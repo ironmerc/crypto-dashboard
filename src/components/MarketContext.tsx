@@ -3,11 +3,14 @@ import { useTerminalStore } from '../store/useTerminalStore';
 import { Target, TrendingUp, Activity, Zap, AlertTriangle } from 'lucide-react';
 import { calculateMarketContext } from '../lib/marketContextEngine';
 
+import { type MarketType } from '../constants/binance';
+
 interface MarketContextProps {
     symbol: string;
+    type: MarketType;
 }
 
-export function MarketContext({ symbol }: MarketContextProps) {
+export function MarketContext({ symbol, type }: MarketContextProps) {
     const ema21 = useTerminalStore(state => state.currentEMA21[symbol]);
     const ema50 = useTerminalStore(state => state.currentEMA50[symbol]);
     const fundingRate = useTerminalStore(state => state.fundingRate[symbol]);
@@ -54,7 +57,11 @@ export function MarketContext({ symbol }: MarketContextProps) {
     }
 
     return (
-        <div className="flex flex-col h-full bg-terminal-surface/20 text-terminal-fg p-3 rounded-xl border border-terminal-border/60 shadow-sm font-sans overflow-hidden backdrop-blur-md transition-all duration-300 hover:border-terminal-border">
+        <div className="bg-terminal-surface/20 backdrop-blur-md border border-terminal-border/60 rounded-xl p-4 h-full flex flex-col font-mono text-xs overflow-hidden group shadow-sm transition-all duration-300 hover:border-terminal-border relative">
+            <h3 className="text-terminal-text/70 uppercase tracking-[0.2em] mb-2 text-[10px] flex items-center gap-2 border-b border-terminal-border/30 pb-2 shrink-0 z-10">
+                <Target size={14} className="text-[#fbbf24]" />
+                <span className="text-[#fbbf24] font-bold tracking-widest">Market DNA <span className="opacity-50 ml-1">[{type.toUpperCase()}]</span></span>
+            </h3>
             <div className="flex items-center justify-between mb-3 border-b border-terminal-border/40 pb-2">
                 <div className="flex items-center gap-2">
                     <Activity className="w-4 h-4 text-accent-primary" />
