@@ -14,7 +14,7 @@ import { useTerminalStore, type MonitoredSymbol } from '../store/useTerminalStor
 import { usePageVisibility } from '../hooks/usePageVisibility';
 import { EventFeed } from '../components/EventFeed';
 import { VolumeTape } from '../components/VolumeTape';
-import { LiquidityIntelligence } from '../components/LiquidityIntelligence';
+import { FundingRateMonitor } from '../components/FundingRateMonitor';
 import { MarketContext } from '../components/MarketContext';
 import { ActionAlertStrip } from '../components/ActionAlertStrip';
 import { useBackendAlerts } from '../hooks/useBackendAlerts';
@@ -255,7 +255,7 @@ export default function Dashboard() {
             </section>
 
             <section className="panel min-h-[400px]">
-              <ErrorBoundary><LiquidityIntelligence key={`intel-mob-${localActiveSymbol}-${activeType}`} symbol={localActiveSymbol} type={activeType} /></ErrorBoundary>
+              <ErrorBoundary><FundingRateMonitor key={`funding-mob-${localActiveSymbol}-${activeType}`} symbol={localActiveSymbol} type={activeType} /></ErrorBoundary>
             </section>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -405,7 +405,7 @@ export default function Dashboard() {
                 </PanelResizeHandle>
 
                 <Panel defaultSize={35} minSize={20} className="panel relative overflow-y-auto scrollbar-thin p-0 border-0 flex-shrink-0 min-h-[350px] lg:min-h-0">
-                  <ErrorBoundary><LiquidityIntelligence key={`intel-${localActiveSymbol}-${activeType}`} symbol={localActiveSymbol} type={activeType} /></ErrorBoundary>
+                  <ErrorBoundary><FundingRateMonitor key={`funding-${localActiveSymbol}-${activeType}`} symbol={localActiveSymbol} type={activeType} /></ErrorBoundary>
                 </Panel>
               </PanelGroup>
             </Panel>

@@ -124,7 +124,11 @@ interface TerminalState {
     // Funding Rate & Expected Funding
     fundingRate: Record<string, number>;
     fundingHistory: Record<string, { timestamp: number; value: number }[]>;
+    predictedFundingRate: Record<string, number>;
+    nextFundingTime: Record<string, number>;
     setFundingRate: (symbol: string, rate: number) => void;
+    setPredictedFunding: (symbol: string, predictedRate: number, nextTime: number) => void;
+    backfillFundingHistory: (symbol: string, history: { timestamp: number; value: number }[]) => void;
 
     // Long/Short Ratio
     longShortRatio: Record<string, number>;
@@ -255,6 +259,8 @@ export const useTerminalStore = create<TerminalState>()(
 
             fundingRate: {},
             fundingHistory: {},
+            predictedFundingRate: {},
+            nextFundingTime: {},
             setFundingRate: (symbol, rate) => set((state) => {
                 const history = state.fundingHistory[symbol] || [];
                 const now = Date.now();
@@ -263,6 +269,18 @@ export const useTerminalStore = create<TerminalState>()(
                     fundingRate: { ...state.fundingRate, [symbol]: rate },
                     fundingHistory: { ...state.fundingHistory, [symbol]: newHistory }
                 };
+            }),
+            setPredictedFunding: (symbol, predictedRate, nextTime) => set((state) => ({
+                predictedFundingRate: { ...state.predictedFundingRate, [symbol]: predictedRate },
+                nextFundingTime: { ...state.nextFundingTime, [symbol]: nextTime }
+            })),
+            backfillFundingHistory: (symbol, history) => set((state) => {
+                const existing = state.fundingHistory[symbol] || [];
+                const existingTs = new Set(existing.map(h => h.timestamp));
+                const merged = [...history.filter(h => !existingTs.has(h.timestamp)), ...existing]
+                    .sort((a, b) => a.timestamp - b.timestamp)
+                    .slice(-48);
+                return { fundingHistory: { ...state.fundingHistory, [symbol]: merged } };
             }),
 
             longShortRatio: {},

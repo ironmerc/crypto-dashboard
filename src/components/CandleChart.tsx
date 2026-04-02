@@ -98,9 +98,9 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
             }
         });
 
-        // Main chart: leave bottom 35% for RSI + MACD panels
+        // Main chart: leave bottom 38% for MACD + RSI panels
         chart.priceScale('right').applyOptions({
-            scaleMargins: { top: 0, bottom: 0.35 },
+            scaleMargins: { top: 0, bottom: 0.38 },
         });
 
         const series = chart.addSeries(CandlestickSeries, {
@@ -135,7 +135,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
 
         // RSI pane: bottom 15% of chart
         chart.priceScale('rsi').applyOptions({
-            scaleMargins: { top: 0.82, bottom: 0.03 },
+            scaleMargins: { top: 0.86, bottom: 0.02 },
         });
 
         // Bollinger Bands (on main price scale)
@@ -152,15 +152,17 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
             crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
         });
 
-        // MACD panel: sits below RSI
+        // MACD panel: positioned between candles and RSI
         const macdSeries = chart.addSeries(LineSeries, {
             color: '#26a69a', lineWidth: 1, priceScaleId: 'macd',
+            crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
         });
         const macdSignalSeries = chart.addSeries(LineSeries, {
             color: '#ef5350', lineWidth: 1, priceScaleId: 'macd',
+            crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
         });
         chart.priceScale('macd').applyOptions({
-            scaleMargins: { top: 0.85, bottom: 0 },
+            scaleMargins: { top: 0.64, bottom: 0.20 },
         });
 
         chartRef.current = chart;
@@ -177,7 +179,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
 
         // Fetch initial historical data
         if (symbol.length < 5) return;
-        const klinesUrl = getKlineUrl(symbol, globalInterval, type, 250);
+        const klinesUrl = getKlineUrl(symbol, globalInterval, type, 500);
         fetch(klinesUrl)
             .then(res => res.json())
             .then(data => {
@@ -374,7 +376,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                         klines[existing] = { ...klines[existing], ...updateData };
                     } else {
                         klines.push(updateData);
-                        if (klines.length > 250) klines.shift();
+                        if (klines.length > 500) klines.shift();
                     }
 
                     if (shouldUpdateFull) {
