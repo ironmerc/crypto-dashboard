@@ -22,7 +22,8 @@ export function MarketContext({ symbol, type }: MarketContextProps) {
         volatility,
         derivatives,
         execution,
-        levelInteraction
+        levelInteraction,
+        momentum
     } = calculateMarketContext(symbol);
 
     // 1. Session Awareness (UI specific)
@@ -146,6 +147,27 @@ export function MarketContext({ symbol, type }: MarketContextProps) {
                             <Target className="w-3 h-3 text-accent-primary" /> Level Interaction Status
                         </div>
                         <div className={`text-sm font-bold ${levelInteraction.color}`}>{levelInteraction.text}</div>
+                    </div>
+                </div>
+
+                {/* Momentum Panel */}
+                <div className="bg-terminal-bg/30 p-2.5 rounded-lg border border-terminal-border/30 flex flex-col justify-between col-span-2 hover:bg-terminal-bg/40 transition-colors">
+                    <div>
+                        <div className="text-[10px] uppercase text-terminal-muted tracking-wide mb-1 flex items-center gap-1">
+                            <Zap className="w-3 h-3 text-[#26a69a]" /> Momentum Signals
+                        </div>
+                        <div className={`text-sm font-bold ${momentum.color}`}>{momentum.text}</div>
+                    </div>
+                    <div className="text-xs text-terminal-muted mt-2 flex justify-between border-t border-terminal-border/10 pt-1 flex-wrap gap-x-3">
+                        {momentum.macdHistogram !== null && (
+                            <span>MACD Hist: <span className={momentum.macdHistogram > 0 ? 'text-terminal-green' : 'text-terminal-red'}>{momentum.macdHistogram.toFixed(4)}</span></span>
+                        )}
+                        {momentum.stochRsiK !== null && (
+                            <span>StochRSI: <span className={momentum.stochState === 'Overbought' ? 'text-terminal-red' : momentum.stochState === 'Oversold' ? 'text-terminal-green' : 'text-terminal-fg'}>{momentum.stochRsiK.toFixed(1)}</span></span>
+                        )}
+                        {momentum.bbWidth !== null && (
+                            <span>BB%: <span className={momentum.bbSqueeze ? 'text-yellow-400 font-bold' : 'text-terminal-fg'}>{momentum.bbWidth.toFixed(2)}{momentum.bbSqueeze ? ' SQUEEZE' : ''}</span></span>
+                        )}
                     </div>
                 </div>
             </div>

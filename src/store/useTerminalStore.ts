@@ -147,7 +147,22 @@ interface TerminalState {
     currentATR: Record<string, number>;
     currentAtrSma: Record<string, number>;
     currentRSI: Record<string, number>;
-    setIndicators: (symbol: string, indicators: { ema21?: number; ema50?: number; vwap?: number; atr?: number; atrSma?: number; rsi?: number }) => void;
+    currentMACD: Record<string, { macd: number; signal: number; histogram: number }>;
+    currentBB: Record<string, { upper: number; middle: number; lower: number; width: number }>;
+    currentStochRSI: Record<string, { k: number; d: number }>;
+    currentOBV: Record<string, number>;
+    // Cross-asset signals
+    coinbasePremium: Record<string, number>;
+    sectorBreadth: { aboveVWAP: number; aboveEMA21: number; total: number };
+    setCoinbasePremium: (symbol: string, pct: number) => void;
+    setSectorBreadth: (breadth: { aboveVWAP: number; aboveEMA21: number; total: number }) => void;
+    setIndicators: (symbol: string, indicators: {
+        ema21?: number; ema50?: number; vwap?: number; atr?: number; atrSma?: number; rsi?: number;
+        macd?: { macd: number; signal: number; histogram: number };
+        bb?: { upper: number; middle: number; lower: number; width: number };
+        stochRsi?: { k: number; d: number };
+        obv?: number;
+    }) => void;
 
     // Telegram Configurations (Persisted)
     telegramConfig: TelegramConfig;
@@ -337,6 +352,16 @@ export const useTerminalStore = create<TerminalState>()(
             currentATR: {},
             currentAtrSma: {},
             currentRSI: {},
+            currentMACD: {},
+            currentBB: {},
+            currentStochRSI: {},
+            currentOBV: {},
+            coinbasePremium: {},
+            sectorBreadth: { aboveVWAP: 0, aboveEMA21: 0, total: 0 },
+            setCoinbasePremium: (symbol, pct) => set((state) => ({
+                coinbasePremium: { ...state.coinbasePremium, [symbol]: pct }
+            })),
+            setSectorBreadth: (breadth) => set({ sectorBreadth: breadth }),
             setIndicators: (symbol, indicators) => set((state) => ({
                 currentEMA21: indicators.ema21 !== undefined ? { ...state.currentEMA21, [symbol]: indicators.ema21 } : state.currentEMA21,
                 currentEMA50: indicators.ema50 !== undefined ? { ...state.currentEMA50, [symbol]: indicators.ema50 } : state.currentEMA50,
@@ -344,6 +369,10 @@ export const useTerminalStore = create<TerminalState>()(
                 currentATR: indicators.atr !== undefined ? { ...state.currentATR, [symbol]: indicators.atr } : state.currentATR,
                 currentAtrSma: indicators.atrSma !== undefined ? { ...state.currentAtrSma, [symbol]: indicators.atrSma } : state.currentAtrSma,
                 currentRSI: indicators.rsi !== undefined ? { ...state.currentRSI, [symbol]: indicators.rsi } : state.currentRSI,
+                currentMACD: indicators.macd !== undefined ? { ...state.currentMACD, [symbol]: indicators.macd } : state.currentMACD,
+                currentBB: indicators.bb !== undefined ? { ...state.currentBB, [symbol]: indicators.bb } : state.currentBB,
+                currentStochRSI: indicators.stochRsi !== undefined ? { ...state.currentStochRSI, [symbol]: indicators.stochRsi } : state.currentStochRSI,
+                currentOBV: indicators.obv !== undefined ? { ...state.currentOBV, [symbol]: indicators.obv } : state.currentOBV,
             })),
 
             theme: 'terminal',

@@ -106,3 +106,127 @@ export function calculateSMA(data: number[], period: number) {
     }
     return smaData;
 }
+
+export interface MACDResult {
+    macd: (number | null)[];
+    signal: (number | null)[];
+    histogram: (number | null)[];
+}
+
+export function calculateMACD(
+    closes: number[],
+    fastPeriod = 12,
+    slowPeriod = 26,
+    signalPeriod = 9
+): MACDResult {
+    const emaFast = calculateEMA(closes, fastPeriod);
+    const emaSlow = calculateEMA(closes, slowPeriod);
+
+    const macdLine: (number | null)[] = emaFast.map((v, i) => {
+        if (v === null || emaSlow[i] === null) return null;
+        return (v as number) - (emaSlow[i] as number);
+    });
+
+    const macdValues = macdLine.filter(v => v !== null) as number[];
+    const signalRaw = calculateEMA(macdValues, signalPeriod);
+    const signalPadded: (number | null)[] = [
+        ...Array(macdLine.length - signalRaw.length).fill(null),
+        ...signalRaw
+    ];
+
+    const histogram: (number | null)[] = macdLine.map((v, i) => {
+        if (v === null || signalPadded[i] === null) return null;
+        return (v as number) - (signalPadded[i] as number);
+    });
+
+    return { macd: macdLine, signal: signalPadded, histogram };
+}
+
+export interface BollingerBandsResult {
+    upper: (number | null)[];
+    middle: (number | null)[];
+    lower: (number | null)[];
+    width: (number | null)[];
+}
+
+export function calculateBollingerBands(
+    closes: number[],
+    period = 20,
+    multiplier = 2
+): BollingerBandsResult {
+    const middle = calculateSMA(closes, period);
+    const upper: (number | null)[] = [];
+    const lower: (number | null)[] = [];
+    const width: (number | null)[] = [];
+
+    for (let i = 0; i < closes.length; i++) {
+        if (middle[i] === null) {
+            upper.push(null);
+            lower.push(null);
+            width.push(null);
+            continue;
+        }
+        const mean = middle[i] as number;
+        const slice = closes.slice(i - period + 1, i + 1);
+        const variance = slice.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / (slice.length - 1);
+        const stdDev = Math.sqrt(variance);
+        const u = mean + multiplier * stdDev;
+        const l = mean - multiplier * stdDev;
+        upper.push(u);
+        lower.push(l);
+        width.push(mean !== 0 ? (u - l) / mean * 100 : null);
+    }
+
+    return { upper, middle, lower, width };
+}
+
+export interface StochRSIResult {
+    k: (number | null)[];
+    d: (number | null)[];
+}
+
+export function calculateStochRSI(
+    closes: number[],
+    rsiPeriod = 14,
+    stochPeriod = 14,
+    kSmooth = 3,
+    dSmooth = 3
+): StochRSIResult {
+    const rsi = calculateRSI(closes, rsiPeriod) as (number | null)[];
+
+    const rawStoch: (number | null)[] = rsi.map((v, i) => {
+        if (v === null) return null;
+        const start = Math.max(0, i - stochPeriod + 1);
+        const window = rsi.slice(start, i + 1).filter(x => x !== null) as number[];
+        if (window.length < stochPeriod) return null;
+        const min = Math.min(...window);
+        const max = Math.max(...window);
+        return max === min ? 50 : ((v - min) / (max - min)) * 100;
+    });
+
+    const rawNonNull = rawStoch.filter(v => v !== null) as number[];
+    const kSmoothed = calculateSMA(rawNonNull, kSmooth);
+    const kPadded: (number | null)[] = [
+        ...Array(closes.length - kSmoothed.length).fill(null),
+        ...kSmoothed
+    ];
+
+    const kNonNull = kSmoothed.filter(v => v !== null) as number[];
+    const dSmoothed = calculateSMA(kNonNull, dSmooth);
+    const dPadded: (number | null)[] = [
+        ...Array(closes.length - dSmoothed.length).fill(null),
+        ...dSmoothed
+    ];
+
+    return { k: kPadded, d: dPadded };
+}
+
+export function calculateOBV(closes: number[], volumes: number[]): number[] {
+    const obv: number[] = [0];
+    for (let i = 1; i < closes.length; i++) {
+        if (closes[i] > closes[i - 1]) obv.push(obv[i - 1] + volumes[i]);
+        else if (closes[i] < closes[i - 1]) obv.push(obv[i - 1] - volumes[i]);
+        else obv.push(obv[i - 1]);
+    }
+    return obv;
+}

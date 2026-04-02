@@ -220,65 +220,105 @@ class MarketEngine:
             except Exception as e:
                 logger.error(f"Failed to send alert to bot: {e}")
 
-    def calculate_indicators(self, symbol: str, tf: str) -> Tuple[float, float, float, float, float, float, float]:
-        """Calculates indicators including ATR Ratio and RVOL."""
+    def calculate_indicators(self, symbol: str, tf: str) -> Dict[str, Any]:
+        """Calculates indicators including ATR Ratio, RVOL, MACD, BB, and StochRSI."""
         klines = self.state[symbol]["klines"][tf]
         if not klines:
-            return 0.0, 0.0, 50.0, 1.0, 1.0, 0.0, 0.0
+            return {"ema21": 0.0, "ema50": 0.0, "rsi": 50.0, "atr_ratio": 1.0, "rvol": 1.0,
+                    "vwap": 0.0, "poc": 0.0, "macd": 0.0, "macd_signal": 0.0, "macd_hist": 0.0,
+                    "bb_upper": 0.0, "bb_lower": 0.0, "bb_width": 0.0, "stoch_k": 50.0, "stoch_d": 50.0}
 
         df = pd.DataFrame(klines, columns=['t', 'o', 'h', 'l', 'c', 'v'])
         df['c'] = df['c'].astype(float)
         df['h'] = df['h'].astype(float)
         df['l'] = df['l'].astype(float)
         df['v'] = df['v'].astype(float)
-        
+
         # EMA for Regime
         if len(df) >= 50:
             ema21 = float(df['c'].ewm(span=21, adjust=False).mean().iloc[-1])
             ema50 = float(df['c'].ewm(span=50, adjust=False).mean().iloc[-1])
         else:
             ema21 = ema50 = float(df['c'].iloc[-1])
-        
+
         # RSI
+        rsi = 50.0
         if len(df) >= 15:
             delta = df['c'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-            # Avoid division by zero
             with np.errstate(divide='ignore', invalid='ignore'):
                 rs = gain / loss
                 rsi_series = cast(pd.Series, 100 - (100 / (1 + rs)))
                 rsi_val = rsi_series.iloc[-1]
                 rsi = float(rsi_val) if not np.isnan(rsi_val) else 50.0
-        else:
-            rsi = 50.0
-        
+
         # ATR Ratio (Current TR / SMA 20 of TR)
         df['tr'] = np.maximum(df['h'] - df['l'], np.maximum(abs(df['h'] - df['c'].shift(1)), abs(df['l'] - df['c'].shift(1))))
+        atr_ratio = 1.0
         if len(df) >= 20:
             avg_tr = df['tr'].rolling(20).mean().iloc[-1]
             atr_ratio = float(df['tr'].iloc[-1] / avg_tr) if avg_tr != 0 else 1.0
-        else:
-            atr_ratio = 1.0
-        
+
         # RVOL (Current Volume / SMA 20 of Volume)
+        rvol = 1.0
         if len(df) >= 20:
             avg_v = df['v'].rolling(20).mean().iloc[-1]
             rvol = float(df['v'].iloc[-1] / avg_v) if avg_v != 0 else 1.0
-        else:
-            rvol = 1.0
 
-        # VWAP (Approximation via candle typical price)
+        # VWAP
         df['tp'] = (df['h'] + df['l'] + df['c']) / 3
         total_v = df['v'].sum()
         vwap = float((df['tp'] * df['v']).sum() / total_v) if total_v != 0 else float(df['c'].iloc[-1])
 
-        # POC (Price at which most volume occurred - 50 bins)
-        bins = 50
-        counts, bin_edges = np.histogram(df['c'], bins=bins, weights=df['v'])
+        # POC (Price at which most volume occurred)
+        counts, bin_edges = np.histogram(df['c'], bins=50, weights=df['v'])
         poc = float(bin_edges[np.argmax(counts)])
-        
-        return ema21, ema50, rsi, atr_ratio, rvol, vwap, poc
+
+        # MACD (12/26/9)
+        macd_val = macd_signal = macd_hist = 0.0
+        if len(df) >= 26:
+            ema12 = df['c'].ewm(span=12, adjust=False).mean()
+            ema26 = df['c'].ewm(span=26, adjust=False).mean()
+            macd_line = ema12 - ema26
+            signal_line = macd_line.ewm(span=9, adjust=False).mean()
+            macd_val = float(macd_line.iloc[-1])
+            macd_signal = float(signal_line.iloc[-1])
+            macd_hist = macd_val - macd_signal
+
+        # Bollinger Bands (20, 2)
+        bb_upper = bb_lower = bb_width = 0.0
+        if len(df) >= 20:
+            sma20 = df['c'].rolling(20).mean().iloc[-1]
+            std20 = df['c'].rolling(20).std().iloc[-1]
+            bb_upper = float(sma20 + 2 * std20)
+            bb_lower = float(sma20 - 2 * std20)
+            bb_width = float((bb_upper - bb_lower) / sma20 * 100) if sma20 != 0 else 0.0
+
+        # StochRSI (14/14/3/3)
+        stoch_k = stoch_d = 50.0
+        if len(df) >= 28:
+            delta2 = df['c'].diff()
+            gain2 = delta2.where(delta2 > 0, 0).rolling(14).mean()
+            loss2 = (-delta2.where(delta2 < 0, 0)).rolling(14).mean()
+            with np.errstate(divide='ignore', invalid='ignore'):
+                rsi_series2 = 100 - (100 / (1 + gain2 / loss2))
+            rsi_min = rsi_series2.rolling(14).min()
+            rsi_max = rsi_series2.rolling(14).max()
+            raw_k = ((rsi_series2 - rsi_min) / (rsi_max - rsi_min).replace(0, np.nan)) * 100
+            k_smooth = raw_k.rolling(3).mean()
+            d_smooth = k_smooth.rolling(3).mean()
+            k_val = k_smooth.iloc[-1]
+            d_val = d_smooth.iloc[-1]
+            stoch_k = float(k_val) if not np.isnan(k_val) else 50.0
+            stoch_d = float(d_val) if not np.isnan(d_val) else 50.0
+
+        return {
+            "ema21": ema21, "ema50": ema50, "rsi": rsi, "atr_ratio": atr_ratio, "rvol": rvol,
+            "vwap": vwap, "poc": poc, "macd": macd_val, "macd_signal": macd_signal, "macd_hist": macd_hist,
+            "bb_upper": bb_upper, "bb_lower": bb_lower, "bb_width": bb_width,
+            "stoch_k": stoch_k, "stoch_d": stoch_d
+        }
 
     async def monitor_market(self, market_type: str) -> None:
         """Subscribes to Binance streams for a specific market type (spot or futures)."""
@@ -487,17 +527,24 @@ class MarketEngine:
             if len(klines_tf) > 100: klines_tf.pop(0)
 
             if len(klines_tf) >= 30:
-                ema21, ema50, rsi, atr_ratio, rvol, vwap, poc = self.calculate_indicators(symbol, tf)
+                ind = self.calculate_indicators(symbol, tf)
+                ema21 = ind["ema21"]
+                ema50 = ind["ema50"]
+                rsi = ind["rsi"]
+                atr_ratio = ind["atr_ratio"]
+                rvol = ind["rvol"]
+                vwap = ind["vwap"]
+                poc = ind["poc"]
                 price = float(k['c'])
                 thresholds = self.get_thresholds(symbol)
-                
+
                 # Volatility
                 exp_ratio = float(thresholds.get("atrExpansionRatio", 1.3))
                 vol_state = "Normal"
                 if atr_ratio > exp_ratio * 1.25: vol_state = "Extreme"
                 elif atr_ratio > exp_ratio: vol_state = "Expanding"
                 elif atr_ratio < 0.75: vol_state = "Squeeze"
-                
+
                 _, next_vol, vol_changed = self.debounced_state_change(symbol, "volatility", tf, vol_state)
                 if vol_changed:
                     await self.send_alert(f"[{symbol}] Volatility Shift ({tf})", f"State: {next_vol}\nATR Ratio: {atr_ratio:.2f}x", "atr_expand", symbol, tf=tf, market_type=market_type)
@@ -509,7 +556,7 @@ class MarketEngine:
                 new_regime = "Range"
                 if price > ema21 > ema50: new_regime = f"Uptrend ({strength})"
                 elif price < ema21 < ema50: new_regime = f"Downtrend ({strength})"
-                
+
                 _, next_regime, regime_changed = self.debounced_state_change(symbol, "regime", tf, new_regime)
                 if regime_changed:
                     icon = "UP" if "Uptrend" in next_regime else ("DOWN" if "Downtrend" in next_regime else "RANGE")
@@ -528,6 +575,96 @@ class MarketEngine:
                 rvol_mult = float(thresholds.get("rvolMultiplier", 3.0))
                 if self.should_fire_threshold(symbol, f"rvol_spike:{tf}", rvol >= rvol_mult):
                     await self.send_alert(f"[{symbol}] RVOL Spike ({tf})", f"RVOL: {rvol:.1f}x", "rvol_spike", symbol, tf=tf, market_type=market_type)
+
+                # MACD Crossover
+                macd_hist = ind.get("macd_hist")
+                macd_val = ind.get("macd")
+                if macd_hist is not None and macd_val is not None and macd_val != 0:
+                    is_fresh_cross = abs(macd_hist) < abs(macd_val) * 0.1
+                    macd_bias = "Bull" if macd_hist > 0 else "Bear"
+                    _, next_macd, macd_changed = self.debounced_state_change(symbol, "macd_cross", tf, macd_bias)
+                    if macd_changed and is_fresh_cross:
+                        macd_icon = "UP" if macd_bias == "Bull" else "DOWN"
+                        await self.send_alert(
+                            f"[{symbol}] {macd_icon} MACD Cross ({tf})",
+                            f"Direction: {macd_bias}ish\nHistogram: {macd_hist:.4f}\nMACD: {macd_val:.4f}",
+                            "macd_cross", symbol, tf=tf, market_type=market_type
+                        )
+
+                # Bollinger Band Squeeze / Breakout
+                bb_width = ind.get("bb_width")
+                bb_upper = ind.get("bb_upper")
+                bb_lower = ind.get("bb_lower")
+                if bb_width is not None:
+                    if bb_width < 2.0:
+                        bb_state = "Squeeze"
+                    elif bb_upper is not None and price > bb_upper:
+                        bb_state = "Breakout_Up"
+                    elif bb_lower is not None and price < bb_lower:
+                        bb_state = "Breakout_Down"
+                    else:
+                        bb_state = "Normal"
+                    _, next_bb, bb_changed = self.debounced_state_change(symbol, "bb_state", tf, bb_state)
+                    if bb_changed and next_bb != "Normal":
+                        if next_bb == "Squeeze":
+                            await self.send_alert(
+                                f"[{symbol}] BB Squeeze ({tf})",
+                                f"BB Width: {bb_width:.2f}% — Breakout risk rising",
+                                "bb_squeeze", symbol, tf=tf, market_type=market_type
+                            )
+                        elif next_bb == "Breakout_Up":
+                            await self.send_alert(
+                                f"[{symbol}] UP BB Breakout ({tf})",
+                                f"Price broke above upper band\nBB Width: {bb_width:.2f}%\nUpper: {bb_upper:.4f}",
+                                "bb_breakout", symbol, tf=tf, market_type=market_type
+                            )
+                        elif next_bb == "Breakout_Down":
+                            await self.send_alert(
+                                f"[{symbol}] DOWN BB Breakout ({tf})",
+                                f"Price broke below lower band\nBB Width: {bb_width:.2f}%\nLower: {bb_lower:.4f}",
+                                "bb_breakout", symbol, tf=tf, market_type=market_type
+                            )
+
+                # StochRSI Extreme
+                stoch_k = ind.get("stoch_k")
+                stoch_d = ind.get("stoch_d")
+                if stoch_k is not None and stoch_d is not None:
+                    if stoch_k > 85 and stoch_k > stoch_d:
+                        stoch_state = "Overbought"
+                    elif stoch_k < 15 and stoch_k < stoch_d:
+                        stoch_state = "Oversold"
+                    else:
+                        stoch_state = "Neutral"
+                    _, next_stoch, stoch_changed = self.debounced_state_change(symbol, "stoch_state", tf, stoch_state)
+                    if stoch_changed and next_stoch != "Neutral":
+                        stoch_icon = "DOWN" if next_stoch == "Overbought" else "UP"
+                        await self.send_alert(
+                            f"[{symbol}] {stoch_icon} StochRSI {next_stoch} ({tf})",
+                            f"K: {stoch_k:.1f}  D: {stoch_d:.1f}",
+                            "stoch_extreme", symbol, tf=tf, market_type=market_type
+                        )
+
+                # OI / Price Divergence
+                oi_history = symbol_state.get("oi_history", [])
+                if len(oi_history) >= 6:
+                    recent_oi = [float(h['v']) for h in oi_history[-6:]]
+                    oi_trend_up = recent_oi[-1] > recent_oi[0]
+                    price_trend_up = price > ema21
+                    if price_trend_up and not oi_trend_up:
+                        div_state = "Bearish_Div"
+                    elif not price_trend_up and not oi_trend_up:
+                        div_state = "Bullish_Div"
+                    else:
+                        div_state = "None"
+                    _, next_div, div_changed = self.debounced_state_change(symbol, "oi_div", tf, div_state)
+                    if div_changed and next_div != "None":
+                        label = "Bearish" if next_div == "Bearish_Div" else "Bullish"
+                        desc = "Price rising but OI falling — weak move" if label == "Bearish" else "Price falling but OI falling — potential squeeze"
+                        await self.send_alert(
+                            f"[{symbol}] OI/Price {label} Divergence ({tf})",
+                            desc,
+                            "oi_divergence", symbol, tf=tf, market_type=market_type
+                        )
 
     async def run(self) -> None:
         """Starts the engine tasks."""

@@ -18,6 +18,38 @@ import { LiquidityIntelligence } from '../components/LiquidityIntelligence';
 import { MarketContext } from '../components/MarketContext';
 import { ActionAlertStrip } from '../components/ActionAlertStrip';
 import { useBackendAlerts } from '../hooks/useBackendAlerts';
+import { useCoinbasePremium } from '../hooks/useCoinbasePremium';
+import { useSectorBreadth } from '../hooks/useSectorBreadth';
+
+function CoinbasePremiumRow({ symbol }: { symbol: string }) {
+  const premium = useTerminalStore((s) => s.coinbasePremium[symbol]);
+  if (premium === undefined) return null;
+  return (
+    <div className="flex justify-between items-center text-xs">
+      <span className="text-terminal-muted opacity-70">CB Premium</span>
+      <span className={`font-mono font-bold ${premium > 0.05 ? 'text-terminal-green' : premium < -0.05 ? 'text-terminal-red' : 'text-terminal-fg'}`}>
+        {premium > 0 ? '+' : ''}{premium.toFixed(3)}%
+      </span>
+    </div>
+  );
+}
+
+function SectorBreadthRow() {
+  const breadth = useTerminalStore((s) => s.sectorBreadth);
+  if (!breadth || breadth.total === 0) return null;
+  const vwapPct = Math.round((breadth.aboveVWAP / breadth.total) * 100);
+  const emaPct = Math.round((breadth.aboveEMA21 / breadth.total) * 100);
+  return (
+    <div className="flex justify-between items-center text-xs">
+      <span className="text-terminal-muted opacity-70">Breadth</span>
+      <div className="text-right font-mono">
+        <span className={vwapPct >= 60 ? 'text-terminal-green' : vwapPct <= 40 ? 'text-terminal-red' : 'text-terminal-fg'}>VWAP {vwapPct}%</span>
+        <span className="text-terminal-muted mx-1">·</span>
+        <span className={emaPct >= 60 ? 'text-terminal-green' : emaPct <= 40 ? 'text-terminal-red' : 'text-terminal-fg'}>EMA {emaPct}%</span>
+      </div>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const monitoredSymbolsRaw = useTerminalStore((state) => state.telegramConfig.monitoredSymbols);
@@ -49,10 +81,14 @@ export default function Dashboard() {
   // Market Data Hooks
   const { data: fgData, loading: fgLoading } = useFearGreedIndex();
 
+  const symbolNames = useMemo(() => monitoredSymbols.map(m => m.symbol), [monitoredSymbols]);
+
   // Market Data Streams
   useFuturesStream(activeSymbolObj, monitoredSymbols);
   useOpenInterest(localActiveSymbol, activeType);
   useBackendAlerts();
+  useCoinbasePremium(symbolNames);
+  useSectorBreadth(symbolNames);
 
   const openInterest = useTerminalStore((state) => state.openInterest[localActiveSymbol]);
   const oiHistory = useTerminalStore((state) => state.oiHistory[localActiveSymbol]);
@@ -286,6 +322,9 @@ export default function Dashboard() {
                       {longShortRatio ? longShortRatio.toFixed(2) : '--'}
                     </span>
                   </div>
+
+                  <CoinbasePremiumRow symbol={localActiveSymbol} />
+                  <SectorBreadthRow />
                 </Panel>
 
                 <PanelResizeHandle className="h-2 flex items-center justify-center cursor-row-resize bg-terminal-bg relative group my-1 z-10">

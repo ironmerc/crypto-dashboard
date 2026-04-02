@@ -3,7 +3,7 @@ import { createChart, ColorType, CandlestickSeries, LineSeries } from 'lightweig
 import type { IChartApi, ISeriesApi, IPriceLine } from 'lightweight-charts';
 import useWebSocket from 'react-use-websocket';
 import { useTerminalStore } from '../store/useTerminalStore';
-import { calculateEMA, calculateVWAP, calculateRSI, calculateATR, calculateSMA } from '../utils/indicators';
+import { calculateEMA, calculateVWAP, calculateRSI, calculateATR, calculateSMA, calculateMACD, calculateBollingerBands, calculateStochRSI, calculateOBV } from '../utils/indicators';
 import { type MarketType } from '../constants/binance';
 import { getKlineUrl, getWsUrl } from '../utils/market';
 import { formatPrice } from '../utils/formatters';
@@ -36,10 +36,18 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
     const ema50SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const vwapSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const rsiSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+    const bbUpperSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+    const bbMiddleSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+    const bbLowerSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+    const macdSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+    const macdSignalSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const klinesDataRef = useRef<KlineData[]>([]);
+    const prevOBVRef = useRef<number>(0);
 
     // Indicator States for HUD
     const [latestAtr, setLatestAtr] = useState<number | null>(null);
+    const [latestBBWidth, setLatestBBWidth] = useState<number | null>(null);
+    const [latestMACD, setLatestMACD] = useState<{ macd: number; signal: number; histogram: number } | null>(null);
     const [isSettingAlert, setIsSettingAlert] = useState(false);
     const [manualAlertPrice, setManualAlertPrice] = useState('');
     const isSettingAlertRef = useRef(false);
@@ -90,12 +98,9 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
             }
         });
 
-        // Adjust the main chart margin so it doesn't overlap the RSI
+        // Main chart: leave bottom 35% for RSI + MACD panels
         chart.priceScale('right').applyOptions({
-            scaleMargins: {
-                top: 0,
-                bottom: 0.25, // leaves bottom 25% clear for RSI
-            },
+            scaleMargins: { top: 0, bottom: 0.35 },
         });
 
         const series = chart.addSeries(CandlestickSeries, {
@@ -128,12 +133,34 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
             color: '#E040FB', lineWidth: 1, priceScaleId: 'rsi',
         });
 
-        // Add RSI Pane Layout (Margin configuration to sit below the main chart)
+        // RSI pane: bottom 15% of chart
         chart.priceScale('rsi').applyOptions({
-            scaleMargins: {
-                top: 0.8, // bottom 20%
-                bottom: 0,
-            },
+            scaleMargins: { top: 0.82, bottom: 0.03 },
+        });
+
+        // Bollinger Bands (on main price scale)
+        const bbUpperSeries = chart.addSeries(LineSeries, {
+            color: 'rgba(100, 200, 255, 0.5)', lineWidth: 1, lineStyle: 2,
+            crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
+        });
+        const bbMiddleSeries = chart.addSeries(LineSeries, {
+            color: 'rgba(100, 200, 255, 0.25)', lineWidth: 1, lineStyle: 0,
+            crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
+        });
+        const bbLowerSeries = chart.addSeries(LineSeries, {
+            color: 'rgba(100, 200, 255, 0.5)', lineWidth: 1, lineStyle: 2,
+            crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
+        });
+
+        // MACD panel: sits below RSI
+        const macdSeries = chart.addSeries(LineSeries, {
+            color: '#26a69a', lineWidth: 1, priceScaleId: 'macd',
+        });
+        const macdSignalSeries = chart.addSeries(LineSeries, {
+            color: '#ef5350', lineWidth: 1, priceScaleId: 'macd',
+        });
+        chart.priceScale('macd').applyOptions({
+            scaleMargins: { top: 0.85, bottom: 0 },
         });
 
         chartRef.current = chart;
@@ -142,6 +169,11 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
         ema50SeriesRef.current = ema50Series;
         vwapSeriesRef.current = vwapSeries;
         rsiSeriesRef.current = rsiSeries;
+        bbUpperSeriesRef.current = bbUpperSeries;
+        bbMiddleSeriesRef.current = bbMiddleSeries;
+        bbLowerSeriesRef.current = bbLowerSeries;
+        macdSeriesRef.current = macdSeries;
+        macdSignalSeriesRef.current = macdSignalSeries;
 
         // Fetch initial historical data
         if (symbol.length < 5) return;
@@ -202,11 +234,14 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                     const vwap = calculateVWAP(typicals, volumes);
                     const rsi = calculateRSI(closes, 14);
                     const atr = calculateATR(highs, lows, closes, 14);
+                    const macdResult = calculateMACD(closes);
+                    const bbResult = calculateBollingerBands(closes);
+                    const stochRsiResult = calculateStochRSI(closes);
+                    const obvResult = calculateOBV(closes, volumes);
 
                     // Compute SMA of ATR (handling nulls)
                     const atrValues = atr.filter(a => a !== null) as number[];
                     const atrSmaRaw = calculateSMA(atrValues, 14);
-                    // Re-pad the array back to original length
                     const atrSmaPad = Array(atr.length - atrSmaRaw.length).fill(null);
                     const atrSma = [...atrSmaPad, ...atrSmaRaw];
 
@@ -214,11 +249,30 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                     ema50SeriesRef.current?.setData(ema50.map((v, i) => ({ time: cdata[i].time, value: v })).filter(d => d.value !== null) as any);
                     vwapSeriesRef.current?.setData(vwap.map((v, i) => ({ time: cdata[i].time, value: v })) as any);
                     rsiSeriesRef.current?.setData(rsi.map((v, i) => ({ time: cdata[i].time, value: v })).filter(d => d.value !== null) as any);
+                    bbUpperSeriesRef.current?.setData(bbResult.upper.map((v, i) => ({ time: cdata[i].time, value: v })).filter(d => d.value !== null) as any);
+                    bbMiddleSeriesRef.current?.setData(bbResult.middle.map((v, i) => ({ time: cdata[i].time, value: v })).filter(d => d.value !== null) as any);
+                    bbLowerSeriesRef.current?.setData(bbResult.lower.map((v, i) => ({ time: cdata[i].time, value: v })).filter(d => d.value !== null) as any);
+                    macdSeriesRef.current?.setData(macdResult.macd.map((v, i) => ({ time: cdata[i].time, value: v })).filter(d => d.value !== null) as any);
+                    macdSignalSeriesRef.current?.setData(macdResult.signal.map((v, i) => ({ time: cdata[i].time, value: v })).filter(d => d.value !== null) as any);
 
-                    // Set initial ATR
+                    // Set initial ATR + BB width
                     if (atr.length > 0) setLatestAtr(atr[atr.length - 1]);
+                    const lastBBWidth = bbResult.width[bbResult.width.length - 1];
+                    if (lastBBWidth !== null) setLatestBBWidth(lastBBWidth);
+
+                    const lastMACD = macdResult.macd[macdResult.macd.length - 1];
+                    const lastSignal = macdResult.signal[macdResult.signal.length - 1];
+                    const lastHist = macdResult.histogram[macdResult.histogram.length - 1];
+                    if (lastMACD !== null && lastSignal !== null && lastHist !== null) {
+                        setLatestMACD({ macd: lastMACD, signal: lastSignal, histogram: lastHist });
+                    }
 
                     // Push to global store
+                    const lastBBUpper = bbResult.upper[bbResult.upper.length - 1];
+                    const lastBBMiddle = bbResult.middle[bbResult.middle.length - 1];
+                    const lastBBLower = bbResult.lower[bbResult.lower.length - 1];
+                    const lastStochK = stochRsiResult.k[stochRsiResult.k.length - 1];
+                    const lastStochD = stochRsiResult.d[stochRsiResult.d.length - 1];
                     useTerminalStore.getState().setIndicators(symbol, {
                         ema21: ema21[ema21.length - 1] ?? undefined,
                         ema50: ema50[ema50.length - 1] ?? undefined,
@@ -226,7 +280,15 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                         atr: atr[atr.length - 1] ?? undefined,
                         atrSma: atrSma[atrSma.length - 1] ?? undefined,
                         rsi: rsi[rsi.length - 1] ?? undefined,
+                        macd: (lastMACD !== null && lastSignal !== null && lastHist !== null)
+                            ? { macd: lastMACD, signal: lastSignal, histogram: lastHist } : undefined,
+                        bb: (lastBBUpper !== null && lastBBMiddle !== null && lastBBLower !== null && lastBBWidth !== null)
+                            ? { upper: lastBBUpper, middle: lastBBMiddle, lower: lastBBLower, width: lastBBWidth } : undefined,
+                        stochRsi: (lastStochK !== null && lastStochD !== null)
+                            ? { k: lastStochK, d: lastStochD } : undefined,
+                        obv: obvResult[obvResult.length - 1],
                     });
+                    prevOBVRef.current = obvResult[obvResult.length - 1];
                 }
             })
             .catch(err => console.error("Failed to fetch historical klines", err));
@@ -330,6 +392,9 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                         const vwap = calculateVWAP(typicals, volumes);
                         const rsi = calculateRSI(closes, 14);
                         const atr = calculateATR(highs, lows, closes, 14);
+                        const macdResult = calculateMACD(closes);
+                        const bbResult = calculateBollingerBands(closes);
+                        const stochRsiResult = calculateStochRSI(closes);
 
                         const atrValues = atr.filter(a => a !== null) as number[];
                         const atrSmaRaw = calculateSMA(atrValues, 14);
@@ -345,7 +410,29 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                         if (rsi[lastIndex] !== null && rsiSeriesRef.current) rsiSeriesRef.current.update({ time, value: rsi[lastIndex]! });
                         if (atr[lastIndex] !== null) setLatestAtr(atr[lastIndex]);
 
+                        // BB series updates
+                        if (bbResult.upper[lastIndex] !== null && bbUpperSeriesRef.current) bbUpperSeriesRef.current.update({ time, value: bbResult.upper[lastIndex]! });
+                        if (bbResult.middle[lastIndex] !== null && bbMiddleSeriesRef.current) bbMiddleSeriesRef.current.update({ time, value: bbResult.middle[lastIndex]! });
+                        if (bbResult.lower[lastIndex] !== null && bbLowerSeriesRef.current) bbLowerSeriesRef.current.update({ time, value: bbResult.lower[lastIndex]! });
+                        if (bbResult.width[lastIndex] !== null) setLatestBBWidth(bbResult.width[lastIndex]);
+
+                        // MACD series updates
+                        if (macdResult.macd[lastIndex] !== null && macdSeriesRef.current) macdSeriesRef.current.update({ time, value: macdResult.macd[lastIndex]! });
+                        if (macdResult.signal[lastIndex] !== null && macdSignalSeriesRef.current) macdSignalSeriesRef.current.update({ time, value: macdResult.signal[lastIndex]! });
+                        const lMACD = macdResult.macd[lastIndex];
+                        const lSignal = macdResult.signal[lastIndex];
+                        const lHist = macdResult.histogram[lastIndex];
+                        if (lMACD !== null && lSignal !== null && lHist !== null) {
+                            setLatestMACD({ macd: lMACD, signal: lSignal, histogram: lHist });
+                        }
+
                         // Update global store
+                        const lBBUpper = bbResult.upper[lastIndex];
+                        const lBBMiddle = bbResult.middle[lastIndex];
+                        const lBBLower = bbResult.lower[lastIndex];
+                        const lBBWidth = bbResult.width[lastIndex];
+                        const lStochK = stochRsiResult.k[lastIndex];
+                        const lStochD = stochRsiResult.d[lastIndex];
                         useTerminalStore.getState().setIndicators(symbol, {
                             ema21: ema21[lastIndex] ?? undefined,
                             ema50: ema50[lastIndex] ?? undefined,
@@ -353,6 +440,18 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                             atr: atr[lastIndex] ?? undefined,
                             atrSma: atrSma[lastIndex] ?? undefined,
                             rsi: rsi[lastIndex] ?? undefined,
+                            macd: (lMACD !== null && lSignal !== null && lHist !== null)
+                                ? { macd: lMACD, signal: lSignal, histogram: lHist } : undefined,
+                            bb: (lBBUpper !== null && lBBMiddle !== null && lBBLower !== null && lBBWidth !== null)
+                                ? { upper: lBBUpper, middle: lBBMiddle, lower: lBBLower, width: lBBWidth } : undefined,
+                            stochRsi: (lStochK !== null && lStochD !== null)
+                                ? { k: lStochK, d: lStochD } : undefined,
+                            obv: (() => {
+                                const lc = closes[lastIndex], pc = closes[lastIndex - 1] ?? lc, vol = volumes[lastIndex];
+                                const newOBV = lc > pc ? prevOBVRef.current + vol : lc < pc ? prevOBVRef.current - vol : prevOBVRef.current;
+                                prevOBVRef.current = newOBV;
+                                return newOBV;
+                            })(),
                         });
 
                         // Force +/- 5% Y-Axis to match the Heatmap exactly
@@ -500,7 +599,40 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                     <span className="text-[#FF6D00] font-mono text-[9px] font-bold">EMA 50</span>
                     <span className="text-[#FDD835] font-mono text-[9px] font-bold">VWAP</span>
                     <span className="text-[#E040FB] font-mono text-[9px] font-bold">RSI(14)</span>
+                    <span className="text-[rgba(100,200,255,0.8)] font-mono text-[9px] font-bold">BB</span>
+                    <span className="text-[#26a69a] font-mono text-[9px] font-bold">MACD</span>
                 </div>
+
+                {/* BB Squeeze + MACD State */}
+                {(latestBBWidth !== null || latestMACD !== null) && (
+                    <div className="flex gap-3 bg-[#18042B]/80 px-2 py-1.5 rounded w-fit border border-purple-500/30 mt-1">
+                        {latestBBWidth !== null && (
+                            <div className="flex flex-col">
+                                <span className="text-terminal-muted opacity-70 text-[9px]">BB WIDTH</span>
+                                <span className={`font-mono font-bold ${latestBBWidth < 2 ? 'text-yellow-400' : latestBBWidth < 4 ? 'text-terminal-fg' : 'text-terminal-green'}`}>
+                                    {latestBBWidth.toFixed(2)}%{latestBBWidth < 2 ? ' SQUEEZE' : ''}
+                                </span>
+                            </div>
+                        )}
+                        {latestMACD !== null && (
+                            <>
+                                {latestBBWidth !== null && <div className="w-px h-full bg-terminal-border/30"></div>}
+                                <div className="flex flex-col">
+                                    <span className="text-terminal-muted opacity-70 text-[9px]">MACD</span>
+                                    <span className={`font-mono font-bold ${latestMACD.histogram > 0 ? 'text-terminal-green' : 'text-terminal-red'}`}>
+                                        {latestMACD.histogram > 0 ? '▲' : '▼'} {latestMACD.histogram.toFixed(4)}
+                                    </span>
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className="text-terminal-muted opacity-70 text-[9px]">SIGNAL</span>
+                                    <span className={`font-mono font-bold ${latestMACD.macd > latestMACD.signal ? 'text-terminal-green' : 'text-terminal-red'}`}>
+                                        {latestMACD.macd > latestMACD.signal ? 'BULL' : 'BEAR'}
+                                    </span>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
 
                 {/* Alerts Indicator & Controls */}
                 <div className="mt-2 flex gap-2 pointer-events-auto">

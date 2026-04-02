@@ -32,6 +32,19 @@ export interface LevelInteractionInfo {
     color: string;
 }
 
+export interface MomentumInfo {
+    macdBull: boolean | null;
+    macdHistogram: number | null;
+    stochRsiK: number | null;
+    stochRsiD: number | null;
+    stochState: 'Overbought' | 'Oversold' | 'Neutral' | null;
+    bbWidth: number | null;
+    bbSqueeze: boolean;
+    oiPriceDivergence: 'Bearish Divergence' | 'Bullish Divergence' | null;
+    text: string;
+    color: string;
+}
+
 // Extracted from MarketContext.tsx so it can be used headlessly by alerts
 export function calculateMarketContext(symbol: string) {
     const state = useTerminalStore.getState();
@@ -48,6 +61,9 @@ export function calculateMarketContext(symbol: string) {
     const sessionVal = state.sessionVal[symbol];
     const recentTrades = state.recentTrades[symbol];
     const rsi = state.currentRSI[symbol];
+    const macd = state.currentMACD[symbol];
+    const bb = state.currentBB[symbol];
+    const stochRsi = state.currentStochRSI[symbol];
 
     // 1. Regime
     let regime: RegimeInfo = { type: 'Unknown', strength: 'Neutral', text: 'Gathering Data...', color: 'text-terminal-muted' };
@@ -165,6 +181,59 @@ export function calculateMarketContext(symbol: string) {
         levelInteraction = activeStatus || { text: 'In Vacuum (No Immediate Levels)', color: 'text-terminal-muted' };
     }
 
+    // 6. Momentum (MACD + StochRSI + BB Squeeze + OI/Price Divergence)
+    let momentum: MomentumInfo = {
+        macdBull: null, macdHistogram: null,
+        stochRsiK: null, stochRsiD: null, stochState: null,
+        bbWidth: null, bbSqueeze: false,
+        oiPriceDivergence: null,
+        text: 'Gathering momentum data...', color: 'text-terminal-muted'
+    };
+
+    if (macd || bb || stochRsi) {
+        const macdBull = macd ? macd.macd > macd.signal : null;
+        const macdHistogram = macd ? macd.histogram : null;
+        const stochRsiK = stochRsi ? stochRsi.k : null;
+        const stochRsiD = stochRsi ? stochRsi.d : null;
+        const bbWidth = bb ? bb.width : null;
+        const bbSqueeze = bbWidth !== null && bbWidth < 2;
+
+        let stochState: MomentumInfo['stochState'] = null;
+        if (stochRsiK !== null) {
+            if (stochRsiK > 80) stochState = 'Overbought';
+            else if (stochRsiK < 20) stochState = 'Oversold';
+            else stochState = 'Neutral';
+        }
+
+        // OI/Price divergence: price up but OI falling = bearish; price down but OI falling = bullish (short covering)
+        let oiPriceDivergence: MomentumInfo['oiPriceDivergence'] = null;
+        if (oiHistory && oiHistory.length >= 2 && price && ema21) {
+            const recentOi = oiHistory.slice(-6);
+            const oiTrendUp = recentOi[recentOi.length - 1].value > recentOi[0].value;
+            const priceTrendUp = price > ema21;
+            if (priceTrendUp && !oiTrendUp) oiPriceDivergence = 'Bearish Divergence';
+            else if (!priceTrendUp && !oiTrendUp) oiPriceDivergence = 'Bullish Divergence';
+        }
+
+        // Summarize momentum text
+        const signals: string[] = [];
+        if (macdBull !== null) signals.push(macdBull ? 'MACD Bull' : 'MACD Bear');
+        if (stochState === 'Overbought') signals.push('StochRSI OB');
+        else if (stochState === 'Oversold') signals.push('StochRSI OS');
+        if (bbSqueeze) signals.push('BB Squeeze');
+        if (oiPriceDivergence) signals.push(oiPriceDivergence);
+
+        const bullSignals = [macdBull === true, stochState === 'Oversold'].filter(Boolean).length;
+        const bearSignals = [macdBull === false, stochState === 'Overbought'].filter(Boolean).length;
+
+        momentum = {
+            macdBull, macdHistogram, stochRsiK, stochRsiD, stochState,
+            bbWidth, bbSqueeze, oiPriceDivergence,
+            text: signals.length > 0 ? signals.join(' | ') : 'Neutral',
+            color: bearSignals > bullSignals ? 'text-terminal-red' : bullSignals > bearSignals ? 'text-terminal-green' : 'text-terminal-fg'
+        };
+    }
+
     return {
         price,
         rsi,
@@ -173,6 +242,7 @@ export function calculateMarketContext(symbol: string) {
         derivatives,
         execution,
         levelInteraction,
+        momentum,
         sessionPoc,
         sessionVah,
         sessionVal
