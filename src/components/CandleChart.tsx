@@ -3,7 +3,7 @@ import { createChart, ColorType, CandlestickSeries, LineSeries } from 'lightweig
 import type { IChartApi, ISeriesApi, IPriceLine } from 'lightweight-charts';
 import useWebSocket from 'react-use-websocket';
 import { useTerminalStore } from '../store/useTerminalStore';
-import { calculateEMA, calculateVWAP, calculateRSI, calculateATR, calculateSMA, calculateMACD, calculateBollingerBands, calculateStochRSI, calculateOBV } from '../utils/indicators';
+import { calculateEMA, calculateVWAP, calculateRSI, calculateATR, calculateSMA, calculateMACD, calculateBollingerBands, calculateStochRSI } from '../utils/indicators';
 import { type MarketType } from '../constants/binance';
 import { getKlineUrl, getWsUrl } from '../utils/market';
 import { formatPrice } from '../utils/formatters';
@@ -42,7 +42,6 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
     const macdSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const macdSignalSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const klinesDataRef = useRef<KlineData[]>([]);
-    const prevOBVRef = useRef<number>(0);
 
     // Indicator States for HUD
     const [latestAtr, setLatestAtr] = useState<number | null>(null);
@@ -239,7 +238,6 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                     const macdResult = calculateMACD(closes);
                     const bbResult = calculateBollingerBands(closes);
                     const stochRsiResult = calculateStochRSI(closes);
-                    const obvResult = calculateOBV(closes, volumes);
 
                     // Compute SMA of ATR (handling nulls)
                     const atrValues = atr.filter(a => a !== null) as number[];
@@ -288,9 +286,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                             ? { upper: lastBBUpper, middle: lastBBMiddle, lower: lastBBLower, width: lastBBWidth } : undefined,
                         stochRsi: (lastStochK !== null && lastStochD !== null)
                             ? { k: lastStochK, d: lastStochD } : undefined,
-                        obv: obvResult[obvResult.length - 1],
                     });
-                    prevOBVRef.current = obvResult[obvResult.length - 1];
                 }
             })
             .catch(err => console.error("Failed to fetch historical klines", err));
@@ -448,12 +444,6 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                                 ? { upper: lBBUpper, middle: lBBMiddle, lower: lBBLower, width: lBBWidth } : undefined,
                             stochRsi: (lStochK !== null && lStochD !== null)
                                 ? { k: lStochK, d: lStochD } : undefined,
-                            obv: (() => {
-                                const lc = closes[lastIndex], pc = closes[lastIndex - 1] ?? lc, vol = volumes[lastIndex];
-                                const newOBV = lc > pc ? prevOBVRef.current + vol : lc < pc ? prevOBVRef.current - vol : prevOBVRef.current;
-                                prevOBVRef.current = newOBV;
-                                return newOBV;
-                            })(),
                         });
 
                         // Force +/- 5% Y-Axis to match the Heatmap exactly

@@ -21,8 +21,13 @@
     "whale": true,
     "liquidation": true,
     "atr_expand": true,
-    "funding_extreme": true,
-    "test_ping": true
+    "extreme_funding": true,
+    "test_ping": true,
+    "macd_cross": true,
+    "bb_squeeze": true,
+    "bb_breakout": true,
+    "stoch_extreme": true,
+    "oi_divergence": true
   },
   "cooldowns": {
     "oi_spike": 60,
@@ -30,13 +35,18 @@
     "whale": 60,
     "liquidation": 60,
     "atr_expand": 60,
-    "funding_extreme": 60,
+    "extreme_funding": 60,
     "test_ping": 5,
     "market_context": 60,
     "regime_shift": 60,
     "volatility_state": 60,
     "order_flow": 60,
-    "level_testing": 60
+    "level_testing": 60,
+    "macd_cross": 300,
+    "bb_squeeze": 600,
+    "bb_breakout": 600,
+    "stoch_extreme": 300,
+    "oi_divergence": 600
   },
   "thresholds": {
     "global": {
@@ -49,7 +59,12 @@
       "rvolMultiplier": 3,
       "rsiOverbought": 70,
       "rsiOversold": 30,
-      "emaSeparationPct": 0.15
+      "emaSeparationPct": 0.15,
+      "macdFreshnessRatio": 0.1,
+      "bbSqueezeWidthPct": 2.0,
+      "stochOverbought": 85,
+      "stochOversold": 15,
+      "oiDivergenceLookbackBars": 6
     }
   },
   "monitoredTimeframes": [
@@ -114,6 +129,41 @@
       "1M"
     ],
     "rvol_spike": [
+      "1h",
+      "4h",
+      "1d",
+      "1w",
+      "1M"
+    ],
+    "macd_cross": [
+      "1h",
+      "4h",
+      "1d",
+      "1w",
+      "1M"
+    ],
+    "bb_squeeze": [
+      "1h",
+      "4h",
+      "1d",
+      "1w",
+      "1M"
+    ],
+    "bb_breakout": [
+      "1h",
+      "4h",
+      "1d",
+      "1w",
+      "1M"
+    ],
+    "stoch_extreme": [
+      "1h",
+      "4h",
+      "1d",
+      "1w",
+      "1M"
+    ],
+    "oi_divergence": [
       "1h",
       "4h",
       "1d",

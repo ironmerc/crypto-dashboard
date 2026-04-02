@@ -580,7 +580,8 @@ class MarketEngine:
                 macd_hist = ind.get("macd_hist")
                 macd_val = ind.get("macd")
                 if macd_hist is not None and macd_val is not None and macd_val != 0:
-                    is_fresh_cross = abs(macd_hist) < abs(macd_val) * 0.1
+                    freshness_ratio = float(thresholds.get("macdFreshnessRatio", 0.1))
+                    is_fresh_cross = abs(macd_hist) < abs(macd_val) * freshness_ratio
                     macd_bias = "Bull" if macd_hist > 0 else "Bear"
                     _, next_macd, macd_changed = self.debounced_state_change(symbol, "macd_cross", tf, macd_bias)
                     if macd_changed and is_fresh_cross:
@@ -596,7 +597,8 @@ class MarketEngine:
                 bb_upper = ind.get("bb_upper")
                 bb_lower = ind.get("bb_lower")
                 if bb_width is not None:
-                    if bb_width < 2.0:
+                    bb_squeeze_width = float(thresholds.get("bbSqueezeWidthPct", 2.0))
+                    if bb_width < bb_squeeze_width:
                         bb_state = "Squeeze"
                     elif bb_upper is not None and price > bb_upper:
                         bb_state = "Breakout_Up"
@@ -629,9 +631,11 @@ class MarketEngine:
                 stoch_k = ind.get("stoch_k")
                 stoch_d = ind.get("stoch_d")
                 if stoch_k is not None and stoch_d is not None:
-                    if stoch_k > 85 and stoch_k > stoch_d:
+                    stoch_ob = float(thresholds.get("stochOverbought", 85))
+                    stoch_os = float(thresholds.get("stochOversold", 15))
+                    if stoch_k > stoch_ob and stoch_k > stoch_d:
                         stoch_state = "Overbought"
-                    elif stoch_k < 15 and stoch_k < stoch_d:
+                    elif stoch_k < stoch_os and stoch_k < stoch_d:
                         stoch_state = "Oversold"
                     else:
                         stoch_state = "Neutral"
@@ -646,8 +650,9 @@ class MarketEngine:
 
                 # OI / Price Divergence
                 oi_history = symbol_state.get("oi_history", [])
-                if len(oi_history) >= 6:
-                    recent_oi = [float(h['v']) for h in oi_history[-6:]]
+                oi_divergence_lookback = max(2, int(float(thresholds.get("oiDivergenceLookbackBars", 6))))
+                if len(oi_history) >= oi_divergence_lookback:
+                    recent_oi = [float(h['v']) for h in oi_history[-oi_divergence_lookback:]]
                     oi_trend_up = recent_oi[-1] > recent_oi[0]
                     price_trend_up = price > ema21
                     if price_trend_up and not oi_trend_up:

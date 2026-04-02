@@ -95,7 +95,12 @@
         "rvolMultiplier",
         "rsiOverbought",
         "rsiOversold",
-        "emaSeparationPct"
+        "emaSeparationPct",
+        "macdFreshnessRatio",
+        "bbSqueezeWidthPct",
+        "stochOverbought",
+        "stochOversold",
+        "oiDivergenceLookbackBars"
       ],
       "properties": {
         "whaleMinAmount": { "type": "number" },
@@ -107,9 +112,13 @@
         "rvolMultiplier": { "type": "number" },
         "rsiOverbought": { "type": "number" },
         "rsiOversold": { "type": "number" },
-        "emaSeparationPct": { "type": "number" }
+        "emaSeparationPct": { "type": "number" },
+        "macdFreshnessRatio": { "type": "number" },
+        "bbSqueezeWidthPct": { "type": "number" },
+        "stochOverbought": { "type": "number" },
+        "stochOversold": { "type": "number" },
+        "oiDivergenceLookbackBars": { "type": "number" }
       }
     }
   }
 }
-

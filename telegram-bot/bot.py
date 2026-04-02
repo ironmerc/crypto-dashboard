@@ -66,7 +66,12 @@ DEFAULT_CONFIG = {
             "rvolMultiplier": 3.0,
             "rsiOverbought": 70,
             "rsiOversold": 30,
-            "emaSeparationPct": 0.15
+            "emaSeparationPct": 0.15,
+            "macdFreshnessRatio": 0.1,
+            "bbSqueezeWidthPct": 2.0,
+            "stochOverbought": 85,
+            "stochOversold": 15,
+            "oiDivergenceLookbackBars": 6,
         }
     },
     "monitoredTimeframes": ["1m", "3m", "5m", "15m", "1h", "4h", "1d", "1w", "1M"],

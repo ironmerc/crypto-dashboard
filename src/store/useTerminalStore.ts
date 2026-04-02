@@ -67,6 +67,11 @@ export interface TelegramThresholds {
     rsiOverbought: number;
     rsiOversold: number;
     emaSeparationPct: number;
+    macdFreshnessRatio: number;
+    bbSqueezeWidthPct: number;
+    stochOverbought: number;
+    stochOversold: number;
+    oiDivergenceLookbackBars: number;
 }
 
 export interface TelegramConfig {
@@ -95,6 +100,52 @@ const DEFAULT_TIMEFRAMES_BY_CATEGORY: Record<string, string[]> = {
     order_flow: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
     rsi_extreme: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
     rvol_spike: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
+    macd_cross: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
+    bb_squeeze: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
+    bb_breakout: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
+    stoch_extreme: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
+    oi_divergence: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
+};
+
+const DEFAULT_TELEGRAM_THRESHOLDS: TelegramThresholds = {
+    whaleMinAmount: 500000,
+    liquidationMinAmount: 1000000,
+    oiSpikePercentage: 1.5,
+    fundingExtremeRate: 0.05,
+    atrExpansionRatio: 1.3,
+    whaleMomentumDelta: 5000000,
+    rvolMultiplier: 3.0,
+    rsiOverbought: 70,
+    rsiOversold: 30,
+    emaSeparationPct: 0.15,
+    macdFreshnessRatio: 0.1,
+    bbSqueezeWidthPct: 2.0,
+    stochOverbought: 85,
+    stochOversold: 15,
+    oiDivergenceLookbackBars: 6,
+};
+
+const normalizeThresholdScopes = (
+    thresholds?: Record<string, Partial<TelegramThresholds>>
+): Record<string, TelegramThresholds> => {
+    const source = thresholds || {};
+    const normalizedGlobal: TelegramThresholds = {
+        ...DEFAULT_TELEGRAM_THRESHOLDS,
+        ...(source.global || {}),
+    };
+    const normalized: Record<string, TelegramThresholds> = {
+        global: normalizedGlobal,
+    };
+
+    Object.entries(source).forEach(([scope, value]) => {
+        if (scope === 'global') return;
+        normalized[scope] = {
+            ...normalizedGlobal,
+            ...(value || {}),
+        };
+    });
+
+    return normalized;
 };
 
 interface TerminalState {
@@ -154,7 +205,6 @@ interface TerminalState {
     currentMACD: Record<string, { macd: number; signal: number; histogram: number }>;
     currentBB: Record<string, { upper: number; middle: number; lower: number; width: number }>;
     currentStochRSI: Record<string, { k: number; d: number }>;
-    currentOBV: Record<string, number>;
     // Cross-asset signals
     coinbasePremium: Record<string, number>;
     sectorBreadth: { aboveVWAP: number; aboveEMA21: number; total: number };
@@ -165,7 +215,6 @@ interface TerminalState {
         macd?: { macd: number; signal: number; histogram: number };
         bb?: { upper: number; middle: number; lower: number; width: number };
         stochRsi?: { k: number; d: number };
-        obv?: number;
     }) => void;
 
     // Telegram Configurations (Persisted)
@@ -373,7 +422,6 @@ export const useTerminalStore = create<TerminalState>()(
             currentMACD: {},
             currentBB: {},
             currentStochRSI: {},
-            currentOBV: {},
             coinbasePremium: {},
             sectorBreadth: { aboveVWAP: 0, aboveEMA21: 0, total: 0 },
             setCoinbasePremium: (symbol, pct) => set((state) => ({
@@ -390,7 +438,6 @@ export const useTerminalStore = create<TerminalState>()(
                 currentMACD: indicators.macd !== undefined ? { ...state.currentMACD, [symbol]: indicators.macd } : state.currentMACD,
                 currentBB: indicators.bb !== undefined ? { ...state.currentBB, [symbol]: indicators.bb } : state.currentBB,
                 currentStochRSI: indicators.stochRsi !== undefined ? { ...state.currentStochRSI, [symbol]: indicators.stochRsi } : state.currentStochRSI,
-                currentOBV: indicators.obv !== undefined ? { ...state.currentOBV, [symbol]: indicators.obv } : state.currentOBV,
             })),
 
             theme: 'terminal',
@@ -451,25 +498,15 @@ export const useTerminalStore = create<TerminalState>()(
                 categories: {},
                 cooldowns: {},
                 timeframes: { ...DEFAULT_TIMEFRAMES_BY_CATEGORY },
-                thresholds: {
-                    global: {
-                        whaleMinAmount: 500000,
-                        liquidationMinAmount: 1000000,
-                        oiSpikePercentage: 1.5,
-                        fundingExtremeRate: 0.05,
-                        atrExpansionRatio: 1.3,
-                        whaleMomentumDelta: 5000000,
-                        rvolMultiplier: 3.0,
-                        rsiOverbought: 70,
-                        rsiOversold: 30,
-                        emaSeparationPct: 0.15,
-                    }
-                },
+                thresholds: normalizeThresholdScopes(),
             },
             isConfigFetched: false,
             updateTelegramConfig: (updates, skipSync = false) => {
                 set((state) => {
                     const current = state.telegramConfig || {};
+                    const mergedThresholds = updates.thresholds
+                        ? normalizeThresholdScopes({ ...(current.thresholds || {}), ...updates.thresholds })
+                        : normalizeThresholdScopes(current.thresholds);
                     return {
                         telegramConfig: {
                             ...current,
@@ -478,7 +515,7 @@ export const useTerminalStore = create<TerminalState>()(
                             quietHours: updates.quietHours ? { ...(current.quietHours || {}), ...updates.quietHours } : (current.quietHours || {}),
                             cooldowns: updates.cooldowns ? { ...(current.cooldowns || {}), ...updates.cooldowns } : (current.cooldowns || {}),
                             timeframes: updates.timeframes ? { ...(current.timeframes || {}), ...updates.timeframes } : (current.timeframes || {}),
-                            thresholds: updates.thresholds ? { ...(current.thresholds || {}), ...updates.thresholds } : (current.thresholds || {})
+                            thresholds: mergedThresholds,
                         },
                         isConfigFetched: updates.globalEnabled !== undefined || state.isConfigFetched
                     };
@@ -514,7 +551,7 @@ export const useTerminalStore = create<TerminalState>()(
                         telegramConfig: {
                             ...state.telegramConfig,
                             monitoredSymbols: newSymbols,
-                            thresholds: newThresholds
+                            thresholds: normalizeThresholdScopes(newThresholds)
                         }
                     };
                 });
@@ -569,6 +606,7 @@ export const useTerminalStore = create<TerminalState>()(
                             }
                             return { symbol: s, type };
                         });
+                        state.telegramConfig.thresholds = normalizeThresholdScopes(state.telegramConfig.thresholds as Record<string, Partial<TelegramThresholds>>);
                     }
                 }
             },

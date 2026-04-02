@@ -93,6 +93,26 @@ class AlertPolicyTests(unittest.TestCase):
         )
         self.assertFalse(allowed)
 
+    def test_new_category_toggle_blocks_macd_cross(self):
+        allowed = alert_policy.should_accept_alert(
+            alert={"type": "macd_cross", "symbol": "BTCUSDT", "tf": "1h"},
+            config={
+                "globalEnabled": True,
+                "categories": {"macd_cross": False},
+            },
+        )
+        self.assertFalse(allowed)
+
+    def test_new_category_timeframe_blocks_bb_breakout(self):
+        allowed = alert_policy.should_accept_alert(
+            alert={"type": "bb_breakout", "symbol": "BTCUSDT", "tf": "15m"},
+            config={
+                "globalEnabled": True,
+                "timeframes": {"bb_breakout": ["1h", "4h"]},
+            },
+        )
+        self.assertFalse(allowed)
+
 
 if __name__ == "__main__":
     unittest.main()

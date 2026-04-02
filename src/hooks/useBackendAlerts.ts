@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { usePageVisibility } from './usePageVisibility';
+import { formatTelegramMessageText } from '../utils/telegramMessageFormatting';
 
 interface BotHistoryEntry {
     timestamp: string;
@@ -11,13 +12,11 @@ interface BotHistoryEntry {
     tf?: string;
 }
 
-const stripHtml = (input: string) => input.replace(/<[^>]*>/g, '');
-
 const normalizeCategory = (category: string) =>
     (category || 'backend_alert').replace(/_/g, ' ').toUpperCase();
 
 export const parseBotHistoryMessage = (rawMessage: string, category: string, tf?: string) => {
-    const plainLines = stripHtml(rawMessage || '')
+    const plainLines = formatTelegramMessageText(rawMessage || '')
         .split('\n')
         .map((line) => line.trim())
         .filter(Boolean);

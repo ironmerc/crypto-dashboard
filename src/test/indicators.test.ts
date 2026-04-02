@@ -3,7 +3,6 @@ import {
     calculateMACD,
     calculateBollingerBands,
     calculateStochRSI,
-    calculateOBV,
 } from '../utils/indicators';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -216,53 +215,3 @@ describe('calculateStochRSI', () => {
 });
 
 // ─── OBV ─────────────────────────────────────────────────────────────────────
-
-describe('calculateOBV', () => {
-    it('returns array same length as input starting at 0', () => {
-        const closes = [100, 101, 100];
-        const volumes = [500, 300, 200];
-        const obv = calculateOBV(closes, volumes);
-        expect(obv).toHaveLength(3);
-        expect(obv[0]).toBe(0);
-    });
-
-    it('adds volume when price rises', () => {
-        const closes = [100, 101, 102];
-        const volumes = [100, 200, 300];
-        const obv = calculateOBV(closes, volumes);
-        expect(obv[1]).toBe(200);
-        expect(obv[2]).toBe(500);
-    });
-
-    it('subtracts volume when price falls', () => {
-        const closes = [102, 101, 100];
-        const volumes = [100, 200, 300];
-        const obv = calculateOBV(closes, volumes);
-        expect(obv[1]).toBe(-200);
-        expect(obv[2]).toBe(-500);
-    });
-
-    it('carries OBV unchanged when price is flat', () => {
-        const closes = [100, 100, 100];
-        const volumes = [100, 999, 999];
-        const obv = calculateOBV(closes, volumes);
-        expect(obv[0]).toBe(0);
-        expect(obv[1]).toBe(0);
-        expect(obv[2]).toBe(0);
-    });
-
-    it('handles mixed up/down/flat correctly', () => {
-        const closes  = [100, 102, 101, 101, 103];
-        const volumes = [100, 200, 150, 50,  300];
-        const obv = calculateOBV(closes, volumes);
-        // 0, +200, -150, 0, +300
-        expect(obv).toEqual([0, 200, 50, 50, 350]);
-    });
-
-    it('OBV trends up on a persistently rising series', () => {
-        const closes = ramp(20, 100, 1);
-        const volumes = flat(20, 100);
-        const obv = calculateOBV(closes, volumes);
-        expect(obv[obv.length - 1]).toBeGreaterThan(0);
-    });
-});

@@ -221,12 +221,3 @@ export function calculateStochRSI(
     return { k: kPadded, d: dPadded };
 }
 
-export function calculateOBV(closes: number[], volumes: number[]): number[] {
-    const obv: number[] = [0];
-    for (let i = 1; i < closes.length; i++) {
-        if (closes[i] > closes[i - 1]) obv.push(obv[i - 1] + volumes[i]);
-        else if (closes[i] < closes[i - 1]) obv.push(obv[i - 1] - volumes[i]);
-        else obv.push(obv[i - 1]);
-    }
-    return obv;
-}

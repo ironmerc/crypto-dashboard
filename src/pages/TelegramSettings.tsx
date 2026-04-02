@@ -4,48 +4,14 @@ import { useTerminalStore } from '../store/useTerminalStore';
 import { sendTelegramAlert, getCurrentSession } from '../hooks/useSmartAlerts';
 import { ShieldAlert, ArrowLeft, Activity, Clock, Bell, Sliders, Zap, Globe, Info } from 'lucide-react';
 import { fetchConfigFromBot } from '../utils/syncConfig';
-
-const ALL_TIMEFRAMES = ["1m", "3m", "5m", "15m", "1h", "4h", "1d", "1w", "1M"];
-const ALL_SESSIONS = ["London", "US", "Asia"];
-
-// Categories that depend on specific candle intervals (MTF)
-const TIMEFRAME_SUPPORTED_CATEGORIES = [
-    'atr_expand',
-    'context_summary',
-    'ema_cross',
-    'level_testing',
-    'oi_spike',
-    'order_flow',
-    'rsi_extreme',
-    'rvol_spike'
-];
-
-const HELP_CONTENT: Record<string, string> = {
-    // Categories
-    'atr_expand': 'Uses ATR Ratio to detect when price ranges are expanding rapidly (high risk) or contracting (breakout potential).',
-    'context_summary': 'A state analyzer that alerts only when the combined Regime, Flow, and Volatility states shift.',
-    'ema_cross': 'Identifies Trend vs. Range conditions based on EMA 21/50 crossovers and price positioning.',
-    'extreme_funding': 'Alerts on unbalanced leverage. Extremely high/low rates increase the risk of cascading squeeze events.',
-    'level_testing': 'Detects when price interacts with high-volume nodes like POC or technical anchors like VWAP.',
-    'liquidation': 'Alerts on forced order closures. High clusters of liquidations often mark local price exhaustion.',
-    'market_context': 'Periodic (4h) and Daily (24h) summaries of overall market health and cumulative flows.',
-    'oi_spike': 'Monitors sudden leverage changes. Spikes suggest new aggressive positioning; Flushes suggest liquidations or mass profit-taking.',
-    'order_flow': 'Combines Price and OI delta to identify Active Long Building vs Short Covering dynamics.',
-    'rsi_extreme': 'Signals overbought (>70) or oversold (<30) conditions where momentum may be exhausted.',
-    'rvol_spike': 'Alerts when volume is significantly higher than the 20-period average, indicating high conviction.',
-    'whale': 'Tracks large individual orders and net flows. Can signal localized support/resistance or institutional aggression.',
-
-    // Thresholds
-    'atrExpansionRatio': 'The ratio of current candle range vs average range. 1.3x indicates significant volatility expansion.',
-    'emaSeparationPct': 'The percentage gap between EMA 21 and 50 required to classify a trend as "Strong."',
-    'fundingExtremeRate': 'The percentage rate at which funding is considered unbalanced (e.g., 0.05% per 8h).',
-    'liquidationMinAmount': 'The minimum dollar volume of a forced order to trigger a Liquidation notification.',
-    'oiSpikePercentage': 'The percentage change in Open Interest over a 5-minute rolling window required for an alert.',
-    'rsiOverbought': 'The RSI level above which the market is considered over-extended and vulnerable to a pullback.',
-    'rsiOversold': 'The RSI level below which the market is considered oversold and potential for a relief bounce.',
-    'whaleMinAmount': 'The minimum dollar volume required to trigger a individual Whale Trade notification.',
-    'whaleMomentumDelta': 'The net aggression floor ($) required to trigger a Whale Momentum Shift alert.'
-};
+import { formatTelegramMessageText } from '../utils/telegramMessageFormatting';
+import {
+    ALERT_CATEGORY_IDS,
+    ALL_SESSIONS,
+    ALL_TIMEFRAMES,
+    HELP_CONTENT,
+    TIMEFRAME_SUPPORTED_CATEGORIES,
+} from './telegramSettingsConfig';
 
 function InfoTooltip({ id }: { id: string }) {
     const [show, setShow] = useState(false);
@@ -227,6 +193,31 @@ export default function TelegramSettings() {
                 title = `[BTCUSDT] 🎢 RSI Extreme Detected`;
                 message = "<b>Status:</b> 🔴 OVERBOUGHT\n<b>Current RSI:</b> 74.2\n<b>Threshold:</b> 70\n<b>Timeframe:</b> 1h\n\n<i>Price is extended. Potential for mean reversion.</i>";
                 category = "rsi_extreme";
+                break;
+            case 'macd_cross':
+                title = `[BTCUSDT] MACD Cross`;
+                message = "<b>Direction:</b> Bullish\n<b>Histogram:</b> 0.0042\n<b>Freshness:</b> 0.08x\n<b>Timeframe:</b> 1h\n\n<i>Momentum is turning while the cross is still fresh.</i>";
+                category = "macd_cross";
+                break;
+            case 'bb_squeeze':
+                title = `[BTCUSDT] BB Squeeze`;
+                message = "<b>BB Width:</b> 1.8%\n<b>Threshold:</b> 2.0%\n<b>Timeframe:</b> 4h\n\n<i>Compression is building. Expansion risk is rising.</i>";
+                category = "bb_squeeze";
+                break;
+            case 'bb_breakout':
+                title = `[BTCUSDT] BB Breakout`;
+                message = "<b>Direction:</b> Upper Band Break\n<b>BB Width:</b> 4.7%\n<b>Timeframe:</b> 1h\n\n<i>Price is closing outside the band with follow-through.</i>";
+                category = "bb_breakout";
+                break;
+            case 'stoch_extreme':
+                title = `[BTCUSDT] StochRSI Extreme`;
+                message = "<b>Status:</b> Overbought\n<b>K / D:</b> 91.4 / 86.2\n<b>Timeframe:</b> 1h\n\n<i>Short-term momentum is stretched.</i>";
+                category = "stoch_extreme";
+                break;
+            case 'oi_divergence':
+                title = `[BTCUSDT] OI / Price Divergence`;
+                message = "<b>Signal:</b> Bearish Divergence\n<b>Price:</b> Rising above EMA21\n<b>OI Trend:</b> Falling over last 6 bars\n\n<i>The move is climbing with weaker participation.</i>";
+                category = "oi_divergence";
                 break;
             default:
                 title = `[SYSTEM] Diagnostic Ping`;
@@ -481,7 +472,7 @@ export default function TelegramSettings() {
                                             <div className="bg-terminal-surface/40 border border-terminal-border rounded-xl p-6 backdrop-blur-sm h-full hover:border-terminal-border/80 transition-all">
                                                 <div className="space-y-6">
                                                     {/* Subscription groups implementation... */}
-                                                    {['atr_expand', 'context_summary', 'ema_cross', 'extreme_funding', 'level_testing', 'liquidation', 'market_context', 'oi_spike', 'order_flow', 'rsi_extreme', 'rvol_spike', 'whale'].map(id => (
+                                                    {ALERT_CATEGORY_IDS.map(id => (
                                                         <div key={id} className="p-4 bg-terminal-bg/50 border border-terminal-border/60 hover:border-terminal-blue/30 rounded-xl space-y-4 transition-all hover:shadow-[0_0_15px_var(--color-accent)_10]">
                                                             <div className="flex items-center justify-between">
                                                                 <div className="flex items-center space-x-3">
@@ -501,7 +492,7 @@ export default function TelegramSettings() {
                                                             </div>
 
                                                             <div className="flex flex-wrap items-center gap-4 pt-4 border-t border-terminal-border/30">
-                                                                {TIMEFRAME_SUPPORTED_CATEGORIES.includes(id) && (
+                                                                {TIMEFRAME_SUPPORTED_CATEGORIES.includes(id as (typeof TIMEFRAME_SUPPORTED_CATEGORIES)[number]) && (
                                                                     <div className="flex-1 min-w-[200px]">
                                                                         <label className="block text-[9px] font-bold text-terminal-muted/70 uppercase tracking-widest mb-2 px-1">Active Timeframes</label>
                                                                         <div className="flex flex-wrap gap-1.5">
@@ -686,6 +677,56 @@ export default function TelegramSettings() {
                                                         </div>
 
                                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 pt-4 border-t border-terminal-border/50">
+                                                            <div>
+                                                                <label className="flex items-center text-[10px] font-bold text-terminal-muted/70 mb-3 uppercase tracking-wider">
+                                                                    MACD Freshness Ratio <InfoTooltip id="macdFreshnessRatio" />
+                                                                </label>
+                                                                <input
+                                                                    type="range"
+                                                                    min="0.02"
+                                                                    max="0.5"
+                                                                    step="0.01"
+                                                                    value={config.thresholds?.[editingSymbol]?.macdFreshnessRatio || config.thresholds?.global?.macdFreshnessRatio || 0.1}
+                                                                    onChange={(e) => {
+                                                                        const val = parseFloat(e.target.value);
+                                                                        const current = config.thresholds?.[editingSymbol] || config.thresholds?.global;
+                                                                        updateConfig({ thresholds: { ...config.thresholds, [editingSymbol]: { ...current, macdFreshnessRatio: val } } });
+                                                                    }}
+                                                                    className="w-full h-1.5 bg-terminal-border rounded-lg appearance-none cursor-pointer accent-terminal-blue"
+                                                                />
+                                                                <div className="flex justify-between mt-2 font-mono text-[10px] text-terminal-muted">
+                                                                    <span>0.02x</span>
+                                                                    <span className="text-terminal-blue font-bold">{config.thresholds?.[editingSymbol]?.macdFreshnessRatio || config.thresholds?.global?.macdFreshnessRatio || 0.1}x</span>
+                                                                    <span>0.50x</span>
+                                                                </div>
+                                                            </div>
+
+                                                            <div>
+                                                                <label className="flex items-center text-[10px] font-bold text-terminal-muted/70 mb-3 uppercase tracking-wider">
+                                                                    BB Squeeze Width (%) <InfoTooltip id="bbSqueezeWidthPct" />
+                                                                </label>
+                                                                <input
+                                                                    type="range"
+                                                                    min="0.5"
+                                                                    max="10"
+                                                                    step="0.1"
+                                                                    value={config.thresholds?.[editingSymbol]?.bbSqueezeWidthPct || config.thresholds?.global?.bbSqueezeWidthPct || 2.0}
+                                                                    onChange={(e) => {
+                                                                        const val = parseFloat(e.target.value);
+                                                                        const current = config.thresholds?.[editingSymbol] || config.thresholds?.global;
+                                                                        updateConfig({ thresholds: { ...config.thresholds, [editingSymbol]: { ...current, bbSqueezeWidthPct: val } } });
+                                                                    }}
+                                                                    className="w-full h-1.5 bg-terminal-border rounded-lg appearance-none cursor-pointer accent-terminal-blue"
+                                                                />
+                                                                <div className="flex justify-between mt-2 font-mono text-[10px] text-terminal-muted">
+                                                                    <span>0.5%</span>
+                                                                    <span className="text-terminal-blue font-bold">{config.thresholds?.[editingSymbol]?.bbSqueezeWidthPct || config.thresholds?.global?.bbSqueezeWidthPct || 2.0}%</span>
+                                                                    <span>10%</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 pt-4 border-t border-terminal-border/50">
                                                             {/* RSI Overbought */}
                                                             <div>
                                                                 <label className="flex items-center text-[10px] font-bold text-terminal-muted/70 mb-3 uppercase tracking-wider">
@@ -785,6 +826,82 @@ export default function TelegramSettings() {
                                                                     <span>1.0x</span>
                                                                     <span className="text-terminal-blue font-bold">{config.thresholds?.[editingSymbol]?.rvolMultiplier || config.thresholds?.global?.rvolMultiplier || 3.0}x</span>
                                                                     <span>10.0x</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 pt-4 border-t border-terminal-border/50">
+                                                            <div>
+                                                                <label className="flex items-center text-[10px] font-bold text-terminal-muted/70 mb-3 uppercase tracking-wider">
+                                                                    Stoch Overbought <InfoTooltip id="stochOverbought" />
+                                                                </label>
+                                                                <input
+                                                                    type="range"
+                                                                    min="50"
+                                                                    max="100"
+                                                                    step="1"
+                                                                    value={config.thresholds?.[editingSymbol]?.stochOverbought || config.thresholds?.global?.stochOverbought || 85}
+                                                                    onChange={(e) => {
+                                                                        const val = parseInt(e.target.value);
+                                                                        const current = config.thresholds?.[editingSymbol] || config.thresholds?.global;
+                                                                        updateConfig({ thresholds: { ...config.thresholds, [editingSymbol]: { ...current, stochOverbought: val } } });
+                                                                    }}
+                                                                    className="w-full h-1.5 bg-terminal-border rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                                                                />
+                                                                <div className="flex justify-between mt-2 font-mono text-[10px] text-terminal-muted">
+                                                                    <span>50</span>
+                                                                    <span className="text-emerald-400 font-bold">{config.thresholds?.[editingSymbol]?.stochOverbought || config.thresholds?.global?.stochOverbought || 85}</span>
+                                                                    <span>100</span>
+                                                                </div>
+                                                            </div>
+
+                                                            <div>
+                                                                <label className="flex items-center text-[10px] font-bold text-terminal-muted/70 mb-3 uppercase tracking-wider">
+                                                                    Stoch Oversold <InfoTooltip id="stochOversold" />
+                                                                </label>
+                                                                <input
+                                                                    type="range"
+                                                                    min="0"
+                                                                    max="50"
+                                                                    step="1"
+                                                                    value={config.thresholds?.[editingSymbol]?.stochOversold || config.thresholds?.global?.stochOversold || 15}
+                                                                    onChange={(e) => {
+                                                                        const val = parseInt(e.target.value);
+                                                                        const current = config.thresholds?.[editingSymbol] || config.thresholds?.global;
+                                                                        updateConfig({ thresholds: { ...config.thresholds, [editingSymbol]: { ...current, stochOversold: val } } });
+                                                                    }}
+                                                                    className="w-full h-1.5 bg-terminal-border rounded-lg appearance-none cursor-pointer accent-red-500"
+                                                                />
+                                                                <div className="flex justify-between mt-2 font-mono text-[10px] text-terminal-muted">
+                                                                    <span>0</span>
+                                                                    <span className="text-red-400 font-bold">{config.thresholds?.[editingSymbol]?.stochOversold || config.thresholds?.global?.stochOversold || 15}</span>
+                                                                    <span>50</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="pt-4 border-t border-terminal-border/50">
+                                                            <div>
+                                                                <label className="flex items-center text-[10px] font-bold text-terminal-muted/70 mb-3 uppercase tracking-wider">
+                                                                    OI Divergence Lookback <InfoTooltip id="oiDivergenceLookbackBars" />
+                                                                </label>
+                                                                <input
+                                                                    type="range"
+                                                                    min="2"
+                                                                    max="24"
+                                                                    step="1"
+                                                                    value={config.thresholds?.[editingSymbol]?.oiDivergenceLookbackBars || config.thresholds?.global?.oiDivergenceLookbackBars || 6}
+                                                                    onChange={(e) => {
+                                                                        const val = parseInt(e.target.value);
+                                                                        const current = config.thresholds?.[editingSymbol] || config.thresholds?.global;
+                                                                        updateConfig({ thresholds: { ...config.thresholds, [editingSymbol]: { ...current, oiDivergenceLookbackBars: val } } });
+                                                                    }}
+                                                                    className="w-full h-1.5 bg-terminal-border rounded-lg appearance-none cursor-pointer accent-terminal-blue"
+                                                                />
+                                                                <div className="flex justify-between mt-2 font-mono text-[10px] text-terminal-muted">
+                                                                    <span>2 bars</span>
+                                                                    <span className="text-terminal-blue font-bold">{config.thresholds?.[editingSymbol]?.oiDivergenceLookbackBars || config.thresholds?.global?.oiDivergenceLookbackBars || 6} bars</span>
+                                                                    <span>24 bars</span>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -905,16 +1022,22 @@ export default function TelegramSettings() {
                                                         className="w-full bg-terminal-bg/50 border border-terminal-border rounded-lg px-3 py-3 text-xs md:text-sm text-terminal-fg/80 focus:border-terminal-blue focus:ring-1 focus:ring-terminal-blue/50 outline-none cursor-pointer transition-all shadow-inner"
                                                     >
                                                         <option value="atr_expand">ATR Expansion (Volatility)</option>
+                                                        <option value="funding_extreme">Extreme Funding</option>
                                                         <option value="context_summary">Context Summary Shift</option>
                                                         <option value="ema_cross">Trend Stretch (Regime Shift)</option>
                                                         <option value="level_testing">Level Interaction (POC/VWAP)</option>
                                                         <option value="liquidation">Liquidations (Forced Orders)</option>
+                                                        <option value="macd_cross">MACD Cross</option>
                                                         <option value="market_context_summary">Market Wrap/Daily Summary</option>
+                                                        <option value="bb_squeeze">BB Squeeze</option>
+                                                        <option value="bb_breakout">BB Breakout</option>
                                                         <option value="oi_spike">OI Spike/Flush (Leverage)</option>
+                                                        <option value="oi_divergence">OI / Price Divergence</option>
                                                         <option value="order_flow">Order Flow Shift (Aggression)</option>
                                                         <option value="ping">System Connectivity Ping</option>
                                                         <option value="rsi_extreme">RSI Extreme (Overbought/Oversold)</option>
                                                         <option value="rvol">Volume Surge (RVOL Spike)</option>
+                                                        <option value="stoch_extreme">StochRSI Extreme</option>
                                                         <option value="whale">Whale Activity (Individual Blocks)</option>
                                                     </select>
                                                 </div>
@@ -960,7 +1083,7 @@ export default function TelegramSettings() {
                                                                         {new Date(item.timestamp).toLocaleTimeString()}
                                                                     </span>
                                                                 </div>
-                                                                <p className="text-terminal-muted leading-relaxed font-mono line-clamp-2 md:line-clamp-none pl-1 border-l-2 border-terminal-border/50 group-hover:border-terminal-blue/30 transition-colors">{item.message}</p>
+                                                                <p className="text-terminal-muted leading-relaxed whitespace-pre-line font-mono line-clamp-2 md:line-clamp-none pl-1 border-l-2 border-terminal-border/50 group-hover:border-terminal-blue/30 transition-colors">{formatTelegramMessageText(item.message)}</p>
                                                             </div>
                                                         ))}
                                                     </div>

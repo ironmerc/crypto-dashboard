@@ -48,8 +48,11 @@ class ConfigUtilsTests(unittest.TestCase):
     def test_keeps_valid_shape_unchanged(self):
         original = {
             "thresholds": {
-                "global": {"whaleMinAmount": 500_000},
-                "BTCUSDT": {"whaleMinAmount": 700_000},
+                "global": dict(config_utils.DEFAULT_THRESHOLDS),
+                "BTCUSDT": {
+                    **config_utils.DEFAULT_THRESHOLDS,
+                    "whaleMinAmount": 700_000,
+                },
             },
             "timeframes": config_utils.default_timeframes_for_sensitive_categories(),
         }
@@ -91,6 +94,31 @@ class ConfigUtilsTests(unittest.TestCase):
         self.assertEqual(normalized["timeframes"]["atr_expand"], ["1h", "4h"])
         self.assertEqual(normalized["timeframes"]["ema_cross"], ["1h", "4h", "1d", "1w", "1M"])
         self.assertEqual(normalized["timeframes"]["rsi_extreme"], ["1h", "4h", "1d", "1w", "1M"])
+        self.assertEqual(normalized["timeframes"]["macd_cross"], ["1h", "4h", "1d", "1w", "1M"])
+        self.assertEqual(normalized["timeframes"]["bb_squeeze"], ["1h", "4h", "1d", "1w", "1M"])
+        self.assertEqual(normalized["timeframes"]["bb_breakout"], ["1h", "4h", "1d", "1w", "1M"])
+        self.assertEqual(normalized["timeframes"]["stoch_extreme"], ["1h", "4h", "1d", "1w", "1M"])
+        self.assertEqual(normalized["timeframes"]["oi_divergence"], ["1h", "4h", "1d", "1w", "1M"])
+
+    def test_normalizes_new_threshold_keys_into_global(self):
+        original = {
+            "thresholds": {
+                "macdFreshnessRatio": 0.15,
+                "bbSqueezeWidthPct": 1.8,
+                "stochOverbought": 88,
+                "stochOversold": 12,
+                "oiDivergenceLookbackBars": 8,
+            }
+        }
+
+        normalized, changed, _ = config_utils.normalize_config_shape(original)
+
+        self.assertTrue(changed)
+        self.assertEqual(normalized["thresholds"]["global"]["macdFreshnessRatio"], 0.15)
+        self.assertEqual(normalized["thresholds"]["global"]["bbSqueezeWidthPct"], 1.8)
+        self.assertEqual(normalized["thresholds"]["global"]["stochOverbought"], 88)
+        self.assertEqual(normalized["thresholds"]["global"]["stochOversold"], 12)
+        self.assertEqual(normalized["thresholds"]["global"]["oiDivergenceLookbackBars"], 8)
 
 
 if __name__ == "__main__":
