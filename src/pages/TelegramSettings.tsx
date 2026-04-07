@@ -1023,17 +1023,14 @@ export default function TelegramSettings() {
                                                     >
                                                         <option value="atr_expand">ATR Expansion (Volatility)</option>
                                                         <option value="funding_extreme">Extreme Funding</option>
-                                                        <option value="context_summary">Context Summary Shift</option>
                                                         <option value="ema_cross">Trend Stretch (Regime Shift)</option>
                                                         <option value="level_testing">Level Interaction (POC/VWAP)</option>
                                                         <option value="liquidation">Liquidations (Forced Orders)</option>
                                                         <option value="macd_cross">MACD Cross</option>
-                                                        <option value="market_context_summary">Market Wrap/Daily Summary</option>
                                                         <option value="bb_squeeze">BB Squeeze</option>
                                                         <option value="bb_breakout">BB Breakout</option>
                                                         <option value="oi_spike">OI Spike/Flush (Leverage)</option>
                                                         <option value="oi_divergence">OI / Price Divergence</option>
-                                                        <option value="order_flow">Order Flow Shift (Aggression)</option>
                                                         <option value="ping">System Connectivity Ping</option>
                                                         <option value="rsi_extreme">RSI Extreme (Overbought/Oversold)</option>
                                                         <option value="rvol">Volume Surge (RVOL Spike)</option>

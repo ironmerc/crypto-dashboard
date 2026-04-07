@@ -37,10 +37,8 @@
     "atr_expand": 60,
     "extreme_funding": 60,
     "test_ping": 5,
-    "market_context": 60,
     "regime_shift": 60,
     "volatility_state": 60,
-    "order_flow": 60,
     "level_testing": 60,
     "macd_cross": 300,
     "bb_squeeze": 600,
@@ -86,13 +84,6 @@
       "1w",
       "1M"
     ],
-    "context_summary": [
-      "1h",
-      "4h",
-      "1d",
-      "1w",
-      "1M"
-    ],
     "ema_cross": [
       "1h",
       "4h",
@@ -108,13 +99,6 @@
       "1M"
     ],
     "oi_spike": [
-      "1h",
-      "4h",
-      "1d",
-      "1w",
-      "1M"
-    ],
-    "order_flow": [
       "1h",
       "4h",
       "1d",

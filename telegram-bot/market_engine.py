@@ -169,6 +169,89 @@ class MarketEngine:
         allowed = self.config.get("activeSessions", ["London", "US", "Asia"])
         return current in allowed
 
+    async def sync_price_alerts(self, alerts: List[Dict[str, Any]]) -> None:
+        """Persists the current one-shot price alert set back to the bot config."""
+        self.config["priceAlerts"] = alerts
+        async with ClientSession() as session:
+            try:
+                async with session.post(f"{self.bot_url}/config", json={"priceAlerts": alerts}) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"Failed to sync price alerts to bot: {await resp.text()}")
+            except Exception as e:
+                logger.error(f"Failed to sync price alerts: {e}")
+
+    def is_price_alert_triggered(self, alert: Dict[str, Any], previous_price: float, current_price: float) -> bool:
+        """Checks whether the latest trade crossed a saved alert level."""
+        try:
+            target = float(alert.get("price"))
+        except (TypeError, ValueError):
+            return False
+
+        if previous_price <= 0 or current_price <= 0 or target <= 0 or previous_price == current_price:
+            return False
+
+        side = str(alert.get("side") or "NEUTRAL").upper()
+        crossed_up = previous_price < target <= current_price
+        crossed_down = previous_price > target >= current_price
+
+        if side in {"BUY", "LONG"}:
+            return crossed_up
+        if side in {"SELL", "SHORT"}:
+            return crossed_down
+        return crossed_up or crossed_down
+
+    async def process_price_alerts(
+        self,
+        symbol: str,
+        previous_price: float,
+        current_price: float,
+        market_type: str = "futures",
+    ) -> None:
+        """Fires and clears saved custom price alerts when price crosses their targets."""
+        price_alerts = self.config.get("priceAlerts", [])
+        if not isinstance(price_alerts, list) or not price_alerts:
+            return
+
+        triggered: List[Dict[str, Any]] = []
+        remaining: List[Dict[str, Any]] = []
+        symbol_key = symbol.upper()
+
+        for alert in price_alerts:
+            if not isinstance(alert, dict):
+                continue
+
+            alert_symbol = str(alert.get("symbol") or "").upper()
+            if alert_symbol != symbol_key or not self.is_price_alert_triggered(alert, previous_price, current_price):
+                remaining.append(alert)
+                continue
+
+            triggered.append(alert)
+
+        if not triggered:
+            return
+
+        self.config["priceAlerts"] = remaining
+
+        for alert in triggered:
+            target = float(alert["price"])
+            direction = "rose above" if current_price >= target and previous_price < target else "fell below"
+            await self.send_alert(
+                f"[{symbol}] Price Alert",
+                f"Price {direction} your target.\nCurrent: ${current_price:,.4f}\nTarget: ${target:,.4f}",
+                "price_alert",
+                symbol,
+                "info",
+                0,
+                reason="custom_price_alert_cross",
+                current_value=current_price,
+                threshold_value=target,
+                comparison="crosses",
+                metadata={"alert_id": alert.get("id"), "direction": direction},
+                market_type=market_type,
+            )
+
+        await self.sync_price_alerts(remaining)
+
     async def send_alert(
         self,
         title: str,
@@ -395,9 +478,11 @@ class MarketEngine:
 
         # 1. Whale Trades (Both Spot and Futures)
         if stream == "aggTrade":
+            previous_price = float(symbol_state.get("last_price", 0.0) or 0.0)
             price = float(data['p'])
             amount = price * float(data['q'])
             symbol_state["last_price"] = price 
+            await self.process_price_alerts(symbol, previous_price, price, market_type)
             
             thresholds = self.get_thresholds(symbol)
             min_whale = float(thresholds.get("whaleMinAmount", 500000))

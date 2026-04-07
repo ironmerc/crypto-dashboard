@@ -100,6 +100,12 @@ class ConfigUtilsTests(unittest.TestCase):
         self.assertEqual(normalized["timeframes"]["stoch_extreme"], ["1h", "4h", "1d", "1w", "1M"])
         self.assertEqual(normalized["timeframes"]["oi_divergence"], ["1h", "4h", "1d", "1w", "1M"])
 
+    def test_sensitive_category_defaults_exclude_dead_alert_categories(self):
+        defaults = config_utils.default_timeframes_for_sensitive_categories()
+
+        self.assertNotIn("context_summary", defaults)
+        self.assertNotIn("order_flow", defaults)
+
     def test_normalizes_new_threshold_keys_into_global(self):
         original = {
             "thresholds": {

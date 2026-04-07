@@ -42,11 +42,9 @@ SUPPORTED_TIMEFRAMES_SET = set(SUPPORTED_TIMEFRAMES)
 DEFAULT_HIGHER_TIMEFRAMES = ["1h", "4h", "1d", "1w", "1M"]
 TIMEFRAME_SENSITIVE_CATEGORIES = (
     "atr_expand",
-    "context_summary",
     "ema_cross",
     "level_testing",
     "oi_spike",
-    "order_flow",
     "rsi_extreme",
     "rvol_spike",
     "macd_cross",

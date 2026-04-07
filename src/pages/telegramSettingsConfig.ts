@@ -3,14 +3,11 @@ export const ALL_SESSIONS = ["London", "US", "Asia"] as const;
 
 export const ALERT_CATEGORY_IDS = [
     'atr_expand',
-    'context_summary',
     'ema_cross',
     'extreme_funding',
     'level_testing',
     'liquidation',
-    'market_context',
     'oi_spike',
-    'order_flow',
     'rsi_extreme',
     'rvol_spike',
     'whale',
@@ -23,11 +20,9 @@ export const ALERT_CATEGORY_IDS = [
 
 export const TIMEFRAME_SUPPORTED_CATEGORIES = [
     'atr_expand',
-    'context_summary',
     'ema_cross',
     'level_testing',
     'oi_spike',
-    'order_flow',
     'rsi_extreme',
     'rvol_spike',
     'macd_cross',
@@ -57,14 +52,11 @@ export const ALERT_THRESHOLD_IDS = [
 
 export const HELP_CONTENT: Record<string, string> = {
     atr_expand: 'Uses ATR Ratio to detect when price ranges are expanding rapidly (high risk) or contracting (breakout potential).',
-    context_summary: 'A state analyzer that alerts only when the combined Regime, Flow, and Volatility states shift.',
     ema_cross: 'Identifies Trend vs. Range conditions based on EMA 21/50 crossovers and price positioning.',
     extreme_funding: 'Alerts on unbalanced leverage. Extremely high/low rates increase the risk of cascading squeeze events.',
     level_testing: 'Detects when price interacts with high-volume nodes like POC or technical anchors like VWAP.',
     liquidation: 'Alerts on forced order closures. High clusters of liquidations often mark local price exhaustion.',
-    market_context: 'Periodic (4h) and Daily (24h) summaries of overall market health and cumulative flows.',
     oi_spike: 'Monitors sudden leverage changes. Spikes suggest new aggressive positioning; Flushes suggest liquidations or mass profit-taking.',
-    order_flow: 'Combines Price and OI delta to identify Active Long Building vs Short Covering dynamics.',
     rsi_extreme: 'Signals overbought (>70) or oversold (<30) conditions where momentum may be exhausted.',
     rvol_spike: 'Alerts when volume is significantly higher than the 20-period average, indicating high conviction.',
     whale: 'Tracks large individual orders and net flows. Can signal localized support/resistance or institutional aggression.',
