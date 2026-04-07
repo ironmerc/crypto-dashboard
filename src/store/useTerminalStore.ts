@@ -1,5 +1,9 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import {
+    type PriceAlertDirection,
+    normalizePriceAlertDirection,
+} from './priceAlerts';
 
 export type EventType = 'Whale' | 'Liquidation' | 'Wall' | 'SmartAlert';
 export type Side = 'BUY' | 'SELL' | 'LONG' | 'SHORT' | 'NEUTRAL';
@@ -13,7 +17,7 @@ export interface PriceAlert {
     id: string;
     symbol: string;
     price: number;
-    side: Side;
+    direction: PriceAlertDirection;
     createdAt: number;
 }
 
@@ -145,6 +149,16 @@ const normalizeThresholdScopes = (
 
     return normalized;
 };
+
+const normalizePriceAlert = (
+    alert: Partial<PriceAlert> & { side?: string }
+): PriceAlert => ({
+    id: String(alert.id || Math.random().toString(36).slice(2, 11)),
+    symbol: String(alert.symbol || '').toUpperCase().trim(),
+    price: Number(alert.price || 0),
+    direction: normalizePriceAlertDirection(alert.direction, alert.side),
+    createdAt: Number(alert.createdAt || Date.now()),
+});
 
 interface TerminalState {
     // Global Timeframe Settings
@@ -442,17 +456,18 @@ export const useTerminalStore = create<TerminalState>()(
             setTheme: (theme) => set({ theme }),
 
             priceAlerts: [],
-            setPriceAlerts: (alerts) => set({ priceAlerts: alerts }),
+            setPriceAlerts: (alerts) => set({ priceAlerts: alerts.map(normalizePriceAlert) }),
             addPriceAlert: async (alert) => {
                 try {
+                    const normalizedAlert = normalizePriceAlert(alert);
                     const resp = await fetch(`/api/bot/alerts/price`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ action: 'add', alert })
+                        body: JSON.stringify({ action: 'add', alert: normalizedAlert })
                     });
                     if (resp.ok) {
                         const data = await resp.json();
-                        set({ priceAlerts: data.priceAlerts });
+                        set({ priceAlerts: data.priceAlerts.map(normalizePriceAlert) });
                     }
                 } catch (e) { console.error("Failed to add price alert:", e); }
             },
@@ -467,7 +482,7 @@ export const useTerminalStore = create<TerminalState>()(
                     });
                     if (resp.ok) {
                         const data = await resp.json();
-                        set({ priceAlerts: data.priceAlerts });
+                        set({ priceAlerts: data.priceAlerts.map(normalizePriceAlert) });
                     } else { set({ priceAlerts: previousAlerts }); }
                 } catch (e) {
                     console.error("Failed to remove price alert:", e);
@@ -479,7 +494,7 @@ export const useTerminalStore = create<TerminalState>()(
                     const resp = await fetch(`/api/bot/alerts/price`);
                     if (resp.ok) {
                         const data = await resp.json();
-                        set({ priceAlerts: data });
+                        set({ priceAlerts: data.map(normalizePriceAlert) });
                     }
                 } catch (e) { console.error("Failed to fetch price alerts:", e); }
             },
@@ -606,6 +621,9 @@ export const useTerminalStore = create<TerminalState>()(
                         });
                         state.telegramConfig.thresholds = normalizeThresholdScopes(state.telegramConfig.thresholds as Record<string, Partial<TelegramThresholds>>);
                     }
+                    state.priceAlerts = (state.priceAlerts || []).map((alert) =>
+                        normalizePriceAlert(alert as Partial<PriceAlert> & { side?: string })
+                    );
                 }
             },
         }

@@ -3,6 +3,7 @@ import { createChart, ColorType, CandlestickSeries, LineSeries } from 'lightweig
 import type { IChartApi, ISeriesApi, IPriceLine } from 'lightweight-charts';
 import useWebSocket from 'react-use-websocket';
 import { useTerminalStore } from '../store/useTerminalStore';
+import { inferPriceAlertDirection } from '../store/priceAlerts';
 import { calculateEMA, calculateVWAP, calculateRSI, calculateATR, calculateSMA, calculateMACD, calculateBollingerBands, calculateStochRSI } from '../utils/indicators';
 import { type MarketType } from '../constants/binance';
 import { getKlineUrl, getWsUrl } from '../utils/market';
@@ -57,6 +58,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
 
     const oiHistory = useTerminalStore(state => state.oiHistory[symbol]);
     const globalInterval = useTerminalStore(state => state.globalInterval);
+    const currentPrice = useTerminalStore(state => state.prices[symbol]) || 0;
 
     const sessionPoc = useTerminalStore(state => state.sessionPoc[symbol]);
     const fundingRate = useTerminalStore((state) => state.fundingRate[symbol]);
@@ -68,6 +70,17 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
     const addPriceAlert = useTerminalStore(state => state.addPriceAlert);
     const removePriceAlert = useTerminalStore(state => state.removePriceAlert);
     const fetchPriceAlerts = useTerminalStore(state => state.fetchPriceAlerts);
+
+    const getAlertDirection = (targetPrice: number) => {
+        const fallbackPrice = klinesDataRef.current[klinesDataRef.current.length - 1]?.close || 0;
+        return inferPriceAlertDirection(targetPrice, currentPrice || fallbackPrice);
+    };
+
+    const getAlertBadge = (direction: string) => {
+        if (direction === 'ABOVE') return 'ABOVE';
+        if (direction === 'BELOW') return 'BELOW';
+        return 'CROSS';
+    };
 
     // 1. Initialize Chart
     useEffect(() => {
@@ -304,7 +317,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                         id: Math.random().toString(36).substr(2, 9),
                         symbol: symbol,
                         price: price, // Maintain full precision
-                        side: 'NEUTRAL' as const,
+                        direction: getAlertDirection(price),
                         createdAt: Date.now()
                     };
                     addPriceAlert(newAlert);
@@ -535,7 +548,10 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                 axisLabelVisible: true,
                 title: `🔔 ALERT: ${formatPrice(alert.price)}`,
             });
-            if (line) alertLinesRef.current.push(line);
+            if (line) {
+                line.applyOptions({ title: `ALERT ${getAlertBadge(alert.direction)}: ${formatPrice(alert.price)}` });
+                alertLinesRef.current.push(line);
+            }
         });
     }, [priceAlerts, symbol]);
 
@@ -546,7 +562,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                 id: Math.random().toString(36).substr(2, 9),
                 symbol: symbol,
                 price: p,
-                side: 'NEUTRAL',
+                direction: getAlertDirection(p),
                 createdAt: Date.now()
             });
             setManualAlertPrice('');
@@ -679,6 +695,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                                         <div key={alert.id} className="flex items-center justify-between px-3 py-2 border-b border-purple-500/10 hover:bg-white/5 transition-colors">
                                             <div className="flex flex-col">
                                                 <span className="text-terminal-fg font-mono font-bold">{formatPrice(alert.price)}</span>
+                                                <span className="text-[9px] text-purple-300/80 uppercase tracking-wide">{getAlertBadge(alert.direction)}</span>
                                                 <span className="text-[9px] text-terminal-muted opacity-60">{new Date(alert.createdAt).toLocaleTimeString()}</span>
                                             </div>
                                             <button

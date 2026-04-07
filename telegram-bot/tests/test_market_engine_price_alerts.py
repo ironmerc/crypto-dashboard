@@ -22,18 +22,10 @@ from market_engine import MarketEngine  # noqa: E402
 
 
 class MarketEnginePriceAlertTests(unittest.IsolatedAsyncioTestCase):
-    async def test_custom_price_alert_fires_when_trade_crosses_target(self):
+    def build_engine(self, alert):
         engine = MarketEngine()
         engine.config = {
-            "priceAlerts": [
-                {
-                    "id": "alert-1",
-                    "symbol": "BTCUSDT",
-                    "price": 101000.0,
-                    "side": "NEUTRAL",
-                    "createdAt": 1,
-                }
-            ]
+            "priceAlerts": [alert]
         }
         engine.state = {
             "BTCUSDT": {
@@ -44,7 +36,9 @@ class MarketEnginePriceAlertTests(unittest.IsolatedAsyncioTestCase):
                 "last_val": 0.0,
             }
         }
+        return engine
 
+    async def exercise_trade(self, engine, trade_price):
         sent_alerts: list[dict[str, object]] = []
         synced_alert_sets: list[list[dict[str, object]]] = []
 
@@ -90,17 +84,70 @@ class MarketEnginePriceAlertTests(unittest.IsolatedAsyncioTestCase):
             {
                 "e": "aggTrade",
                 "s": "BTCUSDT",
-                "p": "101050.0",
+                "p": str(trade_price),
                 "q": "0.1",
                 "m": False,
             },
             "futures",
         )
 
+        return sent_alerts, synced_alert_sets
+
+    async def test_above_price_alert_fires_on_upward_cross(self):
+        engine = self.build_engine(
+            {
+                "id": "alert-1",
+                "symbol": "BTCUSDT",
+                "price": 101000.0,
+                "direction": "ABOVE",
+                "createdAt": 1,
+            }
+        )
+
+        sent_alerts, synced_alert_sets = await self.exercise_trade(engine, 101050.0)
+
         self.assertEqual(len(sent_alerts), 1)
         self.assertEqual(sent_alerts[0]["category"], "price_alert")
-        self.assertIn("Price Alert", str(sent_alerts[0]["title"]))
+        self.assertIn("Price Alert Above", str(sent_alerts[0]["title"]))
+        self.assertIn("Price moved above your target.", str(sent_alerts[0]["message"]))
         self.assertEqual(sent_alerts[0]["symbol"], "BTCUSDT")
+        self.assertEqual(sent_alerts[0]["metadata"]["direction"], "above")
+        self.assertEqual(synced_alert_sets, [[]])
+        self.assertEqual(engine.config["priceAlerts"], [])
+
+    async def test_below_price_alert_ignores_upward_cross(self):
+        engine = self.build_engine(
+            {
+                "id": "alert-1",
+                "symbol": "BTCUSDT",
+                "price": 101000.0,
+                "direction": "BELOW",
+                "createdAt": 1,
+            }
+        )
+
+        sent_alerts, synced_alert_sets = await self.exercise_trade(engine, 101050.0)
+
+        self.assertEqual(sent_alerts, [])
+        self.assertEqual(synced_alert_sets, [])
+        self.assertEqual(len(engine.config["priceAlerts"]), 1)
+
+    async def test_legacy_neutral_price_alert_behaves_like_cross_alert(self):
+        engine = self.build_engine(
+            {
+                "id": "alert-1",
+                "symbol": "BTCUSDT",
+                "price": 101000.0,
+                "side": "NEUTRAL",
+                "createdAt": 1,
+            }
+        )
+
+        sent_alerts, synced_alert_sets = await self.exercise_trade(engine, 101050.0)
+
+        self.assertEqual(len(sent_alerts), 1)
+        self.assertIn("Price Alert Cross", str(sent_alerts[0]["title"]))
+        self.assertEqual(sent_alerts[0]["metadata"]["trigger_direction"], "ABOVE")
         self.assertEqual(synced_alert_sets, [[]])
         self.assertEqual(engine.config["priceAlerts"], [])
 

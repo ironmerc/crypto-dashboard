@@ -180,8 +180,34 @@ class MarketEngine:
             except Exception as e:
                 logger.error(f"Failed to sync price alerts: {e}")
 
+    def get_price_alert_direction(self, alert: Dict[str, Any]) -> str:
+        """Normalizes new and legacy price alert direction values."""
+        direction = str(alert.get("direction") or "").upper()
+        if direction in {"ABOVE", "BELOW", "CROSS"}:
+            return direction
+
+        legacy_side = str(alert.get("side") or "NEUTRAL").upper()
+        if legacy_side in {"BUY", "LONG"}:
+            return "ABOVE"
+        if legacy_side in {"SELL", "SHORT"}:
+            return "BELOW"
+        return "CROSS"
+
+    def get_price_alert_cross_direction(
+        self, previous_price: float, current_price: float, target: float
+    ) -> Optional[str]:
+        """Returns the trigger direction when the latest trade crosses a saved alert level."""
+        crossed_up = previous_price < target <= current_price
+        crossed_down = previous_price > target >= current_price
+
+        if crossed_up:
+            return "ABOVE"
+        if crossed_down:
+            return "BELOW"
+        return None
+
     def is_price_alert_triggered(self, alert: Dict[str, Any], previous_price: float, current_price: float) -> bool:
-        """Checks whether the latest trade crossed a saved alert level."""
+        """Checks whether the latest trade crossed a saved alert level in the expected direction."""
         try:
             target = float(alert.get("price"))
         except (TypeError, ValueError):
@@ -190,15 +216,16 @@ class MarketEngine:
         if previous_price <= 0 or current_price <= 0 or target <= 0 or previous_price == current_price:
             return False
 
-        side = str(alert.get("side") or "NEUTRAL").upper()
-        crossed_up = previous_price < target <= current_price
-        crossed_down = previous_price > target >= current_price
+        trigger_direction = self.get_price_alert_cross_direction(previous_price, current_price, target)
+        if trigger_direction is None:
+            return False
 
-        if side in {"BUY", "LONG"}:
-            return crossed_up
-        if side in {"SELL", "SHORT"}:
-            return crossed_down
-        return crossed_up or crossed_down
+        alert_direction = self.get_price_alert_direction(alert)
+        if alert_direction == "ABOVE":
+            return trigger_direction == "ABOVE"
+        if alert_direction == "BELOW":
+            return trigger_direction == "BELOW"
+        return True
 
     async def process_price_alerts(
         self,
@@ -234,10 +261,17 @@ class MarketEngine:
 
         for alert in triggered:
             target = float(alert["price"])
-            direction = "rose above" if current_price >= target and previous_price < target else "fell below"
+            alert_direction = self.get_price_alert_direction(alert)
+            trigger_direction = self.get_price_alert_cross_direction(previous_price, current_price, target) or "CROSS"
+            direction_text = "above" if trigger_direction == "ABOVE" else "below"
+            title_suffix = {
+                "ABOVE": "Above",
+                "BELOW": "Below",
+                "CROSS": "Cross",
+            }.get(alert_direction, "Cross")
             await self.send_alert(
-                f"[{symbol}] Price Alert",
-                f"Price {direction} your target.\nCurrent: ${current_price:,.4f}\nTarget: ${target:,.4f}",
+                f"[{symbol}] Price Alert {title_suffix}",
+                f"Price moved {direction_text} your target.\nCurrent: ${current_price:,.4f}\nTarget: ${target:,.4f}",
                 "price_alert",
                 symbol,
                 "info",
@@ -245,8 +279,13 @@ class MarketEngine:
                 reason="custom_price_alert_cross",
                 current_value=current_price,
                 threshold_value=target,
-                comparison="crosses",
-                metadata={"alert_id": alert.get("id"), "direction": direction},
+                comparison=f"crosses_{direction_text}",
+                metadata={
+                    "alert_id": alert.get("id"),
+                    "alert_direction": alert_direction,
+                    "trigger_direction": trigger_direction,
+                    "direction": direction_text,
+                },
                 market_type=market_type,
             )
 
