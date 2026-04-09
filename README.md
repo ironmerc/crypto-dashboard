@@ -78,10 +78,6 @@ npm run build
 python -m unittest telegram-bot/tests/test_schema_validation.py telegram-bot/tests/test_alert_metadata.py
 ```
 
-## Notes
-
-- Local/private GSD docs may exist under `.gsd/` and are intentionally not tracked.
-
 ## License
 
 MIT. See [`LICENSE`](LICENSE).

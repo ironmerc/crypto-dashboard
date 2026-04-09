@@ -43,3 +43,15 @@ export const inferPriceAlertDirection = (
     }
     return 'CROSS';
 };
+
+export const inferManualPriceAlertDirection = (
+    manualAlertPrice: string,
+    referencePrice?: number | null,
+): PriceAlertDirection | null => {
+    const parsedPrice = Number.parseFloat(manualAlertPrice);
+    if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+        return null;
+    }
+
+    return inferPriceAlertDirection(parsedPrice, referencePrice);
+};

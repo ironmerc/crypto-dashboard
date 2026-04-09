@@ -8,6 +8,7 @@ import { calculateEMA, calculateVWAP, calculateRSI, calculateATR, calculateSMA, 
 import { type MarketType } from '../constants/binance';
 import { getKlineUrl, getWsUrl } from '../utils/market';
 import { formatPrice } from '../utils/formatters';
+import { ManualPriceAlertControl } from './ManualPriceAlertControl';
 
 interface CandleChartProps {
     symbol: string; // e.g., 'BTCUSDT'
@@ -75,6 +76,8 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
         const fallbackPrice = klinesDataRef.current[klinesDataRef.current.length - 1]?.close || 0;
         return inferPriceAlertDirection(targetPrice, currentPrice || fallbackPrice);
     };
+
+    const manualAlertReferencePrice = currentPrice || klinesDataRef.current[klinesDataRef.current.length - 1]?.close || null;
 
     const getAlertBadge = (direction: string) => {
         if (direction === 'ABOVE') return 'ABOVE';
@@ -656,24 +659,12 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
 
                         <div className="w-px bg-purple-500/30"></div>
 
-                        <div className="flex items-center px-1">
-                            <input
-                                type="text"
-                                placeholder="Manual Price..."
-                                value={manualAlertPrice}
-                                onChange={(e) => setManualAlertPrice(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleAddManualAlert()}
-                                className="bg-transparent border-none outline-none text-terminal-fg font-mono text-[10px] w-24 placeholder:text-terminal-muted/40"
-                            />
-                            {manualAlertPrice && (
-                                <button
-                                    onClick={handleAddManualAlert}
-                                    className="bg-purple-500/30 hover:bg-purple-500/50 text-purple-200 px-1.5 py-0.5 rounded text-[9px] font-bold transition-colors"
-                                >
-                                    SAVE
-                                </button>
-                            )}
-                        </div>
+                        <ManualPriceAlertControl
+                            manualAlertPrice={manualAlertPrice}
+                            onPriceChange={setManualAlertPrice}
+                            onSave={handleAddManualAlert}
+                            referencePrice={manualAlertReferencePrice}
+                        />
                     </div>
 
                     {priceAlerts.filter(a => a.symbol === symbol).length > 0 && (

@@ -28,16 +28,3 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# GSD / AGENT
-.gsd/
-.agent/
-.agents/
-.gemini/
-docs/
-gsd-template/
-adapters/
-PROJECT_RULES.md
-GSD-STYLE.md
-model_capabilities.yaml
-scripts/
-/.worktrees/
