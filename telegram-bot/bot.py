@@ -1,9 +1,11 @@
 import os
+import re
 import asyncio
 import logging
 from datetime import datetime, timezone
 from collections import deque
 import json
+from typing import Optional
 from aiohttp import web, ClientSession
 from alert_policy import build_cooldown_key, should_accept_alert
 from bot_identity import load_cached_username, save_cached_username
@@ -16,6 +18,7 @@ from schema_validation import (
     log_schema_warnings,
     validate_by_schema_warn_only,
 )
+from market_engine import MarketEngine
 
 # Configure logging
 logging.basicConfig(
@@ -129,6 +132,14 @@ alert_history = deque(maxlen=50)
 cached_username = load_cached_username(BOT_IDENTITY_CACHE_FILE, logger)
 if cached_username:
     bot_username = cached_username
+
+# Market Engine (server-side indicator computation)
+_engine: Optional[MarketEngine] = None
+
+# Input validation constants for market data endpoint
+_ALLOWED_MARKET_TYPES = {"spot", "futures"}
+_VALID_SYMBOL = re.compile(r'^[A-Z0-9]{4,20}$')
+_VALID_TIMEFRAME = re.compile(r'^(1m|3m|5m|15m|30m|1h|2h|4h|6h|8h|12h|1d|3d|1w|1M)$')
 
 def get_iso_now():
     """Returns the current UTC time in ISO-8601 format."""
@@ -365,6 +376,29 @@ async def handle_history(request):
     """Ops endpoint returning bounded deque of alerting history."""
     return web.json_response(list(alert_history), status=200)
 
+async def handle_get_market_data(request):
+    """Returns server-computed indicator series for a symbol+timeframe (used by frontend to avoid client-side computation)."""
+    market_type = request.match_info['market_type'].lower()
+    if market_type not in _ALLOWED_MARKET_TYPES:
+        return web.json_response({"error": "Invalid market_type"}, status=400)
+
+    symbol = request.match_info['symbol'].upper()
+    if not _VALID_SYMBOL.match(symbol):
+        return web.json_response({"error": "Invalid symbol"}, status=400)
+
+    tf = request.match_info['timeframe']
+    if not _VALID_TIMEFRAME.match(tf):
+        return web.json_response({"error": "Invalid timeframe"}, status=400)
+
+    if _engine is None:
+        return web.json_response({"error": "Engine not ready"}, status=503)
+    try:
+        data = _engine.get_full_indicator_series(symbol, tf, market_type=market_type)
+        return web.json_response(data)
+    except Exception:
+        logger.error(f"Failed to get indicator series for {market_type}/{symbol}/{tf}", exc_info=True)
+        return web.json_response({"error": "Unable to fetch indicator data"}, status=500)
+
 async def handle_get_price_alerts(request):
     """Returns all active price alerts."""
     return web.json_response(bot_config.get("priceAlerts", []))
@@ -392,7 +426,8 @@ async def handle_post_price_alert(request):
         # Signal market engine to reload
         try:
             with open("reload.flag", "w") as f: f.write("1")
-        except: pass
+        except (IOError, OSError) as e:
+            logger.debug(f"Could not write reload flag: {e}")
         
         return web.json_response({"status": "success", "priceAlerts": bot_config["priceAlerts"]})
     except Exception as e:
@@ -400,7 +435,7 @@ async def handle_post_price_alert(request):
 
 async def shutdown_tasks(app: web.Application):
     """Gracefully stop background tasks on app shutdown."""
-    for key in ("queue_processor", "identity_refresher"):
+    for key in ("queue_processor", "identity_refresher", "market_engine"):
         task = app.get(key)
         if not task:
             continue
@@ -414,6 +449,7 @@ async def shutdown_tasks(app: web.Application):
 
 async def init_app():
     """Initialize the aiohttp web application."""
+    global _engine
     app = web.Application(middlewares=[cors_middleware])
     app.router.add_post('/alert', handle_alert)
     app.router.add_get('/health', handle_health)
@@ -423,15 +459,20 @@ async def init_app():
     app.router.add_post('/config', handle_post_config)
     app.router.add_get('/alerts/price', handle_get_price_alerts)
     app.router.add_post('/alerts/price', handle_post_price_alert)
-    
+    app.router.add_get('/market/{market_type}/{symbol}/{timeframe}', handle_get_market_data)
+
     # Load persistence
     load_config()
-    
+
+    # Start the market engine (server-side indicator computation + alert generation)
+    _engine = MarketEngine(bot_url="http://localhost:8888")
+    app['market_engine'] = asyncio.create_task(_engine.run())
+
     # Start the background tasks
     app['queue_processor'] = asyncio.create_task(process_queue())
     app['identity_refresher'] = asyncio.create_task(maintain_bot_identity())
     app.on_cleanup.append(shutdown_tasks)
-    
+
     return app
 
 if __name__ == '__main__':

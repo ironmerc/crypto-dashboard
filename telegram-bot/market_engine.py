@@ -442,6 +442,118 @@ class MarketEngine:
             "stoch_k": stoch_k, "stoch_d": stoch_d
         }
 
+    def get_full_indicator_series(self, symbol: str, tf: str, market_type: Optional[str] = None) -> Dict[str, Any]:
+        """Returns full indicator series arrays for all stored klines (for chart rendering).
+        Appends the current open (live) bar if present so intrabar indicators stay live."""
+        sym_state = self.state.get(symbol, {})
+        if market_type and sym_state.get("type") != market_type:
+            return {"error": f"symbol {symbol} not tracked for market_type {market_type}"}
+        klines_raw = list(sym_state.get("klines", {}).get(tf, []))
+        open_bar = sym_state.get("open_kline", {}).get(tf)
+        if open_bar:
+            klines_raw = klines_raw + [open_bar]
+        if not klines_raw:
+            empty: List[Any] = []
+            return {"klines": empty, "ema21": empty, "ema50": empty, "vwap": empty, "rsi": empty,
+                    "atr": empty, "atr_sma": empty, "bb_upper": empty, "bb_middle": empty,
+                    "bb_lower": empty, "bb_width": empty, "macd": empty, "macd_signal": empty,
+                    "macd_hist": empty, "stoch_k": empty, "stoch_d": empty}
+
+        df = pd.DataFrame(klines_raw, columns=['t', 'o', 'h', 'l', 'c', 'v'])
+        df = df.astype({'o': float, 'h': float, 'l': float, 'c': float, 'v': float})
+        n = len(df)
+
+        def to_list(series: pd.Series) -> List[Any]:
+            return [None if np.isnan(v) else float(v) for v in series]
+
+        # EMA series
+        ema21_s = df['c'].ewm(span=21, adjust=False).mean() if n >= 21 else pd.Series([np.nan] * n)
+        ema50_s = df['c'].ewm(span=50, adjust=False).mean() if n >= 50 else pd.Series([np.nan] * n)
+
+        # VWAP — cumulative per-bar so the series tracks each candle's running average
+        df['tp'] = (df['h'] + df['l'] + df['c']) / 3
+        cum_tpv = (df['tp'] * df['v']).cumsum()
+        cum_v = df['v'].cumsum()
+        vwap_s = cum_tpv / cum_v.replace(0, np.nan)
+
+        # RSI
+        if n >= 15:
+            delta = df['c'].diff()
+            gain = delta.where(delta > 0, 0).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            with np.errstate(divide='ignore', invalid='ignore'):
+                rsi_s = 100 - (100 / (1 + gain / loss))
+        else:
+            rsi_s = pd.Series([np.nan] * n)
+
+        # ATR
+        df['tr'] = np.maximum(
+            df['h'] - df['l'],
+            np.maximum(abs(df['h'] - df['c'].shift(1)), abs(df['l'] - df['c'].shift(1)))
+        )
+        atr_s = df['tr'].rolling(14).mean() if n >= 14 else pd.Series([np.nan] * n)
+        # ATR SMA — 14-period SMA of ATR used for volatility ratio (atr / atr_sma)
+        atr_sma_s = atr_s.rolling(14).mean() if n >= 28 else pd.Series([np.nan] * n)
+
+        # Bollinger Bands (20, 2)
+        if n >= 20:
+            sma20 = df['c'].rolling(20).mean()
+            std20 = df['c'].rolling(20).std()
+            bb_upper_s = sma20 + 2 * std20
+            bb_lower_s = sma20 - 2 * std20
+            bb_middle_s = sma20
+            bb_width_s = ((bb_upper_s - bb_lower_s) / sma20.replace(0, np.nan)) * 100
+        else:
+            bb_upper_s = bb_lower_s = bb_middle_s = bb_width_s = pd.Series([np.nan] * n)
+
+        # MACD (12/26/9)
+        if n >= 26:
+            ema12 = df['c'].ewm(span=12, adjust=False).mean()
+            ema26 = df['c'].ewm(span=26, adjust=False).mean()
+            macd_line = ema12 - ema26
+            signal_line = macd_line.ewm(span=9, adjust=False).mean()
+            macd_hist_s = macd_line - signal_line
+        else:
+            macd_line = signal_line = macd_hist_s = pd.Series([np.nan] * n)
+
+        # StochRSI (14/14/3/3)
+        if n >= 28:
+            delta2 = df['c'].diff()
+            gain2 = delta2.where(delta2 > 0, 0).rolling(14).mean()
+            loss2 = (-delta2.where(delta2 < 0, 0)).rolling(14).mean()
+            with np.errstate(divide='ignore', invalid='ignore'):
+                rsi2 = 100 - (100 / (1 + gain2 / loss2))
+            rsi_min = rsi2.rolling(14).min()
+            rsi_max = rsi2.rolling(14).max()
+            raw_k = ((rsi2 - rsi_min) / (rsi_max - rsi_min).replace(0, np.nan)) * 100
+            stoch_k_s = raw_k.rolling(3).mean()
+            stoch_d_s = stoch_k_s.rolling(3).mean()
+        else:
+            stoch_k_s = stoch_d_s = pd.Series([np.nan] * n)
+
+        klines_out = [[int(row['t']), float(row['o']), float(row['h']),
+                       float(row['l']), float(row['c']), float(row['v'])]
+                      for _, row in df.iterrows()]
+
+        return {
+            "klines": klines_out,
+            "ema21": to_list(ema21_s),
+            "ema50": to_list(ema50_s),
+            "vwap": to_list(vwap_s),
+            "rsi": to_list(rsi_s),
+            "atr": to_list(atr_s),
+            "atr_sma": to_list(atr_sma_s),
+            "bb_upper": to_list(bb_upper_s),
+            "bb_middle": to_list(bb_middle_s),
+            "bb_lower": to_list(bb_lower_s),
+            "bb_width": to_list(bb_width_s),
+            "macd": to_list(macd_line),
+            "macd_signal": to_list(signal_line),
+            "macd_hist": to_list(macd_hist_s),
+            "stoch_k": to_list(stoch_k_s),
+            "stoch_d": to_list(stoch_d_s),
+        }
+
     async def monitor_market(self, market_type: str) -> None:
         """Subscribes to Binance streams for a specific market type (spot or futures)."""
         while True:
@@ -644,8 +756,12 @@ class MarketEngine:
         elif stream == "kline":
             k = data['k']
             tf = k['i']
+            # Always track the current open bar for intrabar indicator polling
+            open_klines = symbol_state.setdefault("open_kline", {})
+            open_klines[tf] = [k['t'], k['o'], k['h'], k['l'], k['c'], k['v']]
             if not k['x']: return
-            
+            # Bar is closed — commit it and clear open slot
+            open_klines.pop(tf, None)
             klines_tf = symbol_state.setdefault("klines", {}).setdefault(tf, [])
             klines_tf.append([k['t'], k['o'], k['h'], k['l'], k['c'], k['v']])
             if len(klines_tf) > 100: klines_tf.pop(0)

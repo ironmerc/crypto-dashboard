@@ -4,7 +4,6 @@ import type { IChartApi, ISeriesApi, IPriceLine } from 'lightweight-charts';
 import useWebSocket from 'react-use-websocket';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { inferPriceAlertDirection } from '../store/priceAlerts';
-import { calculateEMA, calculateVWAP, calculateRSI, calculateATR, calculateSMA, calculateMACD, calculateBollingerBands, calculateStochRSI } from '../utils/indicators';
 import { type MarketType } from '../constants/binance';
 import { getKlineUrl, getWsUrl } from '../utils/market';
 import { formatPrice } from '../utils/formatters';
@@ -22,6 +21,28 @@ interface KlineData {
     low: number;
     close: number;
     volume: number;
+}
+
+type NullableArr = (number | null)[];
+
+interface IndicatorResponse {
+    klines: [number, number, number, number, number, number][];
+    open_kline?: [number, number, number, number, number, number] | null;
+    ema21: NullableArr;
+    ema50: NullableArr;
+    vwap: NullableArr;
+    rsi: NullableArr;
+    atr: NullableArr;
+    atr_sma: NullableArr;
+    bb_upper: NullableArr;
+    bb_middle: NullableArr;
+    bb_lower: NullableArr;
+    bb_width: NullableArr;
+    macd: NullableArr;
+    macd_signal: NullableArr;
+    macd_hist: NullableArr;
+    stoch_k: NullableArr;
+    stoch_d: NullableArr;
 }
 
 export function CandleChart({ symbol, type }: CandleChartProps) {
@@ -239,73 +260,55 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                         },
                     });
 
-                    // Compute Indicators on history
-                    const closes = cdata.map((d: any) => d.close);
-                    const highs = cdata.map((d: any) => d.high);
-                    const lows = cdata.map((d: any) => d.low);
-                    const typicals = cdata.map((d: any) => (d.high + d.low + d.close) / 3);
-                    const volumes = cdata.map((d: any) => d.volume);
+                    // Fetch pre-computed indicator series from bot server (host-side computation)
+                    fetch(`/api/bot/market/${type}/${symbol}/${globalInterval}`)
+                        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+                        .then((ind: IndicatorResponse) => {
+                            if ('error' in ind || !ind?.klines?.length) return;
+                            const times = ind.klines.map((k: number[]) => k[0] / 1000);
+                            const toPoints = (arr: (number | null)[]) =>
+                                arr.map((v, i) => ({ time: times[i], value: v })).filter(d => d.value !== null) as any;
 
-                    const ema21 = calculateEMA(closes, 21);
-                    const ema50 = calculateEMA(closes, 50);
-                    const vwap = calculateVWAP(typicals, volumes);
-                    const rsi = calculateRSI(closes, 14);
-                    const atr = calculateATR(highs, lows, closes, 14);
-                    const macdResult = calculateMACD(closes);
-                    const bbResult = calculateBollingerBands(closes);
-                    const stochRsiResult = calculateStochRSI(closes);
+                            ema21SeriesRef.current?.setData(toPoints(ind.ema21));
+                            ema50SeriesRef.current?.setData(toPoints(ind.ema50));
+                            vwapSeriesRef.current?.setData(toPoints(ind.vwap));
+                            rsiSeriesRef.current?.setData(toPoints(ind.rsi));
+                            bbUpperSeriesRef.current?.setData(toPoints(ind.bb_upper));
+                            bbMiddleSeriesRef.current?.setData(toPoints(ind.bb_middle));
+                            bbLowerSeriesRef.current?.setData(toPoints(ind.bb_lower));
+                            macdSeriesRef.current?.setData(toPoints(ind.macd));
+                            macdSignalSeriesRef.current?.setData(toPoints(ind.macd_signal));
 
-                    // Compute SMA of ATR (handling nulls)
-                    const atrValues = atr.filter(a => a !== null) as number[];
-                    const atrSmaRaw = calculateSMA(atrValues, 14);
-                    const atrSmaPad = Array(atr.length - atrSmaRaw.length).fill(null);
-                    const atrSma = [...atrSmaPad, ...atrSmaRaw];
-
-                    ema21SeriesRef.current?.setData(ema21.map((v, i) => ({ time: cdata[i].time, value: v })).filter(d => d.value !== null) as any);
-                    ema50SeriesRef.current?.setData(ema50.map((v, i) => ({ time: cdata[i].time, value: v })).filter(d => d.value !== null) as any);
-                    vwapSeriesRef.current?.setData(vwap.map((v, i) => ({ time: cdata[i].time, value: v })) as any);
-                    rsiSeriesRef.current?.setData(rsi.map((v, i) => ({ time: cdata[i].time, value: v })).filter(d => d.value !== null) as any);
-                    bbUpperSeriesRef.current?.setData(bbResult.upper.map((v, i) => ({ time: cdata[i].time, value: v })).filter(d => d.value !== null) as any);
-                    bbMiddleSeriesRef.current?.setData(bbResult.middle.map((v, i) => ({ time: cdata[i].time, value: v })).filter(d => d.value !== null) as any);
-                    bbLowerSeriesRef.current?.setData(bbResult.lower.map((v, i) => ({ time: cdata[i].time, value: v })).filter(d => d.value !== null) as any);
-                    macdSeriesRef.current?.setData(macdResult.macd.map((v, i) => ({ time: cdata[i].time, value: v })).filter(d => d.value !== null) as any);
-                    macdSignalSeriesRef.current?.setData(macdResult.signal.map((v, i) => ({ time: cdata[i].time, value: v })).filter(d => d.value !== null) as any);
-
-                    // Set initial ATR + BB width
-                    if (atr.length > 0) setLatestAtr(atr[atr.length - 1]);
-                    const lastBBWidth = bbResult.width[bbResult.width.length - 1];
-                    if (lastBBWidth !== null) setLatestBBWidth(lastBBWidth);
-
-                    const lastMACD = macdResult.macd[macdResult.macd.length - 1];
-                    const lastSignal = macdResult.signal[macdResult.signal.length - 1];
-                    const lastHist = macdResult.histogram[macdResult.histogram.length - 1];
-                    if (lastMACD !== null && lastSignal !== null && lastHist !== null) {
-                        setLatestMACD({ macd: lastMACD, signal: lastSignal, histogram: lastHist });
-                    }
-
-                    // Push to global store
-                    const lastBBUpper = bbResult.upper[bbResult.upper.length - 1];
-                    const lastBBMiddle = bbResult.middle[bbResult.middle.length - 1];
-                    const lastBBLower = bbResult.lower[bbResult.lower.length - 1];
-                    const lastStochK = stochRsiResult.k[stochRsiResult.k.length - 1];
-                    const lastStochD = stochRsiResult.d[stochRsiResult.d.length - 1];
-                    useTerminalStore.getState().setIndicators(symbol, {
-                        ema21: ema21[ema21.length - 1] ?? undefined,
-                        ema50: ema50[ema50.length - 1] ?? undefined,
-                        vwap: vwap[vwap.length - 1],
-                        atr: atr[atr.length - 1] ?? undefined,
-                        atrSma: atrSma[atrSma.length - 1] ?? undefined,
-                        rsi: rsi[rsi.length - 1] ?? undefined,
-                        macd: (lastMACD !== null && lastSignal !== null && lastHist !== null)
-                            ? { macd: lastMACD, signal: lastSignal, histogram: lastHist } : undefined,
-                        bb: (lastBBUpper !== null && lastBBMiddle !== null && lastBBLower !== null && lastBBWidth !== null)
-                            ? { upper: lastBBUpper, middle: lastBBMiddle, lower: lastBBLower, width: lastBBWidth } : undefined,
-                        stochRsi: (lastStochK !== null && lastStochD !== null)
-                            ? { k: lastStochK, d: lastStochD } : undefined,
-                    });
+                            const last = ind.klines.length - 1;
+                            const lAtr = ind.atr[last];
+                            const lBBWidth = ind.bb_width[last];
+                            const lMACD = ind.macd[last];
+                            const lSignal = ind.macd_signal[last];
+                            const lHist = ind.macd_hist[last];
+                            if (lAtr !== null) setLatestAtr(lAtr);
+                            if (lBBWidth !== null) setLatestBBWidth(lBBWidth);
+                            if (lMACD !== null && lSignal !== null && lHist !== null) {
+                                setLatestMACD({ macd: lMACD, signal: lSignal, histogram: lHist });
+                            }
+                            useTerminalStore.getState().setIndicators(symbol, {
+                                ema21: ind.ema21[last] ?? undefined,
+                                ema50: ind.ema50[last] ?? undefined,
+                                vwap: ind.vwap[last] ?? undefined,
+                                atr: lAtr ?? undefined,
+                                atrSma: ind.atr_sma?.[last] ?? undefined,
+                                rsi: ind.rsi[last] ?? undefined,
+                                macd: (lMACD !== null && lSignal !== null && lHist !== null)
+                                    ? { macd: lMACD, signal: lSignal, histogram: lHist } : undefined,
+                                bb: (ind.bb_upper[last] !== null && ind.bb_middle[last] !== null && ind.bb_lower[last] !== null && lBBWidth !== null)
+                                    ? { upper: ind.bb_upper[last], middle: ind.bb_middle[last], lower: ind.bb_lower[last], width: lBBWidth } : undefined,
+                                stochRsi: (ind.stoch_k[last] !== null && ind.stoch_d[last] !== null)
+                                    ? { k: ind.stoch_k[last], d: ind.stoch_d[last] } : undefined,
+                            });
+                        })
+                        .catch(() => { /* bot server not running, indicators remain empty */ });
                 }
             })
-            .catch(err => console.error("Failed to fetch historical klines", err));
+            .catch(() => { /* historical kline fetch failed, chart remains empty */ });
 
         // 1.5 Click to set Alert
         const handleChartClick = (param: any) => {
@@ -356,9 +359,6 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
 
     // 2. Real-time updates via WebSocket
     const wsUrl = getWsUrl(symbol, globalInterval, type);
-    const lastUpdateTimeRef = useRef<number>(0);
-    const THROTTLE_MS = 150; // Update indicators/HUD every 150ms max
-    
     const { lastJsonMessage } = useWebSocket(wsUrl);
 
     useEffect(() => {
@@ -378,10 +378,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                 if (!isNaN(updateData.open) && !isNaN(updateData.close)) {
                     seriesRef.current.update(updateData as any);
 
-                    const now = Date.now();
-                    const shouldUpdateFull = now - lastUpdateTimeRef.current > THROTTLE_MS;
-
-                    // Maintain rolling klines array for indicators
+                    // Maintain rolling klines array (for reference only — indicators computed server-side)
                     const klines = klinesDataRef.current;
                     const existing = klines.findIndex(d => d.time === updateData.time);
                     if (existing >= 0) {
@@ -391,93 +388,73 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                         if (klines.length > 500) klines.shift();
                     }
 
-                    if (shouldUpdateFull) {
-                        lastUpdateTimeRef.current = now;
-
-                        // Compute Indicators on history
-                        const closes = klines.map(d => d.close);
-                        const highs = klines.map(d => d.high);
-                        const lows = klines.map(d => d.low);
-                        const typicals = klines.map(d => (d.high + d.low + d.close) / 3);
-                        const volumes = klines.map(d => d.volume);
-
-                        const ema21 = calculateEMA(closes, 21);
-                        const ema50 = calculateEMA(closes, 50);
-                        const vwap = calculateVWAP(typicals, volumes);
-                        const rsi = calculateRSI(closes, 14);
-                        const atr = calculateATR(highs, lows, closes, 14);
-                        const macdResult = calculateMACD(closes);
-                        const bbResult = calculateBollingerBands(closes);
-                        const stochRsiResult = calculateStochRSI(closes);
-
-                        const atrValues = atr.filter(a => a !== null) as number[];
-                        const atrSmaRaw = calculateSMA(atrValues, 14);
-                        const atrSmaPad = Array(atr.length - atrSmaRaw.length).fill(null);
-                        const atrSma = [...atrSmaPad, ...atrSmaRaw];
-
-                        const lastIndex = klines.length - 1;
-                        const time = updateData.time as any;
-
-                        if (ema21[lastIndex] !== null && ema21SeriesRef.current) ema21SeriesRef.current.update({ time, value: ema21[lastIndex]! });
-                        if (ema50[lastIndex] !== null && ema50SeriesRef.current) ema50SeriesRef.current.update({ time, value: ema50[lastIndex]! });
-                        if (vwapSeriesRef.current) vwapSeriesRef.current.update({ time, value: vwap[lastIndex] });
-                        if (rsi[lastIndex] !== null && rsiSeriesRef.current) rsiSeriesRef.current.update({ time, value: rsi[lastIndex]! });
-                        if (atr[lastIndex] !== null) setLatestAtr(atr[lastIndex]);
-
-                        // BB series updates
-                        if (bbResult.upper[lastIndex] !== null && bbUpperSeriesRef.current) bbUpperSeriesRef.current.update({ time, value: bbResult.upper[lastIndex]! });
-                        if (bbResult.middle[lastIndex] !== null && bbMiddleSeriesRef.current) bbMiddleSeriesRef.current.update({ time, value: bbResult.middle[lastIndex]! });
-                        if (bbResult.lower[lastIndex] !== null && bbLowerSeriesRef.current) bbLowerSeriesRef.current.update({ time, value: bbResult.lower[lastIndex]! });
-                        if (bbResult.width[lastIndex] !== null) setLatestBBWidth(bbResult.width[lastIndex]);
-
-                        // MACD series updates
-                        if (macdResult.macd[lastIndex] !== null && macdSeriesRef.current) macdSeriesRef.current.update({ time, value: macdResult.macd[lastIndex]! });
-                        if (macdResult.signal[lastIndex] !== null && macdSignalSeriesRef.current) macdSignalSeriesRef.current.update({ time, value: macdResult.signal[lastIndex]! });
-                        const lMACD = macdResult.macd[lastIndex];
-                        const lSignal = macdResult.signal[lastIndex];
-                        const lHist = macdResult.histogram[lastIndex];
-                        if (lMACD !== null && lSignal !== null && lHist !== null) {
-                            setLatestMACD({ macd: lMACD, signal: lSignal, histogram: lHist });
-                        }
-
-                        // Update global store
-                        const lBBUpper = bbResult.upper[lastIndex];
-                        const lBBMiddle = bbResult.middle[lastIndex];
-                        const lBBLower = bbResult.lower[lastIndex];
-                        const lBBWidth = bbResult.width[lastIndex];
-                        const lStochK = stochRsiResult.k[lastIndex];
-                        const lStochD = stochRsiResult.d[lastIndex];
-                        useTerminalStore.getState().setIndicators(symbol, {
-                            ema21: ema21[lastIndex] ?? undefined,
-                            ema50: ema50[lastIndex] ?? undefined,
-                            vwap: vwap[lastIndex],
-                            atr: atr[lastIndex] ?? undefined,
-                            atrSma: atrSma[lastIndex] ?? undefined,
-                            rsi: rsi[lastIndex] ?? undefined,
-                            macd: (lMACD !== null && lSignal !== null && lHist !== null)
-                                ? { macd: lMACD, signal: lSignal, histogram: lHist } : undefined,
-                            bb: (lBBUpper !== null && lBBMiddle !== null && lBBLower !== null && lBBWidth !== null)
-                                ? { upper: lBBUpper, middle: lBBMiddle, lower: lBBLower, width: lBBWidth } : undefined,
-                            stochRsi: (lStochK !== null && lStochD !== null)
-                                ? { k: lStochK, d: lStochD } : undefined,
-                        });
-
-                        // Force +/- 5% Y-Axis to match the Heatmap exactly
-                        const currentPrice = updateData.close;
-                        seriesRef.current.applyOptions({
-                            autoscaleInfoProvider: () => ({
-                                priceRange: {
-                                    minValue: currentPrice * 0.95,
-                                    maxValue: currentPrice * 1.05,
-                                },
-                                margins: { above: 0, below: 0 }
-                            })
-                        });
-                    }
+                    // Force +/- 5% Y-Axis to match the Heatmap exactly
+                    const currentPrice = updateData.close;
+                    seriesRef.current.applyOptions({
+                        autoscaleInfoProvider: () => ({
+                            priceRange: {
+                                minValue: currentPrice * 0.95,
+                                maxValue: currentPrice * 1.05,
+                            },
+                            margins: { above: 0, below: 0 }
+                        })
+                    });
                 }
             }
         }
     }, [lastJsonMessage]);
+
+    // 2b. Poll server every 1s for latest indicator values (host-side computation)
+    useEffect(() => {
+        const fetchIndicators = () => {
+            fetch(`/api/bot/market/${type}/${symbol}/${globalInterval}`)
+                .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+                .then((ind: IndicatorResponse) => {
+                    if ('error' in ind || !ind?.klines?.length) return;
+                    const last = ind.klines.length - 1;
+                    const time = Math.floor(ind.klines[last][0] / 1000) as any;
+
+                    if (ind.ema21[last] !== null && ema21SeriesRef.current) ema21SeriesRef.current.update({ time, value: ind.ema21[last] });
+                    if (ind.ema50[last] !== null && ema50SeriesRef.current) ema50SeriesRef.current.update({ time, value: ind.ema50[last] });
+                    if (ind.vwap[last] !== null && vwapSeriesRef.current) vwapSeriesRef.current.update({ time, value: ind.vwap[last] });
+                    if (ind.rsi[last] !== null && rsiSeriesRef.current) rsiSeriesRef.current.update({ time, value: ind.rsi[last] });
+                    if (ind.bb_upper[last] !== null && bbUpperSeriesRef.current) bbUpperSeriesRef.current.update({ time, value: ind.bb_upper[last] });
+                    if (ind.bb_middle[last] !== null && bbMiddleSeriesRef.current) bbMiddleSeriesRef.current.update({ time, value: ind.bb_middle[last] });
+                    if (ind.bb_lower[last] !== null && bbLowerSeriesRef.current) bbLowerSeriesRef.current.update({ time, value: ind.bb_lower[last] });
+                    if (ind.macd[last] !== null && macdSeriesRef.current) macdSeriesRef.current.update({ time, value: ind.macd[last] });
+                    if (ind.macd_signal[last] !== null && macdSignalSeriesRef.current) macdSignalSeriesRef.current.update({ time, value: ind.macd_signal[last] });
+
+                    const lAtr = ind.atr[last];
+                    const lBBWidth = ind.bb_width[last];
+                    const lMACD = ind.macd[last];
+                    const lSignal = ind.macd_signal[last];
+                    const lHist = ind.macd_hist[last];
+                    if (lAtr !== null) setLatestAtr(lAtr);
+                    if (lBBWidth !== null) setLatestBBWidth(lBBWidth);
+                    if (lMACD !== null && lSignal !== null && lHist !== null) {
+                        setLatestMACD({ macd: lMACD, signal: lSignal, histogram: lHist });
+                    }
+                    useTerminalStore.getState().setIndicators(symbol, {
+                        ema21: ind.ema21[last] ?? undefined,
+                        ema50: ind.ema50[last] ?? undefined,
+                        vwap: ind.vwap[last] ?? undefined,
+                        atr: lAtr ?? undefined,
+                        atrSma: ind.atr_sma?.[last] ?? undefined,
+                        rsi: ind.rsi[last] ?? undefined,
+                        macd: (lMACD !== null && lSignal !== null && lHist !== null)
+                            ? { macd: lMACD, signal: lSignal, histogram: lHist } : undefined,
+                        bb: (ind.bb_upper[last] !== null && ind.bb_middle[last] !== null && ind.bb_lower[last] !== null && lBBWidth !== null)
+                            ? { upper: ind.bb_upper[last], middle: ind.bb_middle[last], lower: ind.bb_lower[last], width: lBBWidth } : undefined,
+                        stochRsi: (ind.stoch_k[last] !== null && ind.stoch_d[last] !== null)
+                            ? { k: ind.stoch_k[last], d: ind.stoch_d[last] } : undefined,
+                    });
+                })
+                .catch(() => { /* bot server not available */ });
+        };
+
+        const indicatorPoll = setInterval(fetchIndicators, 1000);
+        return () => clearInterval(indicatorPoll);
+    }, [symbol, type, globalInterval]);
 
     // 3. Draw Volume Profile Lines
     useEffect(() => {

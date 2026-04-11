@@ -214,4 +214,132 @@ describe('calculateStochRSI', () => {
     });
 });
 
+// ─── IndicatorResponse shape ─────────────────────────────────────────────────
+
+/**
+ * Mirror of the IndicatorResponse interface defined in CandleChart.tsx.
+ * These tests guard the contract between the Python backend and the frontend:
+ * every field the frontend reads must be present and correctly typed.
+ */
+type NullableArr = (number | null)[];
+
+interface IndicatorResponse {
+    klines: [number, number, number, number, number, number][];
+    open_kline?: [number, number, number, number, number, number] | null;
+    ema21: NullableArr;
+    ema50: NullableArr;
+    vwap: NullableArr;
+    rsi: NullableArr;
+    atr: NullableArr;
+    atr_sma: NullableArr;
+    bb_upper: NullableArr;
+    bb_middle: NullableArr;
+    bb_lower: NullableArr;
+    bb_width: NullableArr;
+    macd: NullableArr;
+    macd_signal: NullableArr;
+    macd_hist: NullableArr;
+    stoch_k: NullableArr;
+    stoch_d: NullableArr;
+}
+
+/** Builds a mock IndicatorResponse with n bars of data. */
+function mockIndicatorResponse(n: number): IndicatorResponse {
+    const nullArr: NullableArr = Array(n).fill(null);
+    const klines: [number, number, number, number, number, number][] =
+        Array.from({ length: n }, (_, i) => [i * 60000, 100, 101, 99, 100, 1000]);
+    return {
+        klines,
+        ema21: nullArr,
+        ema50: nullArr,
+        vwap: Array.from({ length: n }, (_, i) => 100 + i * 0.01),
+        rsi: nullArr,
+        atr: nullArr,
+        atr_sma: nullArr,
+        bb_upper: nullArr,
+        bb_middle: nullArr,
+        bb_lower: nullArr,
+        bb_width: nullArr,
+        macd: nullArr,
+        macd_signal: nullArr,
+        macd_hist: nullArr,
+        stoch_k: nullArr,
+        stoch_d: nullArr,
+    };
+}
+
+describe('IndicatorResponse contract', () => {
+    it('mock response satisfies the interface (compile-time check)', () => {
+        const resp: IndicatorResponse = mockIndicatorResponse(30);
+        expect(resp).toBeDefined();
+    });
+
+    it('all array fields have the same length as klines', () => {
+        const n = 40;
+        const resp = mockIndicatorResponse(n);
+        const arrFields: (keyof IndicatorResponse)[] = [
+            'ema21', 'ema50', 'vwap', 'rsi', 'atr', 'atr_sma',
+            'bb_upper', 'bb_middle', 'bb_lower', 'bb_width',
+            'macd', 'macd_signal', 'macd_hist', 'stoch_k', 'stoch_d',
+        ];
+        for (const field of arrFields) {
+            const arr = resp[field] as NullableArr;
+            expect(arr).toHaveLength(n);
+        }
+    });
+
+    it('atr_sma field is present and is a NullableArr', () => {
+        const resp = mockIndicatorResponse(10);
+        expect(Array.isArray(resp.atr_sma)).toBe(true);
+        resp.atr_sma.forEach(v => {
+            expect(v === null || typeof v === 'number').toBe(true);
+        });
+    });
+
+    it('vwap field contains numeric values (not null) in mock', () => {
+        const resp = mockIndicatorResponse(10);
+        resp.vwap.forEach(v => {
+            expect(typeof v).toBe('number');
+        });
+    });
+
+    it('klines rows are 6-element tuples', () => {
+        const resp = mockIndicatorResponse(5);
+        resp.klines.forEach(row => {
+            expect(row).toHaveLength(6);
+            row.forEach(v => expect(typeof v).toBe('number'));
+        });
+    });
+
+    it('last value of atr_sma is accessible via optional chaining', () => {
+        const resp = mockIndicatorResponse(30);
+        // Pattern used in CandleChart: ind.atr_sma?.[last] ?? undefined
+        const last = resp.atr_sma.length - 1;
+        const val = resp.atr_sma?.[last] ?? undefined;
+        // null coalesces to undefined
+        expect(val === null || val === undefined || typeof val === 'number').toBe(true);
+    });
+
+    it('null atr_sma entry coalesces to undefined via ?? operator', () => {
+        const resp = mockIndicatorResponse(5);
+        resp.atr_sma[4] = null;
+        const val = resp.atr_sma?.[4] ?? undefined;
+        expect(val).toBeUndefined();
+    });
+
+    it('open_kline is optional and may be null', () => {
+        const withOpen: IndicatorResponse = {
+            ...mockIndicatorResponse(10),
+            open_kline: [600000, 100, 102, 98, 101, 500],
+        };
+        expect(withOpen.open_kline).toBeDefined();
+
+        const withNull: IndicatorResponse = {
+            ...mockIndicatorResponse(10),
+            open_kline: null,
+        };
+        expect(withNull.open_kline).toBeNull();
+    });
+});
+
 // ─── OBV ─────────────────────────────────────────────────────────────────────
