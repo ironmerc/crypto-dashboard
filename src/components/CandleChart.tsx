@@ -4,23 +4,25 @@ import type { IChartApi, ISeriesApi, IPriceLine } from 'lightweight-charts';
 import useWebSocket from 'react-use-websocket';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { inferPriceAlertDirection } from '../store/priceAlerts';
-import { type MarketType } from '../constants/binance';
-import { getKlineUrl, getWsUrl } from '../utils/market';
+import { type MarketType, KLINE_INTERVALS } from '../constants/binance';
+import { getWsUrl } from '../utils/market';
 import { formatPrice } from '../utils/formatters';
 import { ManualPriceAlertControl } from './ManualPriceAlertControl';
+
+const VALID_SYMBOL_RE = /^[A-Z0-9]{5,20}$/;
+const ALLOWED_MARKET_TYPES: ReadonlySet<string> = new Set<MarketType>(['spot', 'futures']);
+const ALLOWED_INTERVALS: ReadonlySet<string> = new Set(KLINE_INTERVALS);
+
+function buildIndicatorUrl(type: MarketType, symbol: string, interval: string): string | null {
+    if (!VALID_SYMBOL_RE.test(symbol)) return null;
+    if (!ALLOWED_MARKET_TYPES.has(type)) return null;
+    if (!ALLOWED_INTERVALS.has(interval)) return null;
+    return `/api/bot/market/${type}/${symbol}/${interval}`;
+}
 
 interface CandleChartProps {
     symbol: string; // e.g., 'BTCUSDT'
     type: MarketType;
-}
-
-interface KlineData {
-    time: number;
-    open: number;
-    high: number;
-    low: number;
-    close: number;
-    volume: number;
 }
 
 type NullableArr = (number | null)[];
@@ -64,7 +66,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
     const bbLowerSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const macdSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const macdSignalSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
-    const klinesDataRef = useRef<KlineData[]>([]);
+    const currentPriceRef = useRef<number>(0);
 
     // Indicator States for HUD
     const [latestAtr, setLatestAtr] = useState<number | null>(null);
@@ -94,11 +96,10 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
     const fetchPriceAlerts = useTerminalStore(state => state.fetchPriceAlerts);
 
     const getAlertDirection = (targetPrice: number) => {
-        const fallbackPrice = klinesDataRef.current[klinesDataRef.current.length - 1]?.close || 0;
-        return inferPriceAlertDirection(targetPrice, currentPrice || fallbackPrice);
+        return inferPriceAlertDirection(targetPrice, currentPrice || currentPriceRef.current);
     };
 
-    const manualAlertReferencePrice = currentPrice || klinesDataRef.current[klinesDataRef.current.length - 1]?.close || null;
+    const manualAlertReferencePrice = currentPrice || currentPriceRef.current || null;
 
     const getAlertBadge = (direction: string) => {
         if (direction === 'ABOVE') return 'ABOVE';
@@ -150,9 +151,13 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                 precision: 6, // High base precision for small coins
                 minMove: 0.000001, // Support penny coin increments
             },
-            autoscaleInfoProvider: (original: () => any) => {
-                const res = original();
-                return res;
+            autoscaleInfoProvider: () => {
+                const p = currentPriceRef.current;
+                if (!p) return null;
+                return {
+                    priceRange: { minValue: p * 0.95, maxValue: p * 1.05 },
+                    margins: { above: 0, below: 0 },
+                };
             }
         });
 
@@ -213,102 +218,75 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
         macdSeriesRef.current = macdSeries;
         macdSignalSeriesRef.current = macdSignalSeries;
 
-        // Fetch initial historical data
-        if (symbol.length < 5) return;
-        const klinesUrl = getKlineUrl(symbol, globalInterval, type, 500);
-        fetch(klinesUrl)
-            .then(res => res.json())
-            .then(data => {
-                if (!Array.isArray(data)) return;
-                const cdata = data.map((d: any) => ({
-                    time: d[0] / 1000,
-                    open: parseFloat(d[1]),
-                    high: parseFloat(d[2]),
-                    low: parseFloat(d[3]),
-                    close: parseFloat(d[4]),
-                    volume: parseFloat(d[5]),
-                })).filter(d => !isNaN(d.open) && !isNaN(d.close));
+        // Fetch initial klines + indicators from bot server (single request, no Binance client fetch)
+        const initUrl = buildIndicatorUrl(type, symbol, globalInterval);
+        if (!initUrl) return;
+        fetch(initUrl)
+            .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+            .then((ind: IndicatorResponse) => {
+                if ('error' in ind || !ind?.klines?.length || !seriesRef.current) return;
 
-                if (cdata.length > 0 && seriesRef.current) {
-                    klinesDataRef.current = cdata;
-                    seriesRef.current.setData(cdata as any);
+                const cdata = ind.klines.map(k => ({
+                    time: Math.floor(k[0] / 1000),
+                    open: k[1],
+                    high: k[2],
+                    low: k[3],
+                    close: k[4],
+                    volume: k[5],
+                }));
+                seriesRef.current.setData(cdata as any);
 
-                    // Dynamic Precision adjustment based on first close price
-                    const firstPrice = cdata[cdata.length - 1].close;
-                    let precision = 2;
-                    let minMove = 0.01;
+                // Dynamic precision from last close price
+                const lastClose = ind.klines[ind.klines.length - 1][4];
+                let precision = 2;
+                let minMove = 0.01;
+                if (lastClose < 0.01) { precision = 8; minMove = 0.00000001; }
+                else if (lastClose < 0.1) { precision = 6; minMove = 0.000001; }
+                else if (lastClose < 1) { precision = 4; minMove = 0.0001; }
+                else if (lastClose < 10) { precision = 3; minMove = 0.001; }
+                seriesRef.current.applyOptions({ priceFormat: { type: 'price', precision, minMove } });
 
-                    if (firstPrice < 0.01) {
-                        precision = 8;
-                        minMove = 0.00000001;
-                    } else if (firstPrice < 0.1) {
-                        precision = 6;
-                        minMove = 0.000001;
-                    } else if (firstPrice < 1) {
-                        precision = 4;
-                        minMove = 0.0001;
-                    } else if (firstPrice < 10) {
-                        precision = 3;
-                        minMove = 0.001;
-                    }
+                const times = ind.klines.map(k => k[0] / 1000);
+                const toPoints = (arr: (number | null)[]) =>
+                    arr.map((v, i) => ({ time: times[i], value: v })).filter(d => d.value !== null) as any;
 
-                    seriesRef.current.applyOptions({
-                        priceFormat: {
-                            type: 'price',
-                            precision: precision,
-                            minMove: minMove,
-                        },
-                    });
+                ema21SeriesRef.current?.setData(toPoints(ind.ema21));
+                ema50SeriesRef.current?.setData(toPoints(ind.ema50));
+                vwapSeriesRef.current?.setData(toPoints(ind.vwap));
+                rsiSeriesRef.current?.setData(toPoints(ind.rsi));
+                bbUpperSeriesRef.current?.setData(toPoints(ind.bb_upper));
+                bbMiddleSeriesRef.current?.setData(toPoints(ind.bb_middle));
+                bbLowerSeriesRef.current?.setData(toPoints(ind.bb_lower));
+                macdSeriesRef.current?.setData(toPoints(ind.macd));
+                macdSignalSeriesRef.current?.setData(toPoints(ind.macd_signal));
 
-                    // Fetch pre-computed indicator series from bot server (host-side computation)
-                    fetch(`/api/bot/market/${type}/${symbol}/${globalInterval}`)
-                        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-                        .then((ind: IndicatorResponse) => {
-                            if ('error' in ind || !ind?.klines?.length) return;
-                            const times = ind.klines.map((k: number[]) => k[0] / 1000);
-                            const toPoints = (arr: (number | null)[]) =>
-                                arr.map((v, i) => ({ time: times[i], value: v })).filter(d => d.value !== null) as any;
-
-                            ema21SeriesRef.current?.setData(toPoints(ind.ema21));
-                            ema50SeriesRef.current?.setData(toPoints(ind.ema50));
-                            vwapSeriesRef.current?.setData(toPoints(ind.vwap));
-                            rsiSeriesRef.current?.setData(toPoints(ind.rsi));
-                            bbUpperSeriesRef.current?.setData(toPoints(ind.bb_upper));
-                            bbMiddleSeriesRef.current?.setData(toPoints(ind.bb_middle));
-                            bbLowerSeriesRef.current?.setData(toPoints(ind.bb_lower));
-                            macdSeriesRef.current?.setData(toPoints(ind.macd));
-                            macdSignalSeriesRef.current?.setData(toPoints(ind.macd_signal));
-
-                            const last = ind.klines.length - 1;
-                            const lAtr = ind.atr[last];
-                            const lBBWidth = ind.bb_width[last];
-                            const lMACD = ind.macd[last];
-                            const lSignal = ind.macd_signal[last];
-                            const lHist = ind.macd_hist[last];
-                            if (lAtr !== null) setLatestAtr(lAtr);
-                            if (lBBWidth !== null) setLatestBBWidth(lBBWidth);
-                            if (lMACD !== null && lSignal !== null && lHist !== null) {
-                                setLatestMACD({ macd: lMACD, signal: lSignal, histogram: lHist });
-                            }
-                            useTerminalStore.getState().setIndicators(symbol, {
-                                ema21: ind.ema21[last] ?? undefined,
-                                ema50: ind.ema50[last] ?? undefined,
-                                vwap: ind.vwap[last] ?? undefined,
-                                atr: lAtr ?? undefined,
-                                atrSma: ind.atr_sma?.[last] ?? undefined,
-                                rsi: ind.rsi[last] ?? undefined,
-                                macd: (lMACD !== null && lSignal !== null && lHist !== null)
-                                    ? { macd: lMACD, signal: lSignal, histogram: lHist } : undefined,
-                                bb: (ind.bb_upper[last] !== null && ind.bb_middle[last] !== null && ind.bb_lower[last] !== null && lBBWidth !== null)
-                                    ? { upper: ind.bb_upper[last], middle: ind.bb_middle[last], lower: ind.bb_lower[last], width: lBBWidth } : undefined,
-                                stochRsi: (ind.stoch_k[last] !== null && ind.stoch_d[last] !== null)
-                                    ? { k: ind.stoch_k[last], d: ind.stoch_d[last] } : undefined,
-                            });
-                        })
-                        .catch(() => { /* bot server not running, indicators remain empty */ });
+                const last = ind.klines.length - 1;
+                const lAtr = ind.atr[last];
+                const lBBWidth = ind.bb_width[last];
+                const lMACD = ind.macd[last];
+                const lSignal = ind.macd_signal[last];
+                const lHist = ind.macd_hist[last];
+                if (lAtr !== null) setLatestAtr(lAtr);
+                if (lBBWidth !== null) setLatestBBWidth(lBBWidth);
+                if (lMACD !== null && lSignal !== null && lHist !== null) {
+                    setLatestMACD({ macd: lMACD, signal: lSignal, histogram: lHist });
                 }
+                useTerminalStore.getState().setIndicators(symbol, {
+                    ema21: ind.ema21[last] ?? undefined,
+                    ema50: ind.ema50[last] ?? undefined,
+                    vwap: ind.vwap[last] ?? undefined,
+                    atr: lAtr ?? undefined,
+                    atrSma: ind.atr_sma?.[last] ?? undefined,
+                    rsi: ind.rsi[last] ?? undefined,
+                    macd: (lMACD !== null && lSignal !== null && lHist !== null)
+                        ? { macd: lMACD, signal: lSignal, histogram: lHist } : undefined,
+                    bb: (ind.bb_upper[last] !== null && ind.bb_middle[last] !== null && ind.bb_lower[last] !== null && lBBWidth !== null)
+                        ? { upper: ind.bb_upper[last], middle: ind.bb_middle[last], lower: ind.bb_lower[last], width: lBBWidth } : undefined,
+                    stochRsi: (ind.stoch_k[last] !== null && ind.stoch_d[last] !== null)
+                        ? { k: ind.stoch_k[last], d: ind.stoch_d[last] } : undefined,
+                });
             })
-            .catch(() => { /* historical kline fetch failed, chart remains empty */ });
+            .catch(() => { /* bot server not running, chart remains empty */ });
 
         // 1.5 Click to set Alert
         const handleChartClick = (param: any) => {
@@ -376,38 +354,20 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                 };
 
                 if (!isNaN(updateData.open) && !isNaN(updateData.close)) {
+                    currentPriceRef.current = updateData.close;
                     seriesRef.current.update(updateData as any);
-
-                    // Maintain rolling klines array (for reference only — indicators computed server-side)
-                    const klines = klinesDataRef.current;
-                    const existing = klines.findIndex(d => d.time === updateData.time);
-                    if (existing >= 0) {
-                        klines[existing] = { ...klines[existing], ...updateData };
-                    } else {
-                        klines.push(updateData);
-                        if (klines.length > 500) klines.shift();
-                    }
-
-                    // Force +/- 5% Y-Axis to match the Heatmap exactly
-                    const currentPrice = updateData.close;
-                    seriesRef.current.applyOptions({
-                        autoscaleInfoProvider: () => ({
-                            priceRange: {
-                                minValue: currentPrice * 0.95,
-                                maxValue: currentPrice * 1.05,
-                            },
-                            margins: { above: 0, below: 0 }
-                        })
-                    });
                 }
             }
         }
     }, [lastJsonMessage]);
 
-    // 2b. Poll server every 1s for latest indicator values (host-side computation)
+    // 2b. Poll server every 5s for latest indicator values (host-side computation)
     useEffect(() => {
+        const pollUrl = buildIndicatorUrl(type, symbol, globalInterval);
+        if (!pollUrl) return;
+        const controller = new AbortController();
         const fetchIndicators = () => {
-            fetch(`/api/bot/market/${type}/${symbol}/${globalInterval}`)
+            fetch(pollUrl, { signal: controller.signal })
                 .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
                 .then((ind: IndicatorResponse) => {
                     if ('error' in ind || !ind?.klines?.length) return;
@@ -449,11 +409,11 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                             ? { k: ind.stoch_k[last], d: ind.stoch_d[last] } : undefined,
                     });
                 })
-                .catch(() => { /* bot server not available */ });
+                .catch((e: unknown) => { if (e instanceof Error && e.name !== 'AbortError') { /* bot server not available */ } });
         };
 
-        const indicatorPoll = setInterval(fetchIndicators, 1000);
-        return () => clearInterval(indicatorPoll);
+        const indicatorPoll = setInterval(fetchIndicators, 5000);
+        return () => { clearInterval(indicatorPoll); controller.abort(); };
     }, [symbol, type, globalInterval]);
 
     // 3. Draw Volume Profile Lines

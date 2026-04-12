@@ -530,7 +530,7 @@ export const useTerminalStore = create<TerminalState>()(
                             timeframes: updates.timeframes ? { ...(current.timeframes || {}), ...updates.timeframes } : (current.timeframes || {}),
                             thresholds: mergedThresholds,
                         },
-                        isConfigFetched: updates.globalEnabled !== undefined || state.isConfigFetched
+                        isConfigFetched: (skipSync && updates.globalEnabled !== undefined) || state.isConfigFetched
                     };
                 });
                 if (!skipSync) syncConfigToBot();

@@ -145,7 +145,7 @@ class MarketEngine:
         # Fetch history for all timeframes to populate indicators immediately
         tasks = []
         for tf in ALL_TIMEFRAMES:
-            tasks.append(self.fetch_historical_klines(symbol, tf, market_type))
+            tasks.append(self.fetch_historical_klines(symbol, tf, market_type, limit=500))
         
         results = await asyncio.gather(*tasks)
         for i, tf in enumerate(ALL_TIMEFRAMES):
@@ -764,7 +764,7 @@ class MarketEngine:
             open_klines.pop(tf, None)
             klines_tf = symbol_state.setdefault("klines", {}).setdefault(tf, [])
             klines_tf.append([k['t'], k['o'], k['h'], k['l'], k['c'], k['v']])
-            if len(klines_tf) > 100: klines_tf.pop(0)
+            if len(klines_tf) > 500: klines_tf.pop(0)
 
             if len(klines_tf) >= 30:
                 ind = self.calculate_indicators(symbol, tf)
