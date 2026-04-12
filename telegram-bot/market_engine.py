@@ -248,7 +248,12 @@ class MarketEngine:
                 continue
 
             alert_symbol = str(alert.get("symbol") or "").upper()
-            if alert_symbol != symbol_key or not self.is_price_alert_triggered(alert, previous_price, current_price):
+            alert_market_type = alert.get("market_type")  # None → legacy alert, matches any stream
+            if (
+                alert_symbol != symbol_key
+                or (alert_market_type and alert_market_type != market_type)
+                or not self.is_price_alert_triggered(alert, previous_price, current_price)
+            ):
                 remaining.append(alert)
                 continue
 

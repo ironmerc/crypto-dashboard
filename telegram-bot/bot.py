@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import re
 import asyncio
@@ -6,7 +8,7 @@ from datetime import datetime, timezone
 from collections import deque
 import json
 from typing import Optional
-from aiohttp import web, ClientSession
+from aiohttp import web, ClientSession, ClientError
 from alert_policy import build_cooldown_key, should_accept_alert
 from bot_identity import load_cached_username, save_cached_username
 from config_utils import (
@@ -19,6 +21,8 @@ from schema_validation import (
     validate_by_schema_warn_only,
 )
 from market_engine import MarketEngine
+from commands import _BOT_COMMANDS, _STEP_REGISTRIES, get_pending, cleanup_expired_loop
+from validation import VALID_SYMBOL_RE
 
 # Configure logging
 logging.basicConfig(
@@ -30,10 +34,13 @@ logger = logging.getLogger(__name__)
 # Environment Variables
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 BOT_IDENTITY_CACHE_FILE = os.getenv("BOT_IDENTITY_CACHE_FILE", "bot_identity.json")
 BOT_IDENTITY_RETRY_SEC = float(os.getenv("BOT_IDENTITY_RETRY_SEC", "30"))
 BOT_IDENTITY_REFRESH_SEC = float(os.getenv("BOT_IDENTITY_REFRESH_SEC", "600"))
+
+def _tg_url(endpoint: str) -> str:
+    """Constructs Telegram API URL with current token (never embedding in long-lived strings)."""
+    return f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{endpoint}"
 
 if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
     logger.error("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in the environment.")
@@ -138,7 +145,7 @@ _engine: Optional[MarketEngine] = None
 
 # Input validation constants for market data endpoint
 _ALLOWED_MARKET_TYPES = {"spot", "futures"}
-_VALID_SYMBOL = re.compile(r'^[A-Z0-9]{4,20}$')
+_VALID_SYMBOL = VALID_SYMBOL_RE
 _VALID_TIMEFRAME = re.compile(r'^(1m|3m|5m|15m|30m|1h|2h|4h|6h|8h|12h|1d|3d|1w|1M)$')
 
 def get_iso_now():
@@ -202,7 +209,7 @@ async def send_to_telegram(session: ClientSession, text: str):
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            async with session.post(API_URL, json=payload, timeout=10) as response:
+            async with session.post(_tg_url("sendMessage"), json=payload, timeout=10) as response:
                 if response.status == 200:
                     logger.info("Successfully sent message to Telegram.")
                     last_successful_message_timestamp = get_iso_now()
@@ -399,6 +406,191 @@ async def handle_get_market_data(request):
         logger.error(f"Failed to get indicator series for {market_type}/{symbol}/{tf}", exc_info=True)
         return web.json_response({"error": "Unable to fetch indicator data"}, status=500)
 
+# ---------------------------------------------------------------------------
+# Telegram inbound command helpers
+# ---------------------------------------------------------------------------
+
+def _validate_alert(alert: dict) -> Optional[str]:
+    """Returns an error string if invalid, else None."""
+    required = ("id", "symbol", "price")
+    for field in required:
+        if field not in alert:
+            return f"Missing required field: {field}"
+    if not isinstance(alert["id"], str) or not alert["id"]:
+        return "id must be a non-empty string"
+    sym = str(alert.get("symbol", ""))
+    if not _VALID_SYMBOL.match(sym):
+        return f"Invalid symbol: {sym!r}"
+    try:
+        price = float(alert["price"])
+        if price <= 0:
+            return "price must be > 0"
+    except (TypeError, ValueError):
+        return "price must be a number"
+    direction = alert.get("direction")
+    if direction is not None and direction not in ("ABOVE", "BELOW", "CROSS"):
+        return f"Invalid direction: {direction!r}"
+    market_type = alert.get("market_type")
+    if market_type is not None and market_type not in ("spot", "futures"):
+        return f"Invalid market_type: {market_type!r}"
+    return None
+
+
+def parse_bot_command(text: str) -> tuple:
+    """Parses '/command args' → ('command', ['arg1', ...]). Returns ('', []) for non-commands."""
+    if not text.startswith("/"):
+        return ("", [])
+    parts = text.split()
+    cmd = parts[0].lstrip("/").lower().split("@")[0]  # strip @botname suffix if present
+    return (cmd, parts[1:])
+
+
+async def send_bot_reply(session: ClientSession, text: str, reply_to_message_id=None):
+    """Sends a reply into the bot's configured chat with HTML parse mode."""
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text,
+        "parse_mode": "HTML",
+    }
+    if reply_to_message_id:
+        payload["reply_to_message_id"] = reply_to_message_id
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            async with session.post(_tg_url("sendMessage"), json=payload, timeout=10) as resp:
+                if resp.status == 200:
+                    return True
+                logger.warning(f"send_bot_reply HTTP {resp.status} (attempt {attempt + 1})")
+        except Exception as e:
+            logger.warning(f"send_bot_reply error (attempt {attempt + 1}): {e}")
+        if attempt < max_retries - 1:
+            await asyncio.sleep(2 ** attempt)
+    return False
+
+
+def _write_reload_flag():
+    try:
+        with open("reload.flag", "w") as f:
+            f.write("1")
+    except (IOError, OSError) as e:
+        logger.debug(f"Could not write reload flag: {e}")
+
+
+# ---------------------------------------------------------------------------
+# BotContext — dependency bundle passed to command setup() functions
+# ---------------------------------------------------------------------------
+
+class BotContext:
+    """Provides command modules access to shared bot state without importing bot.py."""
+
+    @property
+    def config(self) -> dict:
+        return bot_config
+
+    @property
+    def engine(self) -> Optional[MarketEngine]:
+        return _engine
+
+    def save(self) -> None:
+        save_config()
+
+    def reload(self) -> None:
+        _write_reload_flag()
+
+    async def reply(self, session, text: str, reply_to_message_id=None) -> bool:
+        return await send_bot_reply(session, text, reply_to_message_id)
+
+
+# ---------------------------------------------------------------------------
+# Top-level command handlers and inbound message processor
+# ---------------------------------------------------------------------------
+
+async def _handle_pending_step(message: dict, session: ClientSession) -> bool:
+    """Returns True if the message was consumed by an in-progress conversational flow."""
+    chat_id = str(message.get("chat", {}).get("id", ""))
+    pending = get_pending(chat_id)
+    if not pending:
+        return False
+    text = (message.get("text") or "").strip()
+    cmd = pending.get("command", "alert")  # default keeps compat with states written before registry
+    step_registry = _STEP_REGISTRIES.get(cmd, {})
+    handler = step_registry.get(pending.get("step", ""))
+    if handler:
+        return await handler(chat_id, text, session, message)
+    return False
+
+
+async def process_inbound_message(message: dict, session: ClientSession):
+    """Routes an inbound Telegram message to the appropriate handler."""
+    if not TELEGRAM_CHAT_ID:
+        return  # inbound commands disabled — bot token or chat ID not configured
+    if str(message.get("chat", {}).get("id", "")) != str(TELEGRAM_CHAT_ID):
+        return  # security gate — ignore messages from other chats
+    if await _handle_pending_step(message, session):
+        return
+    text = (message.get("text") or "").strip()
+    cmd, _args = parse_bot_command(text)
+    if not cmd:
+        return
+    handler = _BOT_COMMANDS.get(cmd)
+    if handler:
+        await handler(session, message)
+
+
+async def telegram_command_poll_loop():
+    """Long-polls Telegram getUpdates to process inbound commands."""
+    logger.info("Starting Telegram command poll loop...")
+    update_offset = 0
+    async with ClientSession() as session:
+        # Fast-forward past any queued messages that arrived while the bot was
+        # offline so they are not replayed against the current config.
+        try:
+            async with session.get(
+                _tg_url("getUpdates"),
+                params={"offset": -1, "limit": 1, "allowed_updates": ["message"]},
+                timeout=10,
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    results = data.get("result", [])
+                    if results:
+                        update_offset = results[-1]["update_id"] + 1
+                        logger.info(f"Telegram poller fast-forwarded to offset {update_offset}")
+        except Exception as e:
+            logger.warning(f"Telegram offset fast-forward failed (non-fatal): {e}")
+        while True:
+            try:
+                params = {
+                    "offset": update_offset,
+                    "timeout": 30,
+                    "allowed_updates": ["message"],
+                }
+                async with session.get(
+                    _tg_url("getUpdates"),
+                    params=params,
+                    timeout=40,
+                ) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"getUpdates returned {resp.status}")
+                        await asyncio.sleep(5)
+                        continue
+                    data = await resp.json()
+                    for update in data.get("result", []):
+                        uid = update.get("update_id", 0)
+                        update_offset = uid + 1
+                        if "message" in update:
+                            await process_inbound_message(update["message"], session)
+            except asyncio.CancelledError:
+                break
+            except (asyncio.TimeoutError, ClientError) as e:
+                logger.warning(f"Telegram poll network error: {e}")
+                await asyncio.sleep(5)
+            except Exception as e:
+                logger.error(f"Telegram poll unexpected error: {e}", exc_info=True)
+                await asyncio.sleep(5)
+    logger.info("Telegram command poll loop stopped.")
+
+
 async def handle_get_price_alerts(request):
     """Returns all active price alerts."""
     return web.json_response(bot_config.get("priceAlerts", []))
@@ -409,10 +601,14 @@ async def handle_post_price_alert(request):
     try:
         data = await request.json()
         action = data.get("action", "add")
-        
+
         if action == "add":
             alert = data.get("alert")
-            if not alert: return web.json_response({"error": "Missing alert object"}, status=400)
+            if not alert:
+                return web.json_response({"error": "Missing alert object"}, status=400)
+            err = _validate_alert(alert)
+            if err:
+                return web.json_response({"error": err}, status=400)
             if not isinstance(bot_config.get("priceAlerts"), list):
                 bot_config["priceAlerts"] = []
             bot_config["priceAlerts"].append(alert)
@@ -430,12 +626,15 @@ async def handle_post_price_alert(request):
             logger.debug(f"Could not write reload flag: {e}")
         
         return web.json_response({"status": "success", "priceAlerts": bot_config["priceAlerts"]})
+    except json.JSONDecodeError:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
     except Exception as e:
-        return web.json_response({"error": str(e)}, status=400)
+        logger.error("Unexpected error in handle_post_price_alert: %s", e, exc_info=True)
+        return web.json_response({"error": "Internal server error"}, status=500)
 
 async def shutdown_tasks(app: web.Application):
     """Gracefully stop background tasks on app shutdown."""
-    for key in ("queue_processor", "identity_refresher", "market_engine"):
+    for key in ("queue_processor", "identity_refresher", "market_engine", "telegram_poller", "state_cleaner"):
         task = app.get(key)
         if not task:
             continue
@@ -464,6 +663,10 @@ async def init_app():
     # Load persistence
     load_config()
 
+    # Register bot commands via setup() closures BEFORE polling starts
+    from commands.alert import setup as setup_alert_commands
+    setup_alert_commands(BotContext())
+
     # Start the market engine (server-side indicator computation + alert generation)
     _engine = MarketEngine(bot_url="http://localhost:8888")
     app['market_engine'] = asyncio.create_task(_engine.run())
@@ -471,6 +674,8 @@ async def init_app():
     # Start the background tasks
     app['queue_processor'] = asyncio.create_task(process_queue())
     app['identity_refresher'] = asyncio.create_task(maintain_bot_identity())
+    app['state_cleaner'] = asyncio.create_task(cleanup_expired_loop())
+    app['telegram_poller'] = asyncio.create_task(telegram_command_poll_loop())
     app.on_cleanup.append(shutdown_tasks)
 
     return app
