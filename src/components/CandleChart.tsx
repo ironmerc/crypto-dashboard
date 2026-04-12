@@ -329,9 +329,20 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
             window.removeEventListener('keydown', handleKeyDown);
             chart.unsubscribeClick(handleChartClick);
             chart.remove();
+            chartRef.current = null;
+            seriesRef.current = null;
             pocLineRef.current = null;
             vahLineRef.current = null;
             valLineRef.current = null;
+            ema21SeriesRef.current = null;
+            ema50SeriesRef.current = null;
+            vwapSeriesRef.current = null;
+            rsiSeriesRef.current = null;
+            bbUpperSeriesRef.current = null;
+            bbMiddleSeriesRef.current = null;
+            bbLowerSeriesRef.current = null;
+            macdSeriesRef.current = null;
+            macdSignalSeriesRef.current = null;
         };
     }, [symbol, type, globalInterval]);
 
@@ -374,15 +385,15 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                     const last = ind.klines.length - 1;
                     const time = Math.floor(ind.klines[last][0] / 1000) as any;
 
-                    if (ind.ema21[last] !== null && ema21SeriesRef.current) ema21SeriesRef.current.update({ time, value: ind.ema21[last] });
-                    if (ind.ema50[last] !== null && ema50SeriesRef.current) ema50SeriesRef.current.update({ time, value: ind.ema50[last] });
-                    if (ind.vwap[last] !== null && vwapSeriesRef.current) vwapSeriesRef.current.update({ time, value: ind.vwap[last] });
-                    if (ind.rsi[last] !== null && rsiSeriesRef.current) rsiSeriesRef.current.update({ time, value: ind.rsi[last] });
-                    if (ind.bb_upper[last] !== null && bbUpperSeriesRef.current) bbUpperSeriesRef.current.update({ time, value: ind.bb_upper[last] });
-                    if (ind.bb_middle[last] !== null && bbMiddleSeriesRef.current) bbMiddleSeriesRef.current.update({ time, value: ind.bb_middle[last] });
-                    if (ind.bb_lower[last] !== null && bbLowerSeriesRef.current) bbLowerSeriesRef.current.update({ time, value: ind.bb_lower[last] });
-                    if (ind.macd[last] !== null && macdSeriesRef.current) macdSeriesRef.current.update({ time, value: ind.macd[last] });
-                    if (ind.macd_signal[last] !== null && macdSignalSeriesRef.current) macdSignalSeriesRef.current.update({ time, value: ind.macd_signal[last] });
+                    if (ind.ema21[last] != null && ema21SeriesRef.current) ema21SeriesRef.current.update({ time, value: ind.ema21[last]! });
+                    if (ind.ema50[last] != null && ema50SeriesRef.current) ema50SeriesRef.current.update({ time, value: ind.ema50[last]! });
+                    if (ind.vwap[last] != null && vwapSeriesRef.current) vwapSeriesRef.current.update({ time, value: ind.vwap[last]! });
+                    if (ind.rsi[last] != null && rsiSeriesRef.current) rsiSeriesRef.current.update({ time, value: ind.rsi[last]! });
+                    if (ind.bb_upper[last] != null && bbUpperSeriesRef.current) bbUpperSeriesRef.current.update({ time, value: ind.bb_upper[last]! });
+                    if (ind.bb_middle[last] != null && bbMiddleSeriesRef.current) bbMiddleSeriesRef.current.update({ time, value: ind.bb_middle[last]! });
+                    if (ind.bb_lower[last] != null && bbLowerSeriesRef.current) bbLowerSeriesRef.current.update({ time, value: ind.bb_lower[last]! });
+                    if (ind.macd[last] != null && macdSeriesRef.current) macdSeriesRef.current.update({ time, value: ind.macd[last]! });
+                    if (ind.macd_signal[last] != null && macdSignalSeriesRef.current) macdSignalSeriesRef.current.update({ time, value: ind.macd_signal[last]! });
 
                     const lAtr = ind.atr[last];
                     const lBBWidth = ind.bb_width[last];
