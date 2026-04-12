@@ -49,9 +49,21 @@ def _is_valid_symbol(s: str) -> bool:
     return bool(_ALERT_SYMBOL_RE.match(s))
 
 
+def _fmt_price(price: float) -> str:
+    """Format a crypto price with enough decimal places to be meaningful."""
+    if price >= 1000:
+        return f"{price:,.2f}"
+    elif price >= 1:
+        return f"{price:,.4f}"
+    elif price >= 0.01:
+        return f"{price:,.6f}"
+    else:
+        return f"{price:,.8f}"
+
+
 def _fmt_alert(a: dict) -> str:
     direction = a.get("direction") or a.get("side", "?")
-    return f"<b>{a['symbol']}</b> ${float(a['price']):,.0f} {direction}"
+    return f"<b>{a['symbol']}</b> ${_fmt_price(float(a['price']))} {direction}"
 
 
 # ---------------------------------------------------------------------------
@@ -317,7 +329,7 @@ def setup(ctx) -> None:
         added_note = f" — <b>{sym}</b> ({market_type}) added to monitoring" if is_new else ""
         await ctx.reply(
             session,
-            f"✅ Alert set{added_note}\n<b>{sym}</b>: ${price:,.0f} — {direction}\nID: <code>{alert['id']}</code>",
+            f"✅ Alert set{added_note}\n<b>{sym}</b>: ${_fmt_price(price)} — {direction}\nID: <code>{alert['id']}</code>",
             message.get("message_id"),
         )
         return True
