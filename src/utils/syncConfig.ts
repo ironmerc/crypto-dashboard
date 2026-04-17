@@ -9,6 +9,7 @@ let syncTimeout: any = null;
  */
 export const fetchConfigFromBot = async () => {
     const botUrl = import.meta.env.VITE_TELEGRAM_BOT_URL || '/api/bot/config';
+    const requestVersion = useTerminalStore.getState().configSyncVersion;
     try {
         console.log('[Sync] Fetching config from bot...');
         const response = await fetch(botUrl);
@@ -29,6 +30,11 @@ export const fetchConfigFromBot = async () => {
             const warnings = validateBySchemaWarnOnly(botConfig, telegramConfigSchema as any, { partial: false });
             logSchemaWarnings('config:fetch', warnings);
             console.log('[Sync] Received config from bot:', botConfig);
+            const state = useTerminalStore.getState();
+            if (state.isConfigSaving || state.configSyncVersion !== requestVersion) {
+                console.log('[Sync] Skipping stale config fetch result');
+                return;
+            }
             // Update store with data from bot, merging with current state
             useTerminalStore.getState().updateTelegramConfig(botConfig, true);
         } else {

@@ -94,6 +94,11 @@ export interface TelegramConfig {
     timeframes: Record<string, string[]>; // category -> enabled timeframes, e.g. { 'regime_shift': ['15m', '1h'] }
 }
 
+export interface ConfigSaveResult {
+    ok: boolean;
+    error?: string;
+}
+
 const DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES = ['1h', '4h', '1d', '1w', '1M'];
 const DEFAULT_TIMEFRAMES_BY_CATEGORY: Record<string, string[]> = {
     atr_expand: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
@@ -159,6 +164,62 @@ const normalizePriceAlert = (
     direction: normalizePriceAlertDirection(alert.direction, alert.side),
     createdAt: Number(alert.createdAt || Date.now()),
 });
+
+const normalizeMonitoredSymbols = (
+    monitoredSymbols?: (string | MonitoredSymbol)[]
+): MonitoredSymbol[] => {
+    if (!Array.isArray(monitoredSymbols)) return [];
+
+    return monitoredSymbols.map((entry) => {
+        const rawSym = typeof entry === 'string' ? entry : entry.symbol;
+        const type = typeof entry === 'string' ? 'futures' : entry.type;
+        let symbol = rawSym.toUpperCase().trim();
+        if (symbol.length >= 3 && symbol.length <= 5 && !symbol.endsWith('USDT')) {
+            symbol = `${symbol}USDT`;
+        }
+        return { symbol, type };
+    });
+};
+
+const normalizeTelegramConfig = (config: Partial<TelegramConfig>): TelegramConfig => ({
+    globalEnabled: config.globalEnabled ?? true,
+    activeSessions: config.activeSessions ?? ['London', 'US', 'Asia'],
+    monitoredSymbols: normalizeMonitoredSymbols(config.monitoredSymbols),
+    alertOnStateChange: config.alertOnStateChange ?? true,
+    quietHours: {
+        enabled: config.quietHours?.enabled ?? false,
+        start: config.quietHours?.start ?? '22:00',
+        end: config.quietHours?.end ?? '06:00',
+    },
+    categories: config.categories ?? {},
+    cooldowns: config.cooldowns ?? {},
+    thresholds: normalizeThresholdScopes(config.thresholds),
+    timeframes: config.timeframes ? { ...DEFAULT_TIMEFRAMES_BY_CATEGORY, ...config.timeframes } : { ...DEFAULT_TIMEFRAMES_BY_CATEGORY },
+});
+
+const postTelegramConfig = async (config: TelegramConfig): Promise<{ ok: boolean; config?: TelegramConfig; error?: string }> => {
+    try {
+        const resp = await fetch('/api/bot/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config),
+        });
+        if (!resp.ok) {
+            const errorText = await resp.text();
+            return { ok: false, error: errorText || `HTTP ${resp.status}` };
+        }
+        const data = await resp.json();
+        return {
+            ok: true,
+            config: normalizeTelegramConfig(data.config || config),
+        };
+    } catch (e) {
+        return {
+            ok: false,
+            error: e instanceof Error ? e.message : 'Failed to save configuration',
+        };
+    }
+};
 
 interface TerminalState {
     // Global Timeframe Settings
@@ -232,9 +293,11 @@ interface TerminalState {
     // Telegram Configurations (Persisted)
     telegramConfig: TelegramConfig;
     isConfigFetched: boolean;
+    isConfigSaving: boolean;
+    configSyncVersion: number;
     updateTelegramConfig: (updates: Partial<TelegramConfig>, skipSync?: boolean) => void;
-    addMonitoredSymbol: (symbol: string, type?: 'spot' | 'futures') => void;
-    removeMonitoredSymbol: (symbol: string, type?: 'spot' | 'futures') => void;
+    addMonitoredSymbol: (symbol: string, type?: 'spot' | 'futures') => Promise<ConfigSaveResult>;
+    removeMonitoredSymbol: (symbol: string, type?: 'spot' | 'futures') => Promise<ConfigSaveResult>;
 
     // Theme Settings
     theme: 'terminal' | 'professional';
@@ -514,6 +577,8 @@ export const useTerminalStore = create<TerminalState>()(
                 thresholds: normalizeThresholdScopes(),
             },
             isConfigFetched: false,
+            isConfigSaving: false,
+            configSyncVersion: 0,
             updateTelegramConfig: (updates, skipSync = false) => {
                 set((state) => {
                     const current = state.telegramConfig || {};
@@ -536,65 +601,94 @@ export const useTerminalStore = create<TerminalState>()(
                 if (!skipSync) syncConfigToBot();
             },
 
-            addMonitoredSymbol: (symbol: string, type: 'spot' | 'futures' = 'futures') => {
-                set((state: TerminalState) => {
-                    const current = state.telegramConfig.monitoredSymbols;
-                    let s = symbol.toUpperCase().trim();
-                    if (!s) return state;
+            addMonitoredSymbol: async (symbol: string, type: 'spot' | 'futures' = 'futures') => {
+                const state = get();
+                if (!state.isConfigFetched) {
+                    return { ok: false, error: 'Configuration is still loading. Please try again in a moment.' };
+                }
 
-                    // Normalize symbol: append USDT if missing for base symbols
-                    if (s.length >= 3 && s.length <= 5 && !s.endsWith('USDT')) {
-                        s = `${s}USDT`;
-                    }
-                    
-                    const exists = current.some(m => {
-                        const sSym = typeof m === 'string' ? m : m.symbol;
-                        const sType = typeof m === 'string' ? 'futures' : m.type;
-                        return sSym === s && sType === type;
-                    });
-                    
-                    if (exists) return state;
-                    
-                    const newSymbols = [...current, { symbol: s, type }];
-                    const newThresholds = { ...state.telegramConfig.thresholds };
-                    if (!newThresholds[s]) {
-                        newThresholds[s] = { ...state.telegramConfig.thresholds.global };
-                    }
-                    return {
-                        telegramConfig: {
-                            ...state.telegramConfig,
-                            monitoredSymbols: newSymbols,
-                            thresholds: normalizeThresholdScopes(newThresholds)
-                        }
-                    };
+                let s = symbol.toUpperCase().trim();
+                if (!s) return { ok: false, error: 'Symbol is required.' };
+
+                if (s.length >= 3 && s.length <= 5 && !s.endsWith('USDT')) {
+                    s = `${s}USDT`;
+                }
+
+                const current = normalizeMonitoredSymbols(state.telegramConfig.monitoredSymbols);
+                const exists = current.some((entry) => entry.symbol === s && entry.type === type);
+                if (exists) return { ok: false, error: `${s} is already monitored as ${type}.` };
+
+                const nextConfig = normalizeTelegramConfig({
+                    ...state.telegramConfig,
+                    monitoredSymbols: [...current, { symbol: s, type }],
+                    thresholds: {
+                        ...state.telegramConfig.thresholds,
+                        [s]: state.telegramConfig.thresholds[s] || { ...state.telegramConfig.thresholds.global },
+                    },
                 });
-                setTimeout(() => {
-                    syncConfigToBot();
-                }, 100);
+                const version = state.configSyncVersion + 1;
+                set({ isConfigSaving: true, configSyncVersion: version });
+
+                const result = await postTelegramConfig(nextConfig);
+                if (!result.ok) {
+                    if (get().configSyncVersion === version) {
+                        set({ isConfigSaving: false });
+                    }
+                    return { ok: false, error: result.error || 'Unable to save symbol.' };
+                }
+
+                if (get().configSyncVersion === version) {
+                    set({
+                        telegramConfig: result.config!,
+                        isConfigFetched: true,
+                        isConfigSaving: false,
+                    });
+                }
+
+                return { ok: true };
             },
 
-            removeMonitoredSymbol: (symbol: string, type?: 'spot' | 'futures') => {
-                set((state: TerminalState) => {
-                    const current = state.telegramConfig;
-                    const newSymbols = current.monitoredSymbols.filter(m => {
-                        if (typeof m === 'string') return m !== symbol;
-                        if (type) return !(m.symbol === symbol && m.type === type);
-                        return m.symbol !== symbol;
-                    });
-                    const newThresholds = { ...current.thresholds };
-                    // Only delete if no other type of same symbol exists
-                    const stillExists = newSymbols.some(m => (typeof m === 'string' ? m : m.symbol) === symbol);
-                    if (!stillExists) delete newThresholds[symbol];
-                    
-                    return {
-                        telegramConfig: {
-                            ...current,
-                            monitoredSymbols: newSymbols,
-                            thresholds: newThresholds
-                        }
-                    };
+            removeMonitoredSymbol: async (symbol: string, type?: 'spot' | 'futures') => {
+                const state = get();
+                if (!state.isConfigFetched) {
+                    return { ok: false, error: 'Configuration is still loading. Please try again in a moment.' };
+                }
+
+                const currentSymbols = normalizeMonitoredSymbols(state.telegramConfig.monitoredSymbols);
+                const newSymbols = currentSymbols.filter((entry) => {
+                    if (type) return !(entry.symbol === symbol && entry.type === type);
+                    return entry.symbol !== symbol;
                 });
-                syncConfigToBot();
+                const newThresholds = { ...state.telegramConfig.thresholds };
+                const stillExists = newSymbols.some((entry) => entry.symbol === symbol);
+                if (!stillExists) delete newThresholds[symbol];
+
+                const nextConfig = normalizeTelegramConfig({
+                    ...state.telegramConfig,
+                    monitoredSymbols: newSymbols,
+                    thresholds: newThresholds,
+                });
+
+                const version = state.configSyncVersion + 1;
+                set({ isConfigSaving: true, configSyncVersion: version });
+
+                const result = await postTelegramConfig(nextConfig);
+                if (!result.ok) {
+                    if (get().configSyncVersion === version) {
+                        set({ isConfigSaving: false });
+                    }
+                    return { ok: false, error: result.error || 'Unable to remove symbol.' };
+                }
+
+                if (get().configSyncVersion === version) {
+                    set({
+                        telegramConfig: result.config!,
+                        isConfigFetched: true,
+                        isConfigSaving: false,
+                    });
+                }
+
+                return { ok: true };
             }
         }),
         {
@@ -609,17 +703,8 @@ export const useTerminalStore = create<TerminalState>()(
                 if (state) {
                     const oneHourAgo = Date.now() - 60 * 60 * 1000;
                     state.events = (state.events || []).filter(e => e.timestamp > oneHourAgo);
-                    if (state.telegramConfig && Array.isArray(state.telegramConfig.monitoredSymbols)) {
-                        state.telegramConfig.monitoredSymbols = state.telegramConfig.monitoredSymbols.map(m => {
-                            const rawSym = typeof m === 'string' ? m : m.symbol;
-                            const type = typeof m === 'string' ? 'futures' : m.type;
-                            let s = rawSym.toUpperCase().trim();
-                            if (s.length >= 3 && s.length <= 5 && !s.endsWith('USDT')) {
-                                s = `${s}USDT`;
-                            }
-                            return { symbol: s, type };
-                        });
-                        state.telegramConfig.thresholds = normalizeThresholdScopes(state.telegramConfig.thresholds as Record<string, Partial<TelegramThresholds>>);
+                    if (state.telegramConfig) {
+                        state.telegramConfig = normalizeTelegramConfig(state.telegramConfig);
                     }
                     state.priceAlerts = (state.priceAlerts || []).map((alert) =>
                         normalizePriceAlert(alert as Partial<PriceAlert> & { side?: string })

@@ -156,6 +156,24 @@ class MarketEngine:
                 except Exception as e:
                     logger.debug(f"Initial indicators failed for {symbol} {tf}: {e}")
 
+    async def sync_monitored_symbol_state(self) -> None:
+        """Initializes state for any monitored symbol discovered after startup."""
+        tasks = []
+        for symbol_obj in self.monitored_symbols:
+            symbol = symbol_obj.get("symbol")
+            market_type = symbol_obj.get("type", "futures")
+            if not symbol:
+                continue
+
+            current_state = self.state.get(symbol)
+            if current_state and current_state.get("type") == market_type:
+                continue
+
+            tasks.append(self.init_symbol_state(symbol_obj))
+
+        if tasks:
+            await asyncio.gather(*tasks)
+
     def get_active_session(self) -> str:
         """Determines the current market session based on UTC hour."""
         hour = datetime.now(timezone.utc).hour
@@ -919,14 +937,14 @@ class MarketEngine:
     async def run(self) -> None:
         """Starts the engine tasks."""
         await self.get_bot_config()
-        init_tasks = [self.init_symbol_state(s) for s in self.monitored_symbols]
-        if init_tasks: await asyncio.gather(*init_tasks)
+        await self.sync_monitored_symbol_state()
         await asyncio.gather(self.monitor_market("spot"), self.monitor_market("futures"), self.periodic_config_sync())
 
     async def periodic_config_sync(self) -> None:
         """Keeps in-memory config fresh every 10s or on flag."""
         while True:
             await self.get_bot_config()
+            await self.sync_monitored_symbol_state()
             if os.path.exists("reload.flag"):
                 try: os.remove("reload.flag")
                 except: pass

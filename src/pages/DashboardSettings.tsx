@@ -12,6 +12,8 @@ export default function DashboardSettings() {
     );
     const addMonitoredSymbol = useTerminalStore((s) => s.addMonitoredSymbol);
     const removeMonitoredSymbol = useTerminalStore((s) => s.removeMonitoredSymbol);
+    const isConfigFetched = useTerminalStore((s) => s.isConfigFetched);
+    const isConfigSaving = useTerminalStore((s) => s.isConfigSaving);
     const theme = useTerminalStore((s) => s.theme);
     const setTheme = useTerminalStore((s) => s.setTheme);
 
@@ -73,7 +75,7 @@ export default function DashboardSettings() {
             !monitoredSymbols.some(m => m.symbol === s && m.type === marketType)
         ).slice(0, 20);
 
-    function handleAdd(symbol?: string) {
+    async function handleAdd(symbol?: string) {
         let sym = (symbol ?? inputValue).trim().toUpperCase();
         if (!sym) return;
 
@@ -111,8 +113,13 @@ export default function DashboardSettings() {
             setError('Invalid symbol format. Example: SOLUSDT');
             return;
         }
-        
-        addMonitoredSymbol(sym, marketType);
+
+        const result = await addMonitoredSymbol(sym, marketType);
+        if (!result.ok) {
+            setError(result.error || `Unable to add ${sym}.`);
+            return;
+        }
+
         setInputValue('');
         setError('');
         setShowDropdown(false);
@@ -121,12 +128,16 @@ export default function DashboardSettings() {
         inputRef.current?.focus();
     }
 
-    function handleRemove(sym: string, type: 'spot' | 'futures') {
+    async function handleRemove(sym: string, type: 'spot' | 'futures') {
         if (monitoredSymbols.length <= 1) {
             setError('You must monitor at least one symbol.');
             return;
         }
-        removeMonitoredSymbol(sym, type);
+        const result = await removeMonitoredSymbol(sym, type);
+        if (!result.ok) {
+            setError(result.error || `Unable to remove ${sym}.`);
+            return;
+        }
         setError('');
     }
 
@@ -235,10 +246,11 @@ export default function DashboardSettings() {
                             </div>
                             <button
                                 onClick={() => handleAdd()}
+                                disabled={!isConfigFetched || isConfigSaving}
                                 className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-terminal-green text-terminal-green text-sm hover:bg-terminal-green/10 transition-colors active:scale-95"
                             >
                                 <Plus size={14} />
-                                Add
+                                {isConfigSaving ? 'Saving...' : 'Add'}
                             </button>
                         </div>
 
@@ -270,6 +282,11 @@ export default function DashboardSettings() {
                     {error && (
                         <p className="text-terminal-red text-xs mt-2 flex items-center gap-1">
                             <X size={11} /> {error}
+                        </p>
+                    )}
+                    {!isConfigFetched && (
+                        <p className="text-terminal-muted text-xs mt-2">
+                            Loading backend configuration...
                         </p>
                     )}
                 </section>

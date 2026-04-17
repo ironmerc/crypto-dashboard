@@ -47,6 +47,44 @@ interface IndicatorResponse {
     stoch_d: NullableArr;
 }
 
+type ChartCandle = {
+    index: number;
+    time: number;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+};
+
+function isFiniteNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function buildValidChartCandles(klines: IndicatorResponse['klines']): ChartCandle[] {
+    return klines
+        .map((k, index) => {
+            const rawValues = [k[0], k[1], k[2], k[3], k[4], k[5]];
+            if (rawValues.some((value) => value === null || value === undefined || value === '')) {
+                return null;
+            }
+
+            return {
+                index,
+                time: Math.floor(Number(k[0]) / 1000),
+                open: Number(k[1]),
+                high: Number(k[2]),
+                low: Number(k[3]),
+                close: Number(k[4]),
+                volume: Number(k[5]),
+            };
+        })
+        .filter((candle): candle is ChartCandle => candle !== null)
+        .filter((candle) =>
+            [candle.time, candle.open, candle.high, candle.low, candle.close, candle.volume].every(isFiniteNumber)
+        );
+}
+
 export function CandleChart({ symbol, type }: CandleChartProps) {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
@@ -226,18 +264,13 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
             .then((ind: IndicatorResponse) => {
                 if ('error' in ind || !ind?.klines?.length || !seriesRef.current) return;
 
-                const cdata = ind.klines.map(k => ({
-                    time: Math.floor(k[0] / 1000),
-                    open: k[1],
-                    high: k[2],
-                    low: k[3],
-                    close: k[4],
-                    volume: k[5],
-                }));
-                seriesRef.current.setData(cdata as any);
+                const cdata = buildValidChartCandles(ind.klines);
+                if (!cdata.length) return;
+                seriesRef.current.setData(cdata.map(({ index, ...candle }) => candle) as any);
 
                 // Dynamic precision from last close price
-                const lastClose = ind.klines[ind.klines.length - 1][4];
+                const lastIndex = cdata[cdata.length - 1].index;
+                const lastClose = cdata[cdata.length - 1].close;
                 let precision = 2;
                 let minMove = 0.01;
                 if (lastClose < 0.01) { precision = 8; minMove = 0.00000001; }
@@ -246,9 +279,11 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                 else if (lastClose < 10) { precision = 3; minMove = 0.001; }
                 seriesRef.current.applyOptions({ priceFormat: { type: 'price', precision, minMove } });
 
-                const times = ind.klines.map(k => k[0] / 1000);
+                const times = cdata.map(k => k.time);
                 const toPoints = (arr: (number | null)[]) =>
-                    arr.map((v, i) => ({ time: times[i], value: v })).filter(d => d.value !== null) as any;
+                    cdata
+                        .map((candle, i) => ({ time: times[i], value: arr[candle.index] }))
+                        .filter((d) => d.value !== null && d.value !== undefined) as any;
 
                 ema21SeriesRef.current?.setData(toPoints(ind.ema21));
                 ema50SeriesRef.current?.setData(toPoints(ind.ema50));
@@ -260,30 +295,29 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                 macdSeriesRef.current?.setData(toPoints(ind.macd));
                 macdSignalSeriesRef.current?.setData(toPoints(ind.macd_signal));
 
-                const last = ind.klines.length - 1;
-                const lAtr = ind.atr[last];
-                const lBBWidth = ind.bb_width[last];
-                const lMACD = ind.macd[last];
-                const lSignal = ind.macd_signal[last];
-                const lHist = ind.macd_hist[last];
-                if (lAtr !== null) setLatestAtr(lAtr);
-                if (lBBWidth !== null) setLatestBBWidth(lBBWidth);
-                if (lMACD !== null && lSignal !== null && lHist !== null) {
+                const lAtr = ind.atr[lastIndex];
+                const lBBWidth = ind.bb_width[lastIndex];
+                const lMACD = ind.macd[lastIndex];
+                const lSignal = ind.macd_signal[lastIndex];
+                const lHist = ind.macd_hist[lastIndex];
+                if (typeof lAtr === 'number') setLatestAtr(lAtr);
+                if (typeof lBBWidth === 'number') setLatestBBWidth(lBBWidth);
+                if (typeof lMACD === 'number' && typeof lSignal === 'number' && typeof lHist === 'number') {
                     setLatestMACD({ macd: lMACD, signal: lSignal, histogram: lHist });
                 }
                 useTerminalStore.getState().setIndicators(symbol, {
-                    ema21: ind.ema21[last] ?? undefined,
-                    ema50: ind.ema50[last] ?? undefined,
-                    vwap: ind.vwap[last] ?? undefined,
+                    ema21: ind.ema21[lastIndex] ?? undefined,
+                    ema50: ind.ema50[lastIndex] ?? undefined,
+                    vwap: ind.vwap[lastIndex] ?? undefined,
                     atr: lAtr ?? undefined,
-                    atrSma: ind.atr_sma?.[last] ?? undefined,
-                    rsi: ind.rsi[last] ?? undefined,
-                    macd: (lMACD !== null && lSignal !== null && lHist !== null)
+                    atrSma: ind.atr_sma?.[lastIndex] ?? undefined,
+                    rsi: ind.rsi[lastIndex] ?? undefined,
+                    macd: (typeof lMACD === 'number' && typeof lSignal === 'number' && typeof lHist === 'number')
                         ? { macd: lMACD, signal: lSignal, histogram: lHist } : undefined,
-                    bb: (ind.bb_upper[last] !== null && ind.bb_middle[last] !== null && ind.bb_lower[last] !== null && lBBWidth !== null)
-                        ? { upper: ind.bb_upper[last], middle: ind.bb_middle[last], lower: ind.bb_lower[last], width: lBBWidth } : undefined,
-                    stochRsi: (ind.stoch_k[last] !== null && ind.stoch_d[last] !== null)
-                        ? { k: ind.stoch_k[last], d: ind.stoch_d[last] } : undefined,
+                    bb: (typeof ind.bb_upper[lastIndex] === 'number' && typeof ind.bb_middle[lastIndex] === 'number' && typeof ind.bb_lower[lastIndex] === 'number' && typeof lBBWidth === 'number')
+                        ? { upper: ind.bb_upper[lastIndex], middle: ind.bb_middle[lastIndex], lower: ind.bb_lower[lastIndex], width: lBBWidth } : undefined,
+                    stochRsi: (typeof ind.stoch_k[lastIndex] === 'number' && typeof ind.stoch_d[lastIndex] === 'number')
+                        ? { k: ind.stoch_k[lastIndex], d: ind.stoch_d[lastIndex] } : undefined,
                 });
             })
             .catch(() => { /* bot server not running, chart remains empty */ });
@@ -320,12 +354,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
         chart.subscribeClick(handleChartClick);
         fetchPriceAlerts(); // Initial fetch
 
-        const pollInterval = setInterval(() => {
-            fetchPriceAlerts();
-        }, 3000);
-
         return () => {
-            clearInterval(pollInterval);
             window.removeEventListener('keydown', handleKeyDown);
             chart.unsubscribeClick(handleChartClick);
             chart.remove();
@@ -379,30 +408,33 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
         const controller = new AbortController();
         const fetchIndicators = () => {
             fetch(pollUrl, { signal: controller.signal })
-                .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-                .then((ind: IndicatorResponse) => {
-                    if ('error' in ind || !ind?.klines?.length) return;
-                    const last = ind.klines.length - 1;
-                    const time = Math.floor(ind.klines[last][0] / 1000) as any;
+            .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+            .then((ind: IndicatorResponse) => {
+                if ('error' in ind || !ind?.klines?.length) return;
+                    const candles = buildValidChartCandles(ind.klines);
+                    if (!candles.length) return;
+                    const lastCandle = candles[candles.length - 1];
+                    const last = lastCandle.index;
+                    const time = lastCandle.time as any;
 
-                    if (ind.ema21[last] != null && ema21SeriesRef.current) ema21SeriesRef.current.update({ time, value: ind.ema21[last]! });
-                    if (ind.ema50[last] != null && ema50SeriesRef.current) ema50SeriesRef.current.update({ time, value: ind.ema50[last]! });
-                    if (ind.vwap[last] != null && vwapSeriesRef.current) vwapSeriesRef.current.update({ time, value: ind.vwap[last]! });
-                    if (ind.rsi[last] != null && rsiSeriesRef.current) rsiSeriesRef.current.update({ time, value: ind.rsi[last]! });
-                    if (ind.bb_upper[last] != null && bbUpperSeriesRef.current) bbUpperSeriesRef.current.update({ time, value: ind.bb_upper[last]! });
-                    if (ind.bb_middle[last] != null && bbMiddleSeriesRef.current) bbMiddleSeriesRef.current.update({ time, value: ind.bb_middle[last]! });
-                    if (ind.bb_lower[last] != null && bbLowerSeriesRef.current) bbLowerSeriesRef.current.update({ time, value: ind.bb_lower[last]! });
-                    if (ind.macd[last] != null && macdSeriesRef.current) macdSeriesRef.current.update({ time, value: ind.macd[last]! });
-                    if (ind.macd_signal[last] != null && macdSignalSeriesRef.current) macdSignalSeriesRef.current.update({ time, value: ind.macd_signal[last]! });
+                    if (typeof ind.ema21[last] === 'number' && ema21SeriesRef.current) ema21SeriesRef.current.update({ time, value: ind.ema21[last]! });
+                    if (typeof ind.ema50[last] === 'number' && ema50SeriesRef.current) ema50SeriesRef.current.update({ time, value: ind.ema50[last]! });
+                    if (typeof ind.vwap[last] === 'number' && vwapSeriesRef.current) vwapSeriesRef.current.update({ time, value: ind.vwap[last]! });
+                    if (typeof ind.rsi[last] === 'number' && rsiSeriesRef.current) rsiSeriesRef.current.update({ time, value: ind.rsi[last]! });
+                    if (typeof ind.bb_upper[last] === 'number' && bbUpperSeriesRef.current) bbUpperSeriesRef.current.update({ time, value: ind.bb_upper[last]! });
+                    if (typeof ind.bb_middle[last] === 'number' && bbMiddleSeriesRef.current) bbMiddleSeriesRef.current.update({ time, value: ind.bb_middle[last]! });
+                    if (typeof ind.bb_lower[last] === 'number' && bbLowerSeriesRef.current) bbLowerSeriesRef.current.update({ time, value: ind.bb_lower[last]! });
+                    if (typeof ind.macd[last] === 'number' && macdSeriesRef.current) macdSeriesRef.current.update({ time, value: ind.macd[last]! });
+                    if (typeof ind.macd_signal[last] === 'number' && macdSignalSeriesRef.current) macdSignalSeriesRef.current.update({ time, value: ind.macd_signal[last]! });
 
                     const lAtr = ind.atr[last];
                     const lBBWidth = ind.bb_width[last];
                     const lMACD = ind.macd[last];
                     const lSignal = ind.macd_signal[last];
                     const lHist = ind.macd_hist[last];
-                    if (lAtr !== null) setLatestAtr(lAtr);
-                    if (lBBWidth !== null) setLatestBBWidth(lBBWidth);
-                    if (lMACD !== null && lSignal !== null && lHist !== null) {
+                    if (typeof lAtr === 'number') setLatestAtr(lAtr);
+                    if (typeof lBBWidth === 'number') setLatestBBWidth(lBBWidth);
+                    if (typeof lMACD === 'number' && typeof lSignal === 'number' && typeof lHist === 'number') {
                         setLatestMACD({ macd: lMACD, signal: lSignal, histogram: lHist });
                     }
                     useTerminalStore.getState().setIndicators(symbol, {
@@ -412,18 +444,18 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                         atr: lAtr ?? undefined,
                         atrSma: ind.atr_sma?.[last] ?? undefined,
                         rsi: ind.rsi[last] ?? undefined,
-                        macd: (lMACD !== null && lSignal !== null && lHist !== null)
+                        macd: (typeof lMACD === 'number' && typeof lSignal === 'number' && typeof lHist === 'number')
                             ? { macd: lMACD, signal: lSignal, histogram: lHist } : undefined,
-                        bb: (ind.bb_upper[last] !== null && ind.bb_middle[last] !== null && ind.bb_lower[last] !== null && lBBWidth !== null)
+                        bb: (typeof ind.bb_upper[last] === 'number' && typeof ind.bb_middle[last] === 'number' && typeof ind.bb_lower[last] === 'number' && typeof lBBWidth === 'number')
                             ? { upper: ind.bb_upper[last], middle: ind.bb_middle[last], lower: ind.bb_lower[last], width: lBBWidth } : undefined,
-                        stochRsi: (ind.stoch_k[last] !== null && ind.stoch_d[last] !== null)
+                        stochRsi: (typeof ind.stoch_k[last] === 'number' && typeof ind.stoch_d[last] === 'number')
                             ? { k: ind.stoch_k[last], d: ind.stoch_d[last] } : undefined,
                     });
                 })
                 .catch((e: unknown) => { if (e instanceof Error && e.name !== 'AbortError') { /* bot server not available */ } });
         };
 
-        const indicatorPoll = setInterval(fetchIndicators, 5000);
+        const indicatorPoll = setInterval(fetchIndicators, 15000);
         return () => { clearInterval(indicatorPoll); controller.abort(); };
     }, [symbol, type, globalInterval]);
 
@@ -563,9 +595,9 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                 </div>
 
                 {/* BB Squeeze + MACD State */}
-                {(latestBBWidth !== null || latestMACD !== null) && (
+                {(typeof latestBBWidth === 'number' || latestMACD !== null) && (
                     <div className="flex gap-3 bg-[#18042B]/80 px-2 py-1.5 rounded w-fit border border-purple-500/30 mt-1">
-                        {latestBBWidth !== null && (
+                        {typeof latestBBWidth === 'number' && (
                             <div className="flex flex-col">
                                 <span className="text-terminal-muted opacity-70 text-[9px]">BB WIDTH</span>
                                 <span className={`font-mono font-bold ${latestBBWidth < 2 ? 'text-yellow-400' : latestBBWidth < 4 ? 'text-terminal-fg' : 'text-terminal-green'}`}>
@@ -575,7 +607,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                         )}
                         {latestMACD !== null && (
                             <>
-                                {latestBBWidth !== null && <div className="w-px h-full bg-terminal-border/30"></div>}
+                                {typeof latestBBWidth === 'number' && <div className="w-px h-full bg-terminal-border/30"></div>}
                                 <div className="flex flex-col">
                                     <span className="text-terminal-muted opacity-70 text-[9px]">MACD</span>
                                     <span className={`font-mono font-bold ${latestMACD.histogram > 0 ? 'text-terminal-green' : 'text-terminal-red'}`}>
