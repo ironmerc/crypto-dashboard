@@ -65,7 +65,7 @@ function buildValidChartCandles(klines: IndicatorResponse['klines']): ChartCandl
     return klines
         .map((k, index) => {
             const rawValues = [k[0], k[1], k[2], k[3], k[4], k[5]];
-            if (rawValues.some((value) => value === null || value === undefined || value === '')) {
+            if (rawValues.some((value) => value === null || value === undefined)) {
                 return null;
             }
 
