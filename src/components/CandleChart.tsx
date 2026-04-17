@@ -385,7 +385,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
             if (data.e === 'kline' && data.k) {
                 const kline = data.k;
                 const updateData = {
-                    time: kline.t / 1000,
+                    time: Math.floor(Number(kline.t) / 1000),
                     open: parseFloat(kline.o),
                     high: parseFloat(kline.h),
                     low: parseFloat(kline.l),
@@ -393,7 +393,12 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                     volume: parseFloat(kline.v),
                 };
 
-                if (!isNaN(updateData.open) && !isNaN(updateData.close)) {
+                if (
+                    isFiniteNumber(updateData.time) && updateData.time > 0 &&
+                    isFiniteNumber(updateData.open) && isFiniteNumber(updateData.high) &&
+                    isFiniteNumber(updateData.low) && isFiniteNumber(updateData.close) &&
+                    isFiniteNumber(updateData.volume)
+                ) {
                     currentPriceRef.current = updateData.close;
                     seriesRef.current.update(updateData as any);
                 }
