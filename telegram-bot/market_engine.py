@@ -556,7 +556,8 @@ class MarketEngine:
 
         klines_out = [[int(row['t']), float(row['o']), float(row['h']),
                        float(row['l']), float(row['c']), float(row['v'])]
-                      for _, row in df.iterrows()]
+                      for _, row in df.iterrows()
+                      if all(np.isfinite(row[f]) for f in ('o', 'h', 'l', 'c', 'v'))]
 
         return {
             "klines": klines_out,

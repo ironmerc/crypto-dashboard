@@ -266,7 +266,9 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
 
                 const cdata = buildValidChartCandles(ind.klines);
                 if (!cdata.length) return;
-                seriesRef.current.setData(cdata.map(({ index, ...candle }) => candle) as any);
+
+                try { seriesRef.current.setData(cdata.map(({ index, ...candle }) => candle) as any); }
+                catch { return; }
 
                 // Dynamic precision from last close price
                 const lastIndex = cdata[cdata.length - 1].index;
@@ -283,17 +285,19 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                 const toPoints = (arr: (number | null)[]) =>
                     cdata
                         .map((candle, i) => ({ time: times[i], value: arr[candle.index] }))
-                        .filter((d) => d.value !== null && d.value !== undefined) as any;
+                        .filter((d): d is { time: number; value: number } =>
+                            isFiniteNumber(d.value) && isFiniteNumber(d.time)
+                        ) as any;
 
-                ema21SeriesRef.current?.setData(toPoints(ind.ema21));
-                ema50SeriesRef.current?.setData(toPoints(ind.ema50));
-                vwapSeriesRef.current?.setData(toPoints(ind.vwap));
-                rsiSeriesRef.current?.setData(toPoints(ind.rsi));
-                bbUpperSeriesRef.current?.setData(toPoints(ind.bb_upper));
-                bbMiddleSeriesRef.current?.setData(toPoints(ind.bb_middle));
-                bbLowerSeriesRef.current?.setData(toPoints(ind.bb_lower));
-                macdSeriesRef.current?.setData(toPoints(ind.macd));
-                macdSignalSeriesRef.current?.setData(toPoints(ind.macd_signal));
+                try { ema21SeriesRef.current?.setData(toPoints(ind.ema21)); } catch { /* stale series */ }
+                try { ema50SeriesRef.current?.setData(toPoints(ind.ema50)); } catch { /* stale series */ }
+                try { vwapSeriesRef.current?.setData(toPoints(ind.vwap)); } catch { /* stale series */ }
+                try { rsiSeriesRef.current?.setData(toPoints(ind.rsi)); } catch { /* stale series */ }
+                try { bbUpperSeriesRef.current?.setData(toPoints(ind.bb_upper)); } catch { /* stale series */ }
+                try { bbMiddleSeriesRef.current?.setData(toPoints(ind.bb_middle)); } catch { /* stale series */ }
+                try { bbLowerSeriesRef.current?.setData(toPoints(ind.bb_lower)); } catch { /* stale series */ }
+                try { macdSeriesRef.current?.setData(toPoints(ind.macd)); } catch { /* stale series */ }
+                try { macdSignalSeriesRef.current?.setData(toPoints(ind.macd_signal)); } catch { /* stale series */ }
 
                 const lAtr = ind.atr[lastIndex];
                 const lBBWidth = ind.bb_width[lastIndex];
@@ -400,7 +404,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                     isFiniteNumber(updateData.volume)
                 ) {
                     currentPriceRef.current = updateData.close;
-                    seriesRef.current.update(updateData as any);
+                    try { seriesRef.current.update(updateData as any); } catch { /* ignore stale update */ }
                 }
             }
         }
