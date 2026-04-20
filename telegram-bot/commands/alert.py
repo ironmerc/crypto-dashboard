@@ -11,10 +11,12 @@ Wire up via ``setup(ctx)`` from ``init_app()`` in bot.py::
     ctx.engine  — MarketEngine instance or None
     ctx.save()  — persist config to disk
     ctx.reload() — write reload.flag so the market engine re-reads config
-    await ctx.reply(session, text, reply_to_message_id=None)
+    await ctx.reply(session, text)        — plain text
+    await ctx.reply_kb(session, text, keyboard) — inline keyboard (choice buttons)
+    await ctx.reply_ask(session, text)    — text prompt with ❌ Cancel in keyboard bar
+    await ctx.reply_done(session, text)   — completion msg, removes keyboard bar
 """
 import logging
-import re
 import secrets
 import time
 from typing import Optional
@@ -66,16 +68,26 @@ def _fmt_alert(a: dict) -> str:
     return f"<b>{a['symbol']}</b> ${_fmt_price(float(a['price']))} {direction}"
 
 
+def _fmt_alert_plain(a: dict) -> str:
+    direction = a.get("direction") or a.get("side", "?")
+    return f"{a['symbol']} ${_fmt_price(float(a['price']))} {direction}"
+
+
+# ---------------------------------------------------------------------------
+# Inline keyboard builder
+# ---------------------------------------------------------------------------
+
+def _kb(*rows: list) -> list:
+    """Wraps positional row args into a Telegram inline_keyboard list."""
+    return list(rows)
+
+
 # ---------------------------------------------------------------------------
 # setup() — registers /alert and /alerts with the command registry
 # ---------------------------------------------------------------------------
 
 def setup(ctx) -> None:
-    """Register /alert and /alerts using the supplied BotContext.
-
-    All step handlers are closures over *ctx* so they can access live
-    config and the market engine without importing from bot.py.
-    """
+    """Register /alert and /alerts using the supplied BotContext."""
 
     # -- ctx-bound helpers ---------------------------------------------------
 
@@ -93,7 +105,6 @@ def setup(ctx) -> None:
         return sorted(result, key=lambda x: x["symbol"])
 
     def _find_monitored(symbol: str, market_type: Optional[str] = None) -> Optional[dict]:
-        """Return the monitored entry for *symbol*, optionally filtered by *market_type*."""
         for s in ctx.config.get("monitoredSymbols", []):
             sym = s if isinstance(s, str) else s.get("symbol", "")
             mtype = "futures" if isinstance(s, str) else s.get("type", "futures")
@@ -122,66 +133,89 @@ def setup(ctx) -> None:
             logger.warning("Binance symbol check failed for %s (%s): %s", symbol, market_type, e)
             return False
 
-    def _infer_direction(symbol: str, target: float) -> str:
-        engine = ctx.engine
-        live = float((engine.state.get(symbol) or {}).get("last_price") or 0) if engine else 0
-        if live <= 0:
-            return "CROSS"
-        return "ABOVE" if target > live else ("BELOW" if target < live else "CROSS")
+    async def _fetch_binance_price(session: ClientSession, symbol: str, market_type: str) -> float:
+        """Returns the latest Binance price, or 0.0 on failure."""
+        try:
+            qs = urlencode({"symbol": symbol})
+            url = (
+                f"https://fapi.binance.com/fapi/v1/ticker/price?{qs}"
+                if market_type == "futures"
+                else f"https://api.binance.com/api/v3/ticker/price?{qs}"
+            )
+            async with session.get(url, timeout=5) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return float(data.get("price", 0))
+        except Exception:
+            pass
+        return 0.0
 
     # -- step handlers -------------------------------------------------------
 
     async def _step_menu(chat_id: str, text: str, session: ClientSession, message: dict) -> bool:
         if text == "1":
             snapshot = _build_symbols_snapshot()
-            lines = [f"{i + 1}. <b>{e['symbol']}</b> ({e['type']})" for i, e in enumerate(snapshot)]
-            body = "\n".join(lines) if lines else "(no symbols monitored yet)"
+            rows = [
+                [{"text": f"{e['symbol']} ({e['type']})", "callback_data": str(i + 1)}]
+                for i, e in enumerate(snapshot)
+            ]
+            rows.append([{"text": "➕ Add new symbol", "callback_data": "0"}])
+            rows.append([{"text": "❌ Cancel", "callback_data": "cancel"}])
             set_pending(chat_id, {"step": "pick_symbol", "symbols_snapshot": snapshot})
-            await ctx.reply(session, f"Pick symbol:\n{body}\n\n0. Add new symbol", message.get("message_id"))
+            body = "Pick a monitored symbol:" if snapshot else "No symbols monitored yet — add one:"
+            await ctx.reply_kb(session, body, _kb(*rows))
         elif text == "2":
             alerts = ctx.config.get("priceAlerts", [])
             if not alerts:
                 clear_pending(chat_id)
-                await ctx.reply(session, "No active alerts to remove.", message.get("message_id"))
+                await ctx.reply_done(session, "No active alerts to remove.")
             else:
-                lines = [f"{i + 1}. {_fmt_alert(a)}" for i, a in enumerate(alerts)]
+                rows = [
+                    [{"text": _fmt_alert_plain(a), "callback_data": str(i + 1)}]
+                    for i, a in enumerate(alerts)
+                ]
+                rows.append([{"text": "❌ Cancel", "callback_data": "cancel"}])
                 set_pending(chat_id, {"step": "remove_pick", "alerts_snapshot": list(alerts)})
-                await ctx.reply(
-                    session,
-                    "🗑 <b>Remove alert</b> — pick one:\n" + "\n".join(lines),
-                    message.get("message_id"),
-                )
+                await ctx.reply_kb(session, "🗑 <b>Remove alert</b> — pick one:", _kb(*rows))
         else:
-            await ctx.reply(
+            await ctx.reply_kb(
                 session,
-                "Please reply <b>1</b> (set alert) or <b>2</b> (remove alert).",
-                message.get("message_id"),
+                "Please choose an option:",
+                _kb(
+                    [{"text": "🔔 Set new alert", "callback_data": "1"}],
+                    [{"text": "🗑 Remove alert", "callback_data": "2"}],
+                ),
             )
         return True
 
     async def _step_pick_symbol(chat_id: str, text: str, session: ClientSession, message: dict) -> bool:
         pending = get_pending(chat_id)
+        snapshot = pending.get("symbols_snapshot", []) if pending else []
+
+        def _symbol_kb():
+            rows = [
+                [{"text": f"{e['symbol']} ({e['type']})", "callback_data": str(i + 1)}]
+                for i, e in enumerate(snapshot)
+            ]
+            rows.append([{"text": "➕ Add new symbol", "callback_data": "0"}])
+            rows.append([{"text": "❌ Cancel", "callback_data": "cancel"}])
+            return _kb(*rows)
+
         if text == "0":
             set_pending(chat_id, {"step": "ask_new_symbol"})
-            await ctx.reply(session, "Enter symbol name (e.g., SOLUSDT):", message.get("message_id"))
+            await ctx.reply_ask(session, "Enter symbol name (e.g., SOLUSDT):")
             return True
+
         try:
             idx = int(text) - 1
         except ValueError:
-            await ctx.reply(
-                session,
-                "Please enter a number from the list or <b>0</b> to add a new symbol.",
-                message.get("message_id"),
-            )
+            await ctx.reply_kb(session, "Please pick from the list:", _symbol_kb())
             return True
-        snapshot = pending.get("symbols_snapshot", []) if pending else []
+
         if idx < 0 or idx >= len(snapshot):
-            await ctx.reply(
-                session,
-                f"Invalid choice — pick 1 to {len(snapshot)} or 0 to add new.",
-                message.get("message_id"),
-            )
+            await ctx.reply_kb(session, "Invalid choice — pick from the list:", _symbol_kb())
             return True
+
         entry = snapshot[idx]
         set_pending(chat_id, {
             "step": "ask_price",
@@ -189,88 +223,76 @@ def setup(ctx) -> None:
             "market_type": entry["type"],
             "is_new": False,
         })
-        await ctx.reply(
+        await ctx.reply_ask(
             session,
-            f"What price should trigger the alert for <b>{entry['symbol']}</b> ({entry['type']})?",
-            message.get("message_id"),
+            f"Enter target price for <b>{entry['symbol']}</b> ({entry['type']}):",
         )
         return True
 
     async def _step_ask_new_symbol(chat_id: str, text: str, session: ClientSession, message: dict) -> bool:
         sym = _normalize_symbol(text)
         if not _is_valid_symbol(sym):
-            await ctx.reply(
+            await ctx.reply_ask(
                 session,
                 "Invalid symbol — must be 5–20 alphanumeric characters (e.g., SOLUSDT). Try again:",
-                message.get("message_id"),
             )
             return True
+
+        keyboard = _kb(
+            [{"text": "Futures", "callback_data": "1"}],
+            [{"text": "Spot", "callback_data": "2"}],
+            [{"text": "❌ Cancel", "callback_data": "cancel"}],
+        )
         any_existing = _find_monitored(sym)
         if not any_existing:
             set_pending(chat_id, {"step": "ask_market_type", "symbol": sym, "is_new": True})
-            await ctx.reply(session, f"Market type for <b>{sym}</b>?\n1. Futures\n2. Spot", message.get("message_id"))
+            await ctx.reply_kb(session, f"Market type for <b>{sym}</b>?", keyboard)
         else:
-            # Symbol monitored under at least one market type — ask which the user wants
             set_pending(chat_id, {"step": "ask_market_type", "symbol": sym, "is_new": None})
-            await ctx.reply(
-                session,
-                f"<b>{sym}</b> is monitored. Pick market type for this alert:\n1. Futures\n2. Spot",
-                message.get("message_id"),
-            )
+            await ctx.reply_kb(session, f"<b>{sym}</b> is monitored. Pick market type for this alert:", keyboard)
         return True
 
     async def _step_ask_market_type(chat_id: str, text: str, session: ClientSession, message: dict) -> bool:
         pending = get_pending(chat_id)
+        sym = pending.get("symbol", "") if pending else ""
+        is_new_flag = pending.get("is_new") if pending else True
+
+        market_kb = _kb(
+            [{"text": "Futures", "callback_data": "1"}],
+            [{"text": "Spot", "callback_data": "2"}],
+            [{"text": "❌ Cancel", "callback_data": "cancel"}],
+        )
+
         if text == "1":
             market_type = "futures"
         elif text == "2":
             market_type = "spot"
         else:
-            await ctx.reply(session, "Please reply <b>1</b> (futures) or <b>2</b> (spot).", message.get("message_id"))
+            await ctx.reply_kb(session, "Please choose market type:", market_kb)
             return True
-
-        sym = pending.get("symbol", "") if pending else ""
-        is_new_flag = pending.get("is_new") if pending else True  # None → "maybe new for this type"
 
         exact_match = _find_monitored(sym, market_type)
         if is_new_flag is None:
             if exact_match:
-                # Exact (symbol, type) already monitored — go straight to price
-                set_pending(chat_id, {"step": "ask_price", "market_type": market_type, "is_new": False})
-                await ctx.reply(
-                    session,
-                    f"What price should trigger the alert for <b>{sym}</b> ({market_type})?",
-                    message.get("message_id"),
-                )
+                set_pending(chat_id, {"step": "ask_price", "symbol": sym, "market_type": market_type, "is_new": False})
+                await ctx.reply_ask(session, f"Enter target price for <b>{sym}</b> ({market_type}):")
                 return True
-            is_new_flag = True  # e.g. BTCUSDT futures exists but user wants spot
+            is_new_flag = True
 
         if not is_new_flag:
-            set_pending(chat_id, {"step": "ask_price", "market_type": market_type, "is_new": False})
-            await ctx.reply(
-                session,
-                f"What price should trigger the alert for <b>{sym}</b> ({market_type})?",
-                message.get("message_id"),
-            )
+            set_pending(chat_id, {"step": "ask_price", "symbol": sym, "market_type": market_type, "is_new": False})
+            await ctx.reply_ask(session, f"Enter target price for <b>{sym}</b> ({market_type}):")
             return True
 
-        await ctx.reply(session, f"⏳ Checking {sym} on Binance…", message.get("message_id"))
+        await ctx.reply(session, f"⏳ Checking {sym} on Binance…")
         exists = await _check_binance_symbol(session, sym, market_type)
         if not exists:
             set_pending(chat_id, {"step": "ask_new_symbol"})
-            await ctx.reply(
-                session,
-                f"<b>{sym}</b> not found on Binance ({market_type}). Try again:",
-                message.get("message_id"),
-            )
+            await ctx.reply_ask(session, f"<b>{sym}</b> not found on Binance ({market_type}). Try another symbol:")
             return True
 
-        set_pending(chat_id, {"step": "ask_price", "market_type": market_type, "is_new": True})
-        await ctx.reply(
-            session,
-            f"✅ {sym} exists on Binance.\nWhat price should trigger the alert for <b>{sym}</b> ({market_type})?",
-            message.get("message_id"),
-        )
+        set_pending(chat_id, {"step": "ask_price", "symbol": sym, "market_type": market_type, "is_new": True})
+        await ctx.reply_ask(session, f"✅ {sym} confirmed.\nEnter target price:")
         return True
 
     async def _step_ask_price(chat_id: str, text: str, session: ClientSession, message: dict) -> bool:
@@ -278,34 +300,26 @@ def setup(ctx) -> None:
         try:
             price = float(text.replace(",", ""))
         except ValueError:
-            await ctx.reply(session, "Please enter a valid number (e.g., 105000).", message.get("message_id"))
+            await ctx.reply_ask(session, "Please enter a valid number (e.g., 105000).")
             return True
         if price <= 0:
-            await ctx.reply(session, "Price must be greater than 0.", message.get("message_id"))
+            await ctx.reply_ask(session, "Price must be greater than 0.")
             return True
 
         sym = pending.get("symbol", "") if pending else ""
         market_type = pending.get("market_type", "futures") if pending else "futures"
         is_new = pending.get("is_new", False) if pending else False
 
-        direction = _infer_direction(sym, price)
-        # For brand-new symbols the engine has no live price yet → try Binance ticker
-        if direction == "CROSS":
-            try:
-                qs = urlencode({"symbol": sym})
-                ticker_url = (
-                    f"https://fapi.binance.com/fapi/v1/ticker/price?{qs}"
-                    if market_type == "futures"
-                    else f"https://api.binance.com/api/v3/ticker/price?{qs}"
-                )
-                async with session.get(ticker_url, timeout=5) as resp:
-                    if resp.status == 200:
-                        tdata = await resp.json()
-                        live = float(tdata.get("price", 0))
-                        if live > 0:
-                            direction = "ABOVE" if price > live else ("BELOW" if price < live else "CROSS")
-            except Exception:
-                pass  # keep CROSS if Binance fetch fails
+        # Always fetch fresh Binance price for accurate direction; fall back to engine state.
+        live = await _fetch_binance_price(session, sym, market_type)
+        if live <= 0:
+            engine = ctx.engine
+            live = float((engine.state.get(sym) or {}).get("last_price") or 0) if engine else 0
+
+        if live > 0:
+            direction = "ABOVE" if price > live else ("BELOW" if price < live else "CROSS")
+        else:
+            direction = "CROSS"
 
         alert = {
             "id": secrets.token_hex(4),
@@ -327,27 +341,32 @@ def setup(ctx) -> None:
         clear_pending(chat_id)
 
         added_note = f" — <b>{sym}</b> ({market_type}) added to monitoring" if is_new else ""
-        await ctx.reply(
+        await ctx.reply_done(
             session,
             f"✅ Alert set{added_note}\n<b>{sym}</b>: ${_fmt_price(price)} — {direction}\nID: <code>{alert['id']}</code>",
-            message.get("message_id"),
         )
         return True
 
     async def _step_remove_pick(chat_id: str, text: str, session: ClientSession, message: dict) -> bool:
         pending = get_pending(chat_id)
         snapshot = pending.get("alerts_snapshot", []) if pending else []
+
+        def _alert_kb():
+            rows = [
+                [{"text": _fmt_alert_plain(a), "callback_data": str(i + 1)}]
+                for i, a in enumerate(snapshot)
+            ]
+            rows.append([{"text": "❌ Cancel", "callback_data": "cancel"}])
+            return _kb(*rows)
+
         try:
             idx = int(text) - 1
         except ValueError:
-            await ctx.reply(session, "Please enter a number from the list.", message.get("message_id"))
+            await ctx.reply_kb(session, "Please pick from the list.", _alert_kb())
             return True
+
         if idx < 0 or idx >= len(snapshot):
-            await ctx.reply(
-                session,
-                f"Invalid choice — pick 1 to {len(snapshot)}.",
-                message.get("message_id"),
-            )
+            await ctx.reply_kb(session, "Invalid choice — pick from the list.", _alert_kb())
             return True
 
         target = snapshot[idx]
@@ -355,14 +374,14 @@ def setup(ctx) -> None:
         match = next((a for a in current if a.get("id") == target.get("id")), None)
         if not match:
             clear_pending(chat_id)
-            await ctx.reply(session, "That alert no longer exists.", message.get("message_id"))
+            await ctx.reply_done(session, "That alert no longer exists.")
             return True
 
         ctx.config["priceAlerts"] = [a for a in current if a.get("id") != match["id"]]
         ctx.save()
         ctx.reload()
         clear_pending(chat_id)
-        await ctx.reply(session, f"✅ Removed: {_fmt_alert(match)}", message.get("message_id"))
+        await ctx.reply_done(session, f"✅ Removed: {_fmt_alert(match)}")
         return True
 
     # -- top-level command handlers ------------------------------------------
@@ -371,11 +390,11 @@ def setup(ctx) -> None:
         """Entry point for /alert — opens the alert management menu."""
         chat_id = str(message["chat"]["id"])
         set_pending(chat_id, {"command": "alert", "step": "menu"})
-        await ctx.reply(
-            session,
-            "🔔 <b>Alert management</b> — choose:\n1. Set new alert\n2. Remove alert",
-            message.get("message_id"),
+        keyboard = _kb(
+            [{"text": "🔔 Set new alert", "callback_data": "1"}],
+            [{"text": "🗑 Remove alert", "callback_data": "2"}],
         )
+        await ctx.reply_kb(session, "🔔 <b>Alert management</b> — choose:", keyboard)
 
     async def handle_cmd_list_alerts(session: ClientSession, message: dict) -> None:
         """Entry point for /alerts — sends the current alert list."""
@@ -385,7 +404,7 @@ def setup(ctx) -> None:
         else:
             lines = [f"• {_fmt_alert(a)} — <code>{a['id'][:8]}</code>" for a in alerts]
             text = f"📋 <b>Active alerts ({len(alerts)}):</b>\n" + "\n".join(lines)
-        await ctx.reply(session, text, message.get("message_id"))
+        await ctx.reply(session, text)
 
     # -- registration --------------------------------------------------------
 

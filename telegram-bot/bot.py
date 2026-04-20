@@ -445,27 +445,62 @@ def parse_bot_command(text: str) -> tuple:
     return (cmd, parts[1:])
 
 
-async def send_bot_reply(session: ClientSession, text: str, reply_to_message_id=None):
-    """Sends a reply into the bot's configured chat with HTML parse mode."""
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": text,
-        "parse_mode": "HTML",
-    }
-    if reply_to_message_id:
-        payload["reply_to_message_id"] = reply_to_message_id
+async def _send_message(session: ClientSession, payload: dict, label: str = "send_message") -> bool:
+    """Core send helper with 3-attempt retry. Returns True on success."""
     max_retries = 3
     for attempt in range(max_retries):
         try:
             async with session.post(_tg_url("sendMessage"), json=payload, timeout=10) as resp:
                 if resp.status == 200:
                     return True
-                logger.warning(f"send_bot_reply HTTP {resp.status} (attempt {attempt + 1})")
+                logger.warning(f"{label} HTTP {resp.status} (attempt {attempt + 1})")
         except Exception as e:
-            logger.warning(f"send_bot_reply error (attempt {attempt + 1}): {e}")
+            logger.warning(f"{label} error (attempt {attempt + 1}): {e}")
         if attempt < max_retries - 1:
             await asyncio.sleep(2 ** attempt)
     return False
+
+
+# Persistent "❌ Cancel" button shown in the native keyboard bar while user types.
+_REPLY_KB_CANCEL = {
+    "keyboard": [[{"text": "❌ Cancel"}]],
+    "one_time_keyboard": True,
+    "resize_keyboard": True,
+}
+# Removes any persistent reply keyboard that was shown earlier.
+_REPLY_KB_REMOVE = {"remove_keyboard": True}
+
+
+async def send_bot_reply(session: ClientSession, text: str, reply_markup=None) -> bool:
+    """Sends a plain text message into the bot's configured chat."""
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+    return await _send_message(session, payload, "send_bot_reply")
+
+
+async def send_bot_reply_keyboard(session: ClientSession, text: str, keyboard: list) -> bool:
+    """Sends a message with an inline keyboard into the bot's configured chat."""
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text,
+        "parse_mode": "HTML",
+        "reply_markup": {"inline_keyboard": keyboard},
+    }
+    return await _send_message(session, payload, "send_bot_reply_keyboard")
+
+
+async def answer_callback_query(session: ClientSession, callback_query_id: str) -> None:
+    """Dismisses the loading spinner on an inline button press."""
+    try:
+        async with session.post(
+            _tg_url("answerCallbackQuery"),
+            json={"callback_query_id": callback_query_id},
+            timeout=5,
+        ) as _:
+            pass
+    except Exception:
+        pass
 
 
 def _write_reload_flag():
@@ -497,8 +532,25 @@ class BotContext:
     def reload(self) -> None:
         _write_reload_flag()
 
-    async def reply(self, session, text: str, reply_to_message_id=None) -> bool:
-        return await send_bot_reply(session, text, reply_to_message_id)
+    async def reply(self, session, text: str) -> bool:
+        """Plain text reply with no special keyboard markup."""
+        return await send_bot_reply(session, text)
+
+    async def reply_kb(self, session, text: str, keyboard: list) -> bool:
+        """Reply with an inline keyboard (choice buttons below the message)."""
+        return await send_bot_reply_keyboard(session, text, keyboard)
+
+    async def reply_ask(self, session, text: str) -> bool:
+        """Ask the user to type something.
+
+        Shows a persistent ❌ Cancel button in the native keyboard bar so the
+        user can cancel without typing.  The input text field stays open above it.
+        """
+        return await send_bot_reply(session, text, reply_markup=_REPLY_KB_CANCEL)
+
+    async def reply_done(self, session, text: str) -> bool:
+        """Send a completion/error message and remove any persistent reply keyboard."""
+        return await send_bot_reply(session, text, reply_markup=_REPLY_KB_REMOVE)
 
 
 # ---------------------------------------------------------------------------
@@ -512,6 +564,10 @@ async def _handle_pending_step(message: dict, session: ClientSession) -> bool:
     if not pending:
         return False
     text = (message.get("text") or "").strip()
+    if text.lower() in ("cancel", "/cancel", "❌ cancel"):
+        clear_pending(chat_id)
+        await send_bot_reply(session, "Cancelled ✖", reply_markup=_REPLY_KB_REMOVE)
+        return True
     cmd = pending.get("command", "alert")  # default keeps compat with states written before registry
     step_registry = _STEP_REGISTRIES.get(cmd, {})
     handler = step_registry.get(pending.get("step", ""))
@@ -537,6 +593,29 @@ async def process_inbound_message(message: dict, session: ClientSession):
         await handler(session, message)
 
 
+async def process_callback_query(callback_query: dict, session: ClientSession) -> None:
+    """Routes an inline-keyboard button press to the active pending step handler."""
+    if not TELEGRAM_CHAT_ID:
+        return
+    msg = callback_query.get("message") or {}
+    chat_id = str(msg.get("chat", {}).get("id", ""))
+    if chat_id != str(TELEGRAM_CHAT_ID):
+        return
+    await answer_callback_query(session, callback_query.get("id", ""))
+    data = (callback_query.get("data") or "").strip()
+    if data == "cancel":
+        clear_pending(chat_id)
+        await send_bot_reply(session, "Cancelled ✖", reply_markup=_REPLY_KB_REMOVE)
+        return
+    # Synthesize a message-like dict so step handlers receive the same shape
+    synthetic = {
+        "chat": msg.get("chat", {}),
+        "message_id": msg.get("message_id"),
+        "text": data,
+    }
+    await _handle_pending_step(synthetic, session)
+
+
 async def telegram_command_poll_loop():
     """Long-polls Telegram getUpdates to process inbound commands."""
     logger.info("Starting Telegram command poll loop...")
@@ -547,7 +626,7 @@ async def telegram_command_poll_loop():
         try:
             async with session.get(
                 _tg_url("getUpdates"),
-                params={"offset": -1, "limit": 1, "allowed_updates": ["message"]},
+                params={"offset": -1, "limit": 1, "allowed_updates": ["message", "callback_query"]},
                 timeout=10,
             ) as resp:
                 if resp.status == 200:
@@ -563,7 +642,7 @@ async def telegram_command_poll_loop():
                 params = {
                     "offset": update_offset,
                     "timeout": 30,
-                    "allowed_updates": ["message"],
+                    "allowed_updates": ["message", "callback_query"],
                 }
                 async with session.get(
                     _tg_url("getUpdates"),
@@ -580,6 +659,8 @@ async def telegram_command_poll_loop():
                         update_offset = uid + 1
                         if "message" in update:
                             await process_inbound_message(update["message"], session)
+                        elif "callback_query" in update:
+                            await process_callback_query(update["callback_query"], session)
             except asyncio.CancelledError:
                 break
             except (asyncio.TimeoutError, ClientError) as e:

@@ -66,6 +66,7 @@ class MockBotContext:
         self.saves = 0
         self.reloads = 0
         self.replies: list[str] = []
+        self.keyboards: list[list] = []  # inline_keyboard from last reply_kb
 
     @property
     def config(self) -> dict:
@@ -83,6 +84,28 @@ class MockBotContext:
 
     async def reply(self, session, text: str, reply_to_message_id=None):
         self.replies.append(text)
+
+    async def reply_kb(self, session, text: str, keyboard: list, reply_to_message_id=None):
+        self.replies.append(text)
+        self.keyboards.append(keyboard)
+
+    async def reply_ask(self, session, text: str):
+        self.replies.append(text)
+
+    async def reply_done(self, session, text: str):
+        self.replies.append(text)
+
+    def last_kb_button_texts(self) -> list[str]:
+        """Flattens the last keyboard into a list of button label strings."""
+        if not self.keyboards:
+            return []
+        return [btn["text"] for row in self.keyboards[-1] for btn in row]
+
+    def last_kb_callback_data(self) -> list[str]:
+        """Flattens the last keyboard into a list of callback_data strings."""
+        if not self.keyboards:
+            return []
+        return [btn["callback_data"] for row in self.keyboards[-1] for btn in row]
 
 
 def _fresh_ctx(**kwargs) -> MockBotContext:
@@ -224,11 +247,11 @@ class TestAlertPureHelpers(unittest.TestCase):
     # _fmt_alert
     def test_fmt_alert_uses_direction(self):
         a = {"symbol": "BTCUSDT", "price": 105000.0, "direction": "ABOVE"}
-        self.assertEqual(_fmt_alert(a), "<b>BTCUSDT</b> $105,000 ABOVE")
+        self.assertEqual(_fmt_alert(a), "<b>BTCUSDT</b> $105,000.00 ABOVE")
 
     def test_fmt_alert_falls_back_to_side(self):
         a = {"symbol": "ETHUSDT", "price": 2500.0, "side": "NEUTRAL"}
-        self.assertEqual(_fmt_alert(a), "<b>ETHUSDT</b> $2,500 NEUTRAL")
+        self.assertEqual(_fmt_alert(a), "<b>ETHUSDT</b> $2,500.00 NEUTRAL")
 
     def test_fmt_alert_missing_both_direction_and_side(self):
         a = {"symbol": "SOLUSDT", "price": 140.0}
@@ -269,10 +292,11 @@ class TestAlertFlows(unittest.IsolatedAsyncioTestCase):
         set_pending("12345", {"command": "alert", "step": "menu"})
         session = MagicMock()
         await _steps()["menu"]("12345", "1", session, _make_message("1"))
-        reply = ctx.replies[-1]
-        self.assertIn("BTCUSDT", reply)
-        self.assertIn("ETHUSDT", reply)
-        self.assertIn("Add new symbol", reply)
+        # Symbols are now in inline keyboard buttons, not plain text
+        btn_texts = ctx.last_kb_button_texts()
+        self.assertTrue(any("BTCUSDT" in t for t in btn_texts))
+        self.assertTrue(any("ETHUSDT" in t for t in btn_texts))
+        self.assertTrue(any("Add new symbol" in t for t in btn_texts))
         self.assertEqual(get_pending("12345")["step"], "pick_symbol")
 
     async def test_menu_step_2_no_alerts_clears_state(self):
@@ -293,8 +317,9 @@ class TestAlertFlows(unittest.IsolatedAsyncioTestCase):
         set_pending("12345", {"command": "alert", "step": "menu"})
         session = MagicMock()
         await _steps()["menu"]("12345", "2", session, _make_message("2"))
-        reply = ctx.replies[-1]
-        self.assertIn("BTCUSDT", reply)
+        # Alert labels are now in inline keyboard buttons, not plain text
+        btn_texts = ctx.last_kb_button_texts()
+        self.assertTrue(any("BTCUSDT" in t for t in btn_texts))
         self.assertEqual(get_pending("12345")["step"], "remove_pick")
 
     async def test_menu_invalid_input_keeps_state(self):
@@ -302,7 +327,9 @@ class TestAlertFlows(unittest.IsolatedAsyncioTestCase):
         set_pending("12345", {"command": "alert", "step": "menu"})
         session = MagicMock()
         await _steps()["menu"]("12345", "9", session, _make_message("9"))
-        self.assertIn("1", ctx.replies[-1])
+        # Invalid input re-shows the keyboard with action buttons
+        btn_texts = ctx.last_kb_button_texts()
+        self.assertTrue(any("alert" in t.lower() for t in btn_texts))
         self.assertEqual(get_pending("12345")["step"], "menu")
 
     # -- pick_symbol step ----------------------------------------------------
