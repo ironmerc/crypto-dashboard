@@ -18,4 +18,8 @@ services:
     volumes:
       - ./telegram-bot:/app
       - ./schemas:/schemas:ro
+      - bot_config:/app/data
     restart: unless-stopped
+
+volumes:
+  bot_config:

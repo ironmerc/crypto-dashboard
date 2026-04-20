@@ -53,7 +53,8 @@ alert_queue = asyncio.Queue()
 cooldown_tracker = {}
 
 # Persistent Bot Configuration
-CONFIG_FILE = "config.json"
+_CONFIG_DIR = os.path.join(os.path.dirname(__file__) or ".", "data")
+CONFIG_FILE = os.path.join(_CONFIG_DIR, "config.json")
 DEFAULT_CONFIG = {
     "globalEnabled": True,
     "activeSessions": ["London", "US", "Asia"],
@@ -95,10 +96,12 @@ ALERT_EVENT_SCHEMA = load_schema("alert-event.schema.json")
 
 def load_config():
     global bot_config
-    
+
+    os.makedirs(_CONFIG_DIR, exist_ok=True)
+
     # If config.json doesn't exist, try to copy it from config.json.example
     if not os.path.exists(CONFIG_FILE):
-        example_path = CONFIG_FILE + ".example"
+        example_path = os.path.join(os.path.dirname(__file__) or ".", "config.json.example")
         if os.path.exists(example_path):
             try:
                 import shutil
@@ -564,7 +567,7 @@ async def _handle_pending_step(message: dict, session: ClientSession) -> bool:
     if not pending:
         return False
     text = (message.get("text") or "").strip()
-    if text.lower() in ("cancel", "/cancel", "❌ cancel"):
+    if re.fullmatch(r'[\W_]*cancel[\W_]*', text, re.IGNORECASE):
         clear_pending(chat_id)
         await send_bot_reply(session, "Cancelled ✖", reply_markup=_REPLY_KB_REMOVE)
         return True
