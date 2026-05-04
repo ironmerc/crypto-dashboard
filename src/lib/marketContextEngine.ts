@@ -1,4 +1,5 @@
 import { useTerminalStore } from '../store/useTerminalStore';
+import type { OrderBookState, TerminalState, Trade } from '../store/useTerminalStore';
 
 // We map out the returned types from the Market Context logic
 export interface RegimeInfo {
@@ -45,25 +46,64 @@ export interface MomentumInfo {
     color: string;
 }
 
+export interface MarketContextStateSlice {
+    prices: TerminalState['prices'];
+    currentEMA21: TerminalState['currentEMA21'];
+    currentEMA50: TerminalState['currentEMA50'];
+    currentVWAP: TerminalState['currentVWAP'];
+    currentATR: TerminalState['currentATR'];
+    currentAtrSma: TerminalState['currentAtrSma'];
+    oiHistory: TerminalState['oiHistory'];
+    orderBook: TerminalState['orderBook'];
+    sessionPoc: TerminalState['sessionPoc'];
+    sessionVah: TerminalState['sessionVah'];
+    sessionVal: TerminalState['sessionVal'];
+    recentTrades: TerminalState['recentTrades'];
+    currentRSI: TerminalState['currentRSI'];
+    currentMACD: TerminalState['currentMACD'];
+    currentBB: TerminalState['currentBB'];
+    currentStochRSI: TerminalState['currentStochRSI'];
+}
+
+const getContextInputs = (state: MarketContextStateSlice, symbol: string) => ({
+    price: state.prices[symbol],
+    ema21: state.currentEMA21[symbol],
+    ema50: state.currentEMA50[symbol],
+    vwap: state.currentVWAP[symbol],
+    atr: state.currentATR[symbol],
+    atrSma: state.currentAtrSma[symbol],
+    oiHistory: state.oiHistory[symbol],
+    orderBook: state.orderBook[symbol],
+    sessionPoc: state.sessionPoc[symbol],
+    sessionVah: state.sessionVah[symbol],
+    sessionVal: state.sessionVal[symbol],
+    recentTrades: state.recentTrades[symbol],
+    rsi: state.currentRSI[symbol],
+    macd: state.currentMACD[symbol],
+    bb: state.currentBB[symbol],
+    stochRsi: state.currentStochRSI[symbol],
+});
+
 // Extracted from MarketContext.tsx so it can be used headlessly by alerts
-export function calculateMarketContext(symbol: string) {
-    const state = useTerminalStore.getState();
-    const price = state.prices[symbol];
-    const ema21 = state.currentEMA21[symbol];
-    const ema50 = state.currentEMA50[symbol];
-    const vwap = state.currentVWAP[symbol];
-    const atr = state.currentATR[symbol];
-    const atrSma = state.currentAtrSma[symbol];
-    const oiHistory = state.oiHistory[symbol];
-    const orderBook = state.orderBook[symbol];
-    const sessionPoc = state.sessionPoc[symbol];
-    const sessionVah = state.sessionVah[symbol];
-    const sessionVal = state.sessionVal[symbol];
-    const recentTrades = state.recentTrades[symbol];
-    const rsi = state.currentRSI[symbol];
-    const macd = state.currentMACD[symbol];
-    const bb = state.currentBB[symbol];
-    const stochRsi = state.currentStochRSI[symbol];
+export function calculateMarketContextFromState(state: MarketContextStateSlice, symbol: string) {
+    const {
+        price,
+        ema21,
+        ema50,
+        vwap,
+        atr,
+        atrSma,
+        oiHistory,
+        orderBook,
+        sessionPoc,
+        sessionVah,
+        sessionVal,
+        recentTrades,
+        rsi,
+        macd,
+        bb,
+        stochRsi,
+    } = getContextInputs(state, symbol);
 
     // 1. Regime
     let regime: RegimeInfo = { type: 'Unknown', strength: 'Neutral', text: 'Gathering Data...', color: 'text-terminal-muted' };
@@ -247,4 +287,8 @@ export function calculateMarketContext(symbol: string) {
         sessionVah,
         sessionVal
     };
+}
+
+export function calculateMarketContext(symbol: string) {
+    return calculateMarketContextFromState(useTerminalStore.getState(), symbol);
 }

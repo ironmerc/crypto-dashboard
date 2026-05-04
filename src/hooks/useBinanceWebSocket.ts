@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import useWebSocket from 'react-use-websocket';
-import { usePageVisibility } from './usePageVisibility';
 
 import { type MonitoredSymbol } from '../store/useTerminalStore';
 import { formatPrice } from '../utils/formatters';
@@ -18,11 +17,7 @@ export interface TickerData {
 
 export function useBinanceTickers(monitoredSymbols: MonitoredSymbol[]) {
     const [tickers, setTickers] = useState<Record<string, TickerData>>({});
-    const isVisible = usePageVisibility();
-    const isVisibleRef = useRef(isVisible);
     const tickerBufferRef = useRef<Record<string, TickerData>>({});
-
-    useEffect(() => { isVisibleRef.current = isVisible; }, [isVisible]);
 
     // Group symbols by type
     const spotSymbols = monitoredSymbols
@@ -36,7 +31,6 @@ export function useBinanceTickers(monitoredSymbols: MonitoredSymbol[]) {
     const futuresStreamName = futuresSymbols.map(s => `${s}@ticker`).join('/');
 
     const handleTickerMessage = (event: MessageEvent) => {
-        if (!isVisibleRef.current) return;
         let msg;
         try {
             msg = JSON.parse(event.data);

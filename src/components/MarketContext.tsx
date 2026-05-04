@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { Target, TrendingUp, Activity, Zap, AlertTriangle } from 'lucide-react';
-import { calculateMarketContext } from '../lib/marketContextEngine';
+import { calculateMarketContextFromState, type MarketContextStateSlice } from '../lib/marketContextEngine';
 
 import { type MarketType } from '../constants/binance';
 
@@ -11,20 +11,51 @@ interface MarketContextProps {
 }
 
 export function MarketContext({ symbol, type }: MarketContextProps) {
+    const price = useTerminalStore(state => state.prices[symbol]);
     const ema21 = useTerminalStore(state => state.currentEMA21[symbol]);
     const ema50 = useTerminalStore(state => state.currentEMA50[symbol]);
+    const vwap = useTerminalStore(state => state.currentVWAP[symbol]);
+    const atr = useTerminalStore(state => state.currentATR[symbol]);
+    const atrSma = useTerminalStore(state => state.currentAtrSma[symbol]);
+    const oiHistory = useTerminalStore(state => state.oiHistory[symbol]);
+    const orderBook = useTerminalStore(state => state.orderBook[symbol]);
+    const sessionPoc = useTerminalStore(state => state.sessionPoc[symbol]);
+    const sessionVah = useTerminalStore(state => state.sessionVah[symbol]);
+    const sessionVal = useTerminalStore(state => state.sessionVal[symbol]);
+    const recentTrades = useTerminalStore(state => state.recentTrades[symbol]);
+    const rsi = useTerminalStore(state => state.currentRSI[symbol]);
+    const macd = useTerminalStore(state => state.currentMACD[symbol]);
+    const bb = useTerminalStore(state => state.currentBB[symbol]);
+    const stochRsi = useTerminalStore(state => state.currentStochRSI[symbol]);
     const fundingRate = useTerminalStore(state => state.fundingRate[symbol]);
 
+    const marketContextState = useMemo<MarketContextStateSlice>(() => ({
+        prices: { [symbol]: price },
+        currentEMA21: { [symbol]: ema21 },
+        currentEMA50: { [symbol]: ema50 },
+        currentVWAP: { [symbol]: vwap },
+        currentATR: { [symbol]: atr },
+        currentAtrSma: { [symbol]: atrSma },
+        oiHistory: { [symbol]: oiHistory },
+        orderBook: { [symbol]: orderBook },
+        sessionPoc: { [symbol]: sessionPoc },
+        sessionVah: { [symbol]: sessionVah },
+        sessionVal: { [symbol]: sessionVal },
+        recentTrades: { [symbol]: recentTrades },
+        currentRSI: { [symbol]: rsi },
+        currentMACD: { [symbol]: macd },
+        currentBB: { [symbol]: bb },
+        currentStochRSI: { [symbol]: stochRsi },
+    }), [symbol, price, ema21, ema50, vwap, atr, atrSma, oiHistory, orderBook, sessionPoc, sessionVah, sessionVal, recentTrades, rsi, macd, bb, stochRsi]);
+
     const {
-        price,
-        rsi,
         regime,
         volatility,
         derivatives,
         execution,
         levelInteraction,
         momentum
-    } = calculateMarketContext(symbol);
+    } = useMemo(() => calculateMarketContextFromState(marketContextState, symbol), [marketContextState, symbol]);
 
     // 1. Session Awareness (UI specific)
     const sessionInfo = useMemo(() => {
