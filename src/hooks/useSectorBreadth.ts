@@ -18,7 +18,7 @@ export function useSectorBreadth(symbols: string[]) {
             let counted = 0;
 
             for (const sym of symbols) {
-                const price = state.prices[sym];
+                const price = state.livePrices[sym];
                 const vwap = state.currentVWAP[sym];
                 const ema21 = state.currentEMA21[sym];
                 if (!price) continue;

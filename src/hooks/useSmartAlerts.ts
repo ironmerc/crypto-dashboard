@@ -52,7 +52,7 @@ export function useSmartAlerts(symbol: string) {
             };
 
             // Only alert if we have a valid price
-            const price = state.prices[symbol];
+            const price = state.livePrices[symbol];
             if (!price) return;
             const isCategoryEnabled = (category: string) => config.globalEnabled && config.categories?.[category] !== false;
 

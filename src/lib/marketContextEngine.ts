@@ -46,7 +46,7 @@ export interface MomentumInfo {
 }
 
 export interface MarketContextStateSlice {
-    prices: ReturnType<typeof useTerminalStore.getState>['prices'];
+    livePrices: ReturnType<typeof useTerminalStore.getState>['livePrices'];
     currentEMA21: ReturnType<typeof useTerminalStore.getState>['currentEMA21'];
     currentEMA50: ReturnType<typeof useTerminalStore.getState>['currentEMA50'];
     currentVWAP: ReturnType<typeof useTerminalStore.getState>['currentVWAP'];
@@ -65,7 +65,7 @@ export interface MarketContextStateSlice {
 }
 
 const getContextInputs = (state: MarketContextStateSlice, symbol: string) => ({
-    price: state.prices[symbol],
+    price: state.livePrices[symbol],
     ema21: state.currentEMA21[symbol],
     ema50: state.currentEMA50[symbol],
     vwap: state.currentVWAP[symbol],

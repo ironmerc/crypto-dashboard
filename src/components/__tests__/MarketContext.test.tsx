@@ -20,7 +20,7 @@ describe('MarketContext', () => {
 
         act(() => {
             useTerminalStore.setState({
-                prices: { BTCUSDT: 100 },
+                livePrices: { BTCUSDT: 100 },
             });
         });
 

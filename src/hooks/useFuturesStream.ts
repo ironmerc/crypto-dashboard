@@ -9,6 +9,7 @@ const SPOT_WS = 'wss://stream.binance.com:9443/ws';
 
 export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: MonitoredSymbol[]) {
     const setPrice = useTerminalStore(state => state.setPrice);
+    const setLivePrice = useTerminalStore(state => state.setLivePrice);
     const setOrderBook = useTerminalStore(state => state.setOrderBook);
     const setOpenInterest = useTerminalStore(state => state.setOpenInterest);
     const setFundingRate = useTerminalStore(state => state.setFundingRate);
@@ -48,6 +49,7 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
             const side: Side = msg.m ? 'SELL' : 'BUY';
 
             setPrice(msg.s, price);
+            setLivePrice(msg.s, price, 'trade', msg.T);
             if (!isVisibleRef.current) return;
 
             tradeBufferRef.current.push({

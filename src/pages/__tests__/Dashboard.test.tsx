@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import Dashboard from '../Dashboard';
@@ -86,6 +86,7 @@ describe('Dashboard', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         window.localStorage.clear();
+        window.innerWidth = 1400;
         useTerminalStore.setState({
             ...useTerminalStore.getInitialState(),
             telegramConfig: {
@@ -103,5 +104,35 @@ describe('Dashboard', () => {
         );
 
         expect(hooks.useSmartAlerts).toHaveBeenCalledWith('BTCUSDT');
+    });
+
+    it('renders the websocket-backed live price in the main market panel', () => {
+        useTerminalStore.setState({
+            livePrices: { BTCUSDT: 78937.1 },
+            lastLivePriceAt: { BTCUSDT: Date.now() },
+        });
+
+        render(
+            <MemoryRouter>
+                <Dashboard />
+            </MemoryRouter>
+        );
+
+        expect(screen.getAllByText('78,937.10').length).toBeGreaterThan(0);
+    });
+
+    it('marks the price stale when websocket updates stop', () => {
+        useTerminalStore.setState({
+            livePrices: { BTCUSDT: 78937.1 },
+            lastLivePriceAt: { BTCUSDT: Date.now() - 11_000 },
+        });
+
+        render(
+            <MemoryRouter>
+                <Dashboard />
+            </MemoryRouter>
+        );
+
+        expect(screen.getAllByText('STALE').length).toBeGreaterThan(0);
     });
 });

@@ -91,7 +91,7 @@ export function useBackendAlerts() {
                     addEvent({
                         type: 'SmartAlert',
                         symbol,
-                        price: useTerminalStore.getState().prices[symbol] || 0,
+                        price: useTerminalStore.getState().livePrices[symbol] || 0,
                         amount: 0,
                         value: 0,
                         side: 'NEUTRAL',

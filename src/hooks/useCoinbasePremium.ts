@@ -23,7 +23,7 @@ export function useCoinbasePremium(symbols: string[]) {
         const fetchPremium = async () => {
             const state = useTerminalStore.getState();
             await Promise.all(symbols.map(async (sym) => {
-                const binancePrice = state.prices[sym];
+                const binancePrice = state.livePrices[sym];
                 if (!binancePrice) return;
                 try {
                     const pair = toCoinbasePair(sym);

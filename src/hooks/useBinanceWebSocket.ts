@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import useWebSocket from 'react-use-websocket';
 import { usePageVisibility } from './usePageVisibility';
 
-import { type MonitoredSymbol } from '../store/useTerminalStore';
+import { useTerminalStore, type MonitoredSymbol } from '../store/useTerminalStore';
 import { formatPrice } from '../utils/formatters';
 
 const FUTURES_WS_URL = 'wss://fstream.binance.com/stream';
@@ -19,6 +19,7 @@ export interface TickerData {
 export function useBinanceTickers(monitoredSymbols: MonitoredSymbol[]) {
     const [tickers, setTickers] = useState<Record<string, TickerData>>({});
     const tickerBufferRef = useRef<Record<string, TickerData>>({});
+    const setLivePrice = useTerminalStore(state => state.setLivePrice);
 
     const createTicker = (symbol: string, price: string, change24h: string, changePercent24h: string, volume24h: string): TickerData => ({
         symbol,
@@ -49,6 +50,7 @@ export function useBinanceTickers(monitoredSymbols: MonitoredSymbol[]) {
         
         const data = msg.data || msg;
         if (data && data.e === '24hrTicker') {
+            setLivePrice(data.s, parseFloat(data.c), 'ticker', data.E ?? Date.now());
             tickerBufferRef.current[data.s] = createTicker(
                 data.s,
                 formatPrice(parseFloat(data.c)),

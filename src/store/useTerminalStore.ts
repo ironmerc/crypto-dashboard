@@ -60,6 +60,8 @@ export interface VolumeDelta {
     delta: number;
 }
 
+export type LivePriceSource = 'trade' | 'ticker';
+
 export interface TelegramThresholds {
     whaleMinAmount: number;
     liquidationMinAmount: number;
@@ -229,6 +231,11 @@ interface TerminalState {
     // Real-time Prices
     prices: Record<string, number>;
     setPrice: (symbol: string, price: number) => void;
+    livePrices: Record<string, number>;
+    livePriceSource: Record<string, LivePriceSource>;
+    lastLivePriceAt: Record<string, number>;
+    setLivePrice: (symbol: string, price: number, source: LivePriceSource, timestamp?: number) => void;
+    isLivePriceStale: (symbol: string, now?: number) => boolean;
 
     // Order Book
     orderBook: Record<string, OrderBookState>;
@@ -346,6 +353,29 @@ export const useTerminalStore = create<TerminalState>()(
             setPrice: (symbol, price) => set((state) => ({
                 prices: { ...state.prices, [symbol]: price }
             })),
+            livePrices: {},
+            livePriceSource: {},
+            lastLivePriceAt: {},
+            setLivePrice: (symbol, price, source, timestamp = Date.now()) => set((state) => {
+                const currentSource = state.livePriceSource[symbol];
+                const currentTimestamp = state.lastLivePriceAt[symbol] || 0;
+                const currentIsFresh = timestamp - currentTimestamp <= 10000;
+
+                if (source === 'ticker' && currentSource === 'trade' && currentIsFresh) {
+                    return state;
+                }
+
+                return {
+                    livePrices: { ...state.livePrices, [symbol]: price },
+                    livePriceSource: { ...state.livePriceSource, [symbol]: source },
+                    lastLivePriceAt: { ...state.lastLivePriceAt, [symbol]: timestamp },
+                };
+            }),
+            isLivePriceStale: (symbol, now = Date.now()) => {
+                const lastUpdate = get().lastLivePriceAt[symbol];
+                if (!lastUpdate) return true;
+                return now - lastUpdate > 10000;
+            },
 
             orderBook: {},
             setOrderBook: (symbol, ob) => set((state) => ({

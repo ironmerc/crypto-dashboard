@@ -11,7 +11,7 @@ interface OrderBookProps {
 
 export function OrderBook({ symbol, type }: OrderBookProps) {
     const orderBook = useTerminalStore(state => state.orderBook[symbol]);
-    const currentPrice = useTerminalStore(state => state.prices[symbol]) || 0;
+    const currentPrice = useTerminalStore(state => state.livePrices[symbol]) || 0;
     const globalInterval = useTerminalStore(state => state.globalInterval);
 
     // Calculate grouping tick size based on timeframe

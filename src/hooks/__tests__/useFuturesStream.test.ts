@@ -73,4 +73,40 @@ describe('useFuturesStream', () => {
 
         expect(setOpenInterest).toHaveBeenCalledWith('BTCUSDT', 123456.78);
     });
+
+    it('writes aggTrade updates into the live websocket price store', () => {
+        const setLivePrice = vi.spyOn(useTerminalStore.getState(), 'setLivePrice');
+        let capturedOnMessage: any = null;
+
+        mockedUseWebSocket.mockImplementation((url, options) => {
+            if (typeof url === 'string' && url.includes('fstream.binance.com')) {
+                capturedOnMessage = (options as any).onMessage;
+            }
+            return {
+                sendMessage: vi.fn(),
+                lastJsonMessage: null,
+                readyState: 1,
+                getWebSocket: vi.fn(),
+                sendJsonMessage: vi.fn(),
+            } as any;
+        });
+
+        renderHook(() => useFuturesStream(
+            { symbol: 'BTCUSDT', type: 'futures' },
+            [{ symbol: 'BTCUSDT', type: 'futures' }]
+        ));
+
+        capturedOnMessage({
+            data: JSON.stringify({
+                e: 'aggTrade',
+                s: 'BTCUSDT',
+                p: '78937.10',
+                q: '0.05',
+                m: false,
+                T: 1234567890,
+            })
+        });
+
+        expect(setLivePrice).toHaveBeenCalledWith('BTCUSDT', 78937.1, 'trade', 1234567890);
+    });
 });

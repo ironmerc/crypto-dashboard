@@ -11,7 +11,7 @@ interface MarketContextProps {
 }
 
 export function MarketContext({ symbol, type }: MarketContextProps) {
-    const price = useTerminalStore(state => state.prices[symbol]);
+    const price = useTerminalStore(state => state.livePrices[symbol]);
     const ema21 = useTerminalStore(state => state.currentEMA21[symbol]);
     const ema50 = useTerminalStore(state => state.currentEMA50[symbol]);
     const vwap = useTerminalStore(state => state.currentVWAP[symbol]);
@@ -30,7 +30,7 @@ export function MarketContext({ symbol, type }: MarketContextProps) {
     const fundingRate = useTerminalStore(state => state.fundingRate[symbol]);
 
     const marketContextState = useMemo<MarketContextStateSlice>(() => ({
-        prices: { [symbol]: price },
+        livePrices: { [symbol]: price },
         currentEMA21: { [symbol]: ema21 },
         currentEMA50: { [symbol]: ema50 },
         currentVWAP: { [symbol]: vwap },

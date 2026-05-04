@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import useWebSocket from 'react-use-websocket';
 import { useBinanceTickers } from '../useBinanceWebSocket';
+import { useTerminalStore } from '../../store/useTerminalStore';
 
 const mockedUseWebSocket = vi.mocked(useWebSocket);
 
@@ -20,6 +21,7 @@ describe('useBinanceTickers', () => {
     });
 
     it('keeps ticker data flowing even when the page visibility API reports hidden', () => {
+        const setLivePrice = vi.spyOn(useTerminalStore.getState(), 'setLivePrice');
         Object.defineProperty(document, 'hidden', {
             configurable: true,
             value: true,
@@ -70,6 +72,7 @@ describe('useBinanceTickers', () => {
             symbol: 'BTCUSDT',
             changePercent24h: '1.23',
         });
+        expect(setLivePrice).toHaveBeenCalledWith('BTCUSDT', 100000.12, 'ticker', expect.any(Number));
     });
 
     it('falls back to REST ticker data when websocket updates do not arrive', async () => {

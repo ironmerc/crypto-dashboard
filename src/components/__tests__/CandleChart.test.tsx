@@ -126,7 +126,7 @@ describe('CandleChart', () => {
         expect(fetchPriceAlerts).toHaveBeenCalledTimes(1);
     });
 
-    it('hydrates the store price from the latest fetched candle close', async () => {
+    it('does not overwrite live websocket price state from fetched candle closes', async () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
             ok: true,
             json: async () => ({
@@ -157,6 +157,7 @@ describe('CandleChart', () => {
             await Promise.resolve();
         });
 
-        expect(useTerminalStore.getState().prices.BTCUSDT).toBe(108);
+        expect(useTerminalStore.getState().livePrices.BTCUSDT).toBeUndefined();
+        expect(useTerminalStore.getState().prices.BTCUSDT).toBeUndefined();
     });
 });

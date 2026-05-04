@@ -94,7 +94,8 @@ export default function Dashboard() {
 
   const openInterest = useTerminalStore((state) => state.openInterest[localActiveSymbol]);
   const oiHistory = useTerminalStore((state) => state.oiHistory[localActiveSymbol]);
-  const currentPrice = useTerminalStore((state) => state.prices[localActiveSymbol]);
+  const livePrices = useTerminalStore((state) => state.livePrices);
+  const isLivePriceStale = useTerminalStore((state) => state.isLivePriceStale);
   const fundingRate = useTerminalStore((state) => state.fundingRate[localActiveSymbol]);
   const fundingHistory = useTerminalStore((state) => state.fundingHistory[localActiveSymbol]);
   const longShortRatio = useTerminalStore((state) => state.longShortRatio[localActiveSymbol]);
@@ -102,6 +103,7 @@ export default function Dashboard() {
   const telegramConfig = useTerminalStore((state) => state.telegramConfig);
 
   const activeTicker = tickers[localActiveSymbol]; // Used for 24h change
+  const currentPrice = livePrices[localActiveSymbol];
 
   const getIntervalMs = (interval: string) => {
     switch (interval) {
@@ -130,11 +132,19 @@ export default function Dashboard() {
 
   const [renderTime, setRenderTime] = useState(() => Date.now());
   const isVisible = usePageVisibility();
+  const [liveClock, setLiveClock] = useState(() => Date.now());
 
   useEffect(() => {
     const timer = setInterval(() => {
       if (isVisible) setRenderTime(Date.now());
     }, 30000);
+    return () => clearInterval(timer);
+  }, [isVisible]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (isVisible) setLiveClock(Date.now());
+    }, 1000);
     return () => clearInterval(timer);
   }, [isVisible]);
 
@@ -145,6 +155,8 @@ export default function Dashboard() {
       fundingDelta: calcDelta(fundingHistory, fundingRate, intervalMs, renderTime)
     };
   }, [oiHistory, openInterest, fundingHistory, fundingRate, intervalMs, renderTime]);
+
+  const activePriceStale = currentPrice !== undefined && isLivePriceStale(localActiveSymbol, liveClock);
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
 
@@ -249,7 +261,14 @@ export default function Dashboard() {
             <section className="panel min-h-[500px] relative flex flex-col">
               <div className="flex justify-between items-end mb-4">
                 <h2 className="text-lg font-bold uppercase tracking-tight">{localActiveSymbol?.replace('USDT', `/USDT-${activeType === 'futures' ? 'PERP' : 'SPOT'}`)}</h2>
-                {currentPrice && <div className={`text-xl font-mono ${activeTicker && parseFloat(activeTicker.changePercent24h) >= 0 ? 'text-terminal-green' : 'text-terminal-red'}`}>{formatPrice(currentPrice)}</div>}
+                {currentPrice !== undefined ? (
+                  <div className="flex items-center gap-2">
+                    <div className={`text-xl font-mono ${activePriceStale ? 'text-terminal-muted' : activeTicker && parseFloat(activeTicker.changePercent24h) >= 0 ? 'text-terminal-green' : 'text-terminal-red'}`}>{formatPrice(currentPrice)}</div>
+                    {activePriceStale && <span className="text-[10px] font-bold uppercase tracking-widest text-yellow-400">STALE</span>}
+                  </div>
+                ) : (
+                  <div className="text-xs font-mono text-terminal-muted animate-pulse">LIVE...</div>
+                )}
               </div>
               <div className="flex-grow h-[400px] w-full">
                 <ErrorBoundary><CandleChart key={`${localActiveSymbol}-${activeType}`} symbol={localActiveSymbol} type={activeType} /></ErrorBoundary>
@@ -341,8 +360,9 @@ export default function Dashboard() {
                     {monitoredSymbols.map((s) => {
                       const isSelected = localActiveSymbol === s.symbol && activeType === s.type;
                       const t = tickers[s.symbol];
-                      if (!t) return <div key={`${s.symbol}-${s.type}`} className="text-terminal-muted text-[10px] animate-pulse px-2 py-1.5">{s.symbol} {s.type} loading...</div>;
-                      const isUp = parseFloat(t.changePercent24h) >= 0;
+                      const livePrice = livePrices[s.symbol];
+                      const priceStale = livePrice !== undefined && isLivePriceStale(s.symbol, liveClock);
+                      const isUp = t ? parseFloat(t.changePercent24h) >= 0 : false;
 
                       return (
                         <button
@@ -358,11 +378,18 @@ export default function Dashboard() {
                             <span className="text-[8px] opacity-60 uppercase">{s.type}</span>
                           </div>
                           <div className="text-right">
-                            <div className={isSelected ? 'text-terminal-fg' : 'text-white'}>{t.price}</div>
-                            <div className={`text-[9px] flex items-center justify-end ${isUp ? 'text-terminal-green' : 'text-terminal-red'}`}>
-                              {isUp ? <ArrowUpRight className="w-2 h-2" /> : <ArrowDownRight className="w-2 h-2" />}
-                              {Math.abs(parseFloat(t.changePercent24h)).toFixed(2)}%
+                            <div className={priceStale ? 'text-terminal-muted' : isSelected ? 'text-terminal-fg' : 'text-white'}>
+                              {livePrice !== undefined ? formatPrice(livePrice) : 'LIVE...'}
                             </div>
+                            {priceStale && (
+                              <div className="text-[9px] uppercase tracking-widest text-yellow-400">STALE</div>
+                            )}
+                            {!priceStale && t && (
+                              <div className={`text-[9px] flex items-center justify-end ${isUp ? 'text-terminal-green' : 'text-terminal-red'}`}>
+                                {isUp ? <ArrowUpRight className="w-2 h-2" /> : <ArrowDownRight className="w-2 h-2" />}
+                                {Math.abs(parseFloat(t.changePercent24h)).toFixed(2)}%
+                              </div>
+                            )}
                           </div>
                         </button>
                       );
@@ -391,9 +418,14 @@ export default function Dashboard() {
                     <h2 className="text-2xl font-bold uppercase tracking-widest flex items-center gap-3 bg-terminal-surface/40 backdrop-blur-md px-3 py-1 rounded-lg border border-terminal-border/40 shadow-sm">
                       {localActiveSymbol?.replace('USDT', `/USDT-${activeType === 'futures' ? 'PERP' : 'SPOT'}`)}
                     </h2>
-                    {currentPrice && (
-                      <div className={`text-2xl font-mono leading-none bg-terminal-surface/40 backdrop-blur-md px-3 py-1 rounded-lg border border-terminal-border/40 shadow-sm ${activeTicker && parseFloat(activeTicker.changePercent24h) >= 0 ? 'text-terminal-green glow-text' : 'text-terminal-red glow-red'}`}>
-                        {formatPrice(currentPrice)}
+                    {currentPrice !== undefined ? (
+                      <div className={`flex items-center gap-2 text-2xl font-mono leading-none bg-terminal-surface/40 backdrop-blur-md px-3 py-1 rounded-lg border border-terminal-border/40 shadow-sm ${activePriceStale ? 'text-terminal-muted' : activeTicker && parseFloat(activeTicker.changePercent24h) >= 0 ? 'text-terminal-green glow-text' : 'text-terminal-red glow-red'}`}>
+                        <span>{formatPrice(currentPrice)}</span>
+                        {activePriceStale && <span className="text-[10px] font-bold uppercase tracking-widest text-yellow-400">STALE</span>}
+                      </div>
+                    ) : (
+                      <div className="text-xs font-mono leading-none bg-terminal-surface/40 backdrop-blur-md px-3 py-1 rounded-lg border border-terminal-border/40 shadow-sm text-terminal-muted animate-pulse">
+                        LIVE...
                       </div>
                     )}
                   </div>
