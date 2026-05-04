@@ -20,6 +20,7 @@ import { ActionAlertStrip } from '../components/ActionAlertStrip';
 import { useBackendAlerts } from '../hooks/useBackendAlerts';
 import { useCoinbasePremium } from '../hooks/useCoinbasePremium';
 import { useSectorBreadth } from '../hooks/useSectorBreadth';
+import { useSmartAlerts } from '../hooks/useSmartAlerts';
 
 function CoinbasePremiumRow({ symbol }: { symbol: string }) {
   const premium = useTerminalStore((s) => s.coinbasePremium[symbol]);
@@ -89,6 +90,7 @@ export default function Dashboard() {
   useBackendAlerts();
   useCoinbasePremium(symbolNames);
   useSectorBreadth(symbolNames);
+  useSmartAlerts(localActiveSymbol);
 
   const openInterest = useTerminalStore((state) => state.openInterest[localActiveSymbol]);
   const oiHistory = useTerminalStore((state) => state.oiHistory[localActiveSymbol]);

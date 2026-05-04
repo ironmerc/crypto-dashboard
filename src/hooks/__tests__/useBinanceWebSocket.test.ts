@@ -71,4 +71,43 @@ describe('useBinanceTickers', () => {
             changePercent24h: '1.23',
         });
     });
+
+    it('falls back to REST ticker data when websocket updates do not arrive', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                symbol: 'BTCUSDT',
+                lastPrice: '99123.45',
+                priceChange: '123.45',
+                priceChangePercent: '1.11',
+                volume: '2500',
+            }),
+        }));
+
+        mockedUseWebSocket.mockReturnValue({
+            sendMessage: vi.fn(),
+            lastJsonMessage: null,
+            readyState: 1,
+            getWebSocket: vi.fn(),
+            sendJsonMessage: vi.fn(),
+        } as never);
+
+        const { result } = renderHook(() =>
+            useBinanceTickers([{ symbol: 'BTCUSDT', type: 'futures' }])
+        );
+
+        await act(async () => {
+            await Promise.resolve();
+            vi.advanceTimersByTime(300);
+        });
+
+        expect(fetch).toHaveBeenCalledWith(
+            'https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=BTCUSDT',
+            expect.any(Object)
+        );
+        expect(result.current.BTCUSDT).toMatchObject({
+            symbol: 'BTCUSDT',
+            changePercent24h: '1.11',
+        });
+    });
 });

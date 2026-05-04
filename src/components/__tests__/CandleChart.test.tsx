@@ -125,4 +125,38 @@ describe('CandleChart', () => {
 
         expect(fetchPriceAlerts).toHaveBeenCalledTimes(1);
     });
+
+    it('hydrates the store price from the latest fetched candle close', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                klines: [
+                    [1710000000000, 100, 110, 95, 105, 500],
+                    [1710000060000, 105, 112, 98, 108, 400],
+                ],
+                ema21: [100, 101],
+                ema50: [99, 100],
+                vwap: [100, 101],
+                rsi: [50, 55],
+                atr: [5, 6],
+                atr_sma: [4, 5],
+                bb_upper: [110, 111],
+                bb_middle: [100, 101],
+                bb_lower: [90, 91],
+                bb_width: [2, 2.2],
+                macd: [1, 1.2],
+                macd_signal: [0.8, 1],
+                macd_hist: [0.2, 0.2],
+                stoch_k: [40, 45],
+                stoch_d: [38, 43],
+            }),
+        }));
+
+        render(<CandleChart symbol="BTCUSDT" type="futures" />);
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        expect(useTerminalStore.getState().prices.BTCUSDT).toBe(108);
+    });
 });

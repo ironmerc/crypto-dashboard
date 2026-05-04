@@ -20,6 +20,14 @@ export function useBinanceTickers(monitoredSymbols: MonitoredSymbol[]) {
     const [tickers, setTickers] = useState<Record<string, TickerData>>({});
     const tickerBufferRef = useRef<Record<string, TickerData>>({});
 
+    const createTicker = (symbol: string, price: string, change24h: string, changePercent24h: string, volume24h: string): TickerData => ({
+        symbol,
+        price,
+        change24h,
+        changePercent24h,
+        volume24h,
+    });
+
     // Group symbols by type
     const spotSymbols = monitoredSymbols
         .filter(m => m.type === 'spot' && m.symbol.length >= 5)
@@ -41,13 +49,13 @@ export function useBinanceTickers(monitoredSymbols: MonitoredSymbol[]) {
         
         const data = msg.data || msg;
         if (data && data.e === '24hrTicker') {
-            tickerBufferRef.current[data.s] = {
-                symbol: data.s,
-                price: formatPrice(parseFloat(data.c)),
-                change24h: formatPrice(parseFloat(data.p)),
-                changePercent24h: parseFloat(data.P).toFixed(2),
-                volume24h: (parseFloat(data.v) * parseFloat(data.c) / 1000000).toFixed(2), // In Millions
-            };
+            tickerBufferRef.current[data.s] = createTicker(
+                data.s,
+                formatPrice(parseFloat(data.c)),
+                formatPrice(parseFloat(data.p)),
+                parseFloat(data.P).toFixed(2),
+                (parseFloat(data.v) * parseFloat(data.c) / 1000000).toFixed(2),
+            );
         }
     };
 
@@ -78,6 +86,50 @@ export function useBinanceTickers(monitoredSymbols: MonitoredSymbol[]) {
         }, 300); // Faster update (300ms) for better responsiveness
         return () => clearInterval(timer);
     }, []);
+
+    useEffect(() => {
+        if (monitoredSymbols.length === 0) return;
+
+        const controller = new AbortController();
+
+        const fetchTicker = async (symbol: string, type: 'spot' | 'futures') => {
+            const baseUrl = type === 'spot'
+                ? 'https://api.binance.com/api/v3/ticker/24hr'
+                : 'https://fapi.binance.com/fapi/v1/ticker/24hr';
+
+            try {
+                const response = await fetch(`${baseUrl}?symbol=${symbol}`, { signal: controller.signal });
+                if (!response.ok) return;
+                const data = await response.json();
+                if (!data?.symbol) return;
+
+                const ticker = createTicker(
+                    data.symbol,
+                    formatPrice(parseFloat(data.lastPrice)),
+                    formatPrice(parseFloat(data.priceChange)),
+                    parseFloat(data.priceChangePercent).toFixed(2),
+                    (parseFloat(data.volume) * parseFloat(data.lastPrice) / 1000000).toFixed(2),
+                );
+                tickerBufferRef.current[data.symbol] = ticker;
+                setTickers(prev => ({ ...prev, [data.symbol]: ticker }));
+            } catch (error) {
+                if (error instanceof Error && error.name === 'AbortError') return;
+            }
+        };
+
+        const hydrateTickers = async () => {
+            const missingSymbols = monitoredSymbols.filter(({ symbol }) => !tickerBufferRef.current[symbol] && !tickers[symbol]);
+            await Promise.all(missingSymbols.map(({ symbol, type }) => fetchTicker(symbol, type)));
+        };
+
+        hydrateTickers();
+        const interval = setInterval(hydrateTickers, 15000);
+
+        return () => {
+            controller.abort();
+            clearInterval(interval);
+        };
+    }, [monitoredSymbols, tickers]);
 
     return tickers;
 }

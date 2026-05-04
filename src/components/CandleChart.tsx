@@ -132,6 +132,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
     const addPriceAlert = useTerminalStore(state => state.addPriceAlert);
     const removePriceAlert = useTerminalStore(state => state.removePriceAlert);
     const fetchPriceAlerts = useTerminalStore(state => state.fetchPriceAlerts);
+    const setPrice = useTerminalStore(state => state.setPrice);
 
     const getAlertDirection = (targetPrice: number) => {
         return inferPriceAlertDirection(targetPrice, currentPrice || currentPriceRef.current);
@@ -273,6 +274,8 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                 // Dynamic precision from last close price
                 const lastIndex = cdata[cdata.length - 1].index;
                 const lastClose = cdata[cdata.length - 1].close;
+                currentPriceRef.current = lastClose;
+                setPrice(symbol, lastClose);
                 let precision = 2;
                 let minMove = 0.01;
                 if (lastClose < 0.01) { precision = 8; minMove = 0.00000001; }
@@ -404,6 +407,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                     isFiniteNumber(updateData.volume)
                 ) {
                     currentPriceRef.current = updateData.close;
+                    setPrice(symbol, updateData.close);
                     try { seriesRef.current.update(updateData as any); } catch { /* ignore stale update */ }
                 }
             }
@@ -425,6 +429,8 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                     const lastCandle = candles[candles.length - 1];
                     const last = lastCandle.index;
                     const time = lastCandle.time as any;
+                    currentPriceRef.current = lastCandle.close;
+                    setPrice(symbol, lastCandle.close);
 
                     if (typeof ind.ema21[last] === 'number' && ema21SeriesRef.current) ema21SeriesRef.current.update({ time, value: ind.ema21[last]! });
                     if (typeof ind.ema50[last] === 'number' && ema50SeriesRef.current) ema50SeriesRef.current.update({ time, value: ind.ema50[last]! });
@@ -466,7 +472,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
 
         const indicatorPoll = setInterval(fetchIndicators, 15000);
         return () => { clearInterval(indicatorPoll); controller.abort(); };
-    }, [symbol, type, globalInterval]);
+    }, [symbol, type, globalInterval, setPrice]);
 
     // 3. Draw Volume Profile Lines
     useEffect(() => {
