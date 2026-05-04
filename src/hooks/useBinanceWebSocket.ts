@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import useWebSocket from 'react-use-websocket';
+import { usePageVisibility } from './usePageVisibility';
 
 import { type MonitoredSymbol } from '../store/useTerminalStore';
 import { formatPrice } from '../utils/formatters';

@@ -1,5 +1,4 @@
 import { useTerminalStore } from '../store/useTerminalStore';
-import type { OrderBookState, TerminalState, Trade } from '../store/useTerminalStore';
 
 // We map out the returned types from the Market Context logic
 export interface RegimeInfo {
@@ -47,22 +46,22 @@ export interface MomentumInfo {
 }
 
 export interface MarketContextStateSlice {
-    prices: TerminalState['prices'];
-    currentEMA21: TerminalState['currentEMA21'];
-    currentEMA50: TerminalState['currentEMA50'];
-    currentVWAP: TerminalState['currentVWAP'];
-    currentATR: TerminalState['currentATR'];
-    currentAtrSma: TerminalState['currentAtrSma'];
-    oiHistory: TerminalState['oiHistory'];
-    orderBook: TerminalState['orderBook'];
-    sessionPoc: TerminalState['sessionPoc'];
-    sessionVah: TerminalState['sessionVah'];
-    sessionVal: TerminalState['sessionVal'];
-    recentTrades: TerminalState['recentTrades'];
-    currentRSI: TerminalState['currentRSI'];
-    currentMACD: TerminalState['currentMACD'];
-    currentBB: TerminalState['currentBB'];
-    currentStochRSI: TerminalState['currentStochRSI'];
+    prices: ReturnType<typeof useTerminalStore.getState>['prices'];
+    currentEMA21: ReturnType<typeof useTerminalStore.getState>['currentEMA21'];
+    currentEMA50: ReturnType<typeof useTerminalStore.getState>['currentEMA50'];
+    currentVWAP: ReturnType<typeof useTerminalStore.getState>['currentVWAP'];
+    currentATR: ReturnType<typeof useTerminalStore.getState>['currentATR'];
+    currentAtrSma: ReturnType<typeof useTerminalStore.getState>['currentAtrSma'];
+    oiHistory: ReturnType<typeof useTerminalStore.getState>['oiHistory'];
+    orderBook: ReturnType<typeof useTerminalStore.getState>['orderBook'];
+    sessionPoc: ReturnType<typeof useTerminalStore.getState>['sessionPoc'];
+    sessionVah: ReturnType<typeof useTerminalStore.getState>['sessionVah'];
+    sessionVal: ReturnType<typeof useTerminalStore.getState>['sessionVal'];
+    recentTrades: ReturnType<typeof useTerminalStore.getState>['recentTrades'];
+    currentRSI: ReturnType<typeof useTerminalStore.getState>['currentRSI'];
+    currentMACD: ReturnType<typeof useTerminalStore.getState>['currentMACD'];
+    currentBB: ReturnType<typeof useTerminalStore.getState>['currentBB'];
+    currentStochRSI: ReturnType<typeof useTerminalStore.getState>['currentStochRSI'];
 }
 
 const getContextInputs = (state: MarketContextStateSlice, symbol: string) => ({
