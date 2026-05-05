@@ -268,7 +268,10 @@ interface TerminalState {
     // Tape, Volume Delta & Volume Profile
     recentTrades: Record<string, Trade[]>;
     volumeDelta: Record<string, VolumeDelta>;
-    volumeProfile: Record<string, Map<number, number>>; // Price -> Volume
+    // Bug fix #6 (doc): Map<number,number> is NOT JSON-serializable.
+    // volumeProfile is intentionally excluded from partialize() so it is never written to localStorage.
+    // Always treat as ephemeral runtime-only state.
+    volumeProfile: Record<string, Map<number, number>>; // Price -> Volume (ephemeral)
     sessionPoc: Record<string, number>; // Point of Control (Price)
     sessionVah: Record<string, number>; // Value Area High
     sessionVal: Record<string, number>; // Value Area Low
@@ -385,7 +388,8 @@ export const useTerminalStore = create<TerminalState>()(
             events: [],
             whaleDelta: {},
             addEvent: (eventData) => set((state) => {
-                const newEvent = { ...eventData, id: Math.random().toString(36).substr(2, 9) };
+                // Bug fix #5: timestamp prefix reduces collision probability at high event rates
+                const newEvent = { ...eventData, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7) };
                 const newEvents = [newEvent, ...state.events].slice(0, 100);
                 let newWhaleDelta = state.whaleDelta[eventData.symbol] || 0;
                 if (eventData.type === 'Whale') {
@@ -452,11 +456,13 @@ export const useTerminalStore = create<TerminalState>()(
 
             addTradesBatch: (symbol, newTradesBatch) => set((state) => {
                 const trades = state.recentTrades[symbol] || [];
-                const updatedTrades = [...[...newTradesBatch].reverse(), ...trades].slice(0, 50);
+                // Bug fix #11: 200 trades (~50s at normal pace) gives micro-trend detection better history
+                const updatedTrades = [...[...newTradesBatch].reverse(), ...trades].slice(0, 200);
                 const currentDelta = state.volumeDelta[symbol] || { buyVolume: 0, sellVolume: 0, delta: 0 };
                 let newBuyVolume = currentDelta.buyVolume;
                 let newSellVolume = currentDelta.sellVolume;
-                const currentProfile = state.volumeProfile[symbol] || new Map<number, number>();
+                // Bug fix #1: clone the Map — Zustand needs a new reference to detect the change
+                const currentProfile = new Map(state.volumeProfile[symbol] ?? []);
 
                 newTradesBatch.forEach(trade => {
                     const volume = trade.price * trade.amount;
@@ -498,8 +504,9 @@ export const useTerminalStore = create<TerminalState>()(
                         downIdx--;
                     }
                 }
-                const newVah = sortedPrices[Math.max(0, upIdx - 1)] || newPoc;
-                const newVal = sortedPrices[Math.min(sortedPrices.length - 1, downIdx + 1)] || newPoc;
+                      // Bug fix #2: guard boundary when POC is at the edge of the price array
+                const newVah = (upIdx > pocIndex + 1) ? (sortedPrices[upIdx - 1] ?? newPoc) : newPoc;
+                const newVal = (downIdx < pocIndex - 1) ? (sortedPrices[downIdx + 1] ?? newPoc) : newPoc;
 
                 return {
                     recentTrades: { ...state.recentTrades, [symbol]: updatedTrades },
@@ -731,8 +738,7 @@ export const useTerminalStore = create<TerminalState>()(
             }),
             onRehydrateStorage: () => (state) => {
                 if (state) {
-                    const oneHourAgo = Date.now() - 60 * 60 * 1000;
-                    state.events = (state.events || []).filter(e => e.timestamp > oneHourAgo);
+                    // Bug fix #3: events not persisted so this filter was dead code
                     if (state.telegramConfig) {
                         state.telegramConfig = normalizeTelegramConfig(state.telegramConfig);
                     }

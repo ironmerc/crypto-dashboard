@@ -2,12 +2,15 @@ export const formatPrice = (price: number | null | undefined): string => {
     if (price === null || price === undefined) return '---';
     if (price === 0) return '0.00';
 
-    if (price >= 1000) return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    if (price >= 1) return price.toFixed(2);
-    if (price >= 0.1) return price.toFixed(4);
-    if (price >= 0.01) return price.toFixed(5);
-    if (price >= 0.001) return price.toFixed(6);
-    return price.toFixed(8);
+    // Bug fix: handle negative deltas (priceChange can be negative)
+    const abs = Math.abs(price);
+    const sign = price < 0 ? '-' : '';
+    if (abs >= 1000) return sign + abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (abs >= 1) return sign + abs.toFixed(2);
+    if (abs >= 0.1) return sign + abs.toFixed(4);
+    if (abs >= 0.01) return sign + abs.toFixed(5);
+    if (abs >= 0.001) return sign + abs.toFixed(6);
+    return sign + abs.toFixed(8);
 };
 
 export const formatValue = (value: number | null | undefined): string => {

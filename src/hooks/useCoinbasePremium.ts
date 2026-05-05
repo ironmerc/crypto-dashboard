@@ -46,5 +46,6 @@ export function useCoinbasePremium(symbols: string[]) {
         fetchPremium();
         const interval = setInterval(fetchPremium, POLL_MS);
         return () => clearInterval(interval);
-    }, [symbols, isVisible]);
+    // Bug fix #10: use joined string dep to avoid restarting interval on referential array change
+    }, [symbols.join(','), isVisible]);
 }

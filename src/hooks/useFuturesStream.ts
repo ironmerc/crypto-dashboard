@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import useWebSocket from 'react-use-websocket';
+import useWebSocket, { ReadyState } from 'react-use-websocket';
 import { useTerminalStore, type MonitoredSymbol, type OrderBookLevel, type Side, type Trade } from '../store/useTerminalStore';
 import { usePageVisibility } from './usePageVisibility';
 import { type MarketType } from '../constants/binance';
@@ -17,6 +17,15 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
     const addTradesBatch = useTerminalStore(state => state.addTradesBatch);
     const isVisible = usePageVisibility();
 
+    // Declare all refs at the top before any functions or effects that use them (bug fix #4)
+    const deepBidsRef = useRef<OrderBookLevel[]>([]);
+    const deepAsksRef = useRef<OrderBookLevel[]>([]);
+    const fastBidsRef = useRef<OrderBookLevel[]>([]);
+    const fastAsksRef = useRef<OrderBookLevel[]>([]);
+    const tradeBufferRef = useRef<Trade[]>([]);
+    const lastBookSyncRef = useRef<number>(0);
+    const SYNC_INTERVAL_MS = 250;
+
     const activeSymbolRef = useRef(activeSymbol);
     const watchSymbolsRef = useRef(watchSymbols);
     const isVisibleRef = useRef(isVisible);
@@ -30,8 +39,44 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
         fastBidsRef.current = [];
         fastAsksRef.current = [];
         tradeBufferRef.current = [];
-        // Force an immediate fetch/sync if needed
     }, [activeSymbol.symbol, activeSymbol.type]);
+
+    // updateMergedBook must be defined BEFORE handleMessage which calls it (bug fix #2)
+    const updateMergedBook = (lastUpdateId?: number, force = false) => {
+        if (!isVisibleRef.current || !activeSymbolRef.current) return;
+
+        const now = Date.now();
+        if (!force && now - lastBookSyncRef.current < SYNC_INTERVAL_MS) return;
+        lastBookSyncRef.current = now;
+
+        const currentActive = activeSymbolRef.current;
+        // Bug fix #3: sort bids descending, asks ascending so spread and DOM are correct
+        const mergedBids = [
+            ...fastBidsRef.current,
+            ...deepBidsRef.current.filter(l =>
+                currentActive.type === 'spot' ? true : l.price < (fastBidsRef.current[0]?.price || Infinity)
+            )
+        ]
+            .sort((a, b) => b.price - a.price)
+            .filter((l, i, arr) => i === 0 || l.price !== arr[i - 1].price) // deduplicate
+            .slice(0, 100);
+
+        const mergedAsks = [
+            ...fastAsksRef.current,
+            ...deepAsksRef.current.filter(l =>
+                currentActive.type === 'spot' ? true : l.price > (fastAsksRef.current[0]?.price || 0)
+            )
+        ]
+            .sort((a, b) => a.price - b.price)
+            .filter((l, i, arr) => i === 0 || l.price !== arr[i - 1].price) // deduplicate
+            .slice(0, 100);
+
+        setOrderBook(currentActive.symbol, {
+            bids: mergedBids,
+            asks: mergedAsks,
+            lastUpdateId: lastUpdateId || 0
+        });
+    };
 
     const handleMessage = (event: MessageEvent, type: MarketType) => {
         let msg;
@@ -103,15 +148,24 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
         }
 
         else if (msg.e === 'depthUpdate' && msg.s.toUpperCase() === activeSymbolRef.current.symbol.toUpperCase()) {
-            const processWSLevels = (levels: any[]): OrderBookLevel[] => {
-                return levels.map((level: any) => {
-                    const price = parseFloat(level[0]);
-                    const amount = parseFloat(level[1]);
-                    return { price, amount, value: price * amount };
-                });
+            // Bug fix #8: apply depth update as a diff, not a full snapshot replacement.
+            // Zero-quantity levels are removals; non-zero are upserts.
+            const applyDiff = (existing: OrderBookLevel[], updates: any[]): OrderBookLevel[] => {
+                const map = new Map<number, OrderBookLevel>();
+                for (const lvl of existing) map.set(lvl.price, lvl);
+                for (const u of updates) {
+                    const price = parseFloat(u[0]);
+                    const amount = parseFloat(u[1]);
+                    if (amount === 0) {
+                        map.delete(price);
+                    } else {
+                        map.set(price, { price, amount, value: price * amount });
+                    }
+                }
+                return Array.from(map.values());
             };
-            fastBidsRef.current = processWSLevels(msg.b);
-            fastAsksRef.current = processWSLevels(msg.a);
+            fastBidsRef.current = applyDiff(fastBidsRef.current, msg.b);
+            fastAsksRef.current = applyDiff(fastAsksRef.current, msg.a);
             if (isVisibleRef.current) updateMergedBook(msg.u);
         }
 
@@ -129,13 +183,13 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
     const futuresWatch = watchSymbols.filter(m => m.type === 'futures').map(m => m.symbol.toLowerCase());
 
     // Separate WS connections
-    const { sendMessage: sendSpot } = useWebSocket(SPOT_WS, {
+    const { sendMessage: sendSpot, readyState: spotState } = useWebSocket(SPOT_WS, {
         shouldReconnect: () => true,
         reconnectInterval: 3000,
         onMessage: (event: MessageEvent) => handleMessage(event, 'spot'),
     });
 
-    const { sendMessage: sendFutures } = useWebSocket(FUTURES_WS, {
+    const { sendMessage: sendFutures, readyState: futuresState } = useWebSocket(FUTURES_WS, {
         shouldReconnect: () => true,
         reconnectInterval: 3000,
         onMessage: (event: MessageEvent) => handleMessage(event, 'futures'),
@@ -143,8 +197,16 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
 
     const subscribedSpot = useRef<string[]>([]);
     const subscribedFutures = useRef<string[]>([]);
+    const subscribedSpotDepth = useRef<string | null>(null);
+    const subscribedFuturesDepth = useRef<string | null>(null);
 
     useEffect(() => {
+        if (spotState !== ReadyState.OPEN) {
+            subscribedSpot.current = [];
+            subscribedSpotDepth.current = null;
+            return;
+        }
+
         // Handle Spot Subscriptions
         const toUnsubSpot = subscribedSpot.current.filter(s => !spotWatch.includes(s));
         const toSubSpot = spotWatch.filter(s => !subscribedSpot.current.includes(s));
@@ -165,18 +227,36 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
         }
 
         // Depth for active Spot
-        if (activeSymbol.type === 'spot') {
+        const currentActiveSpotDepth = activeSymbol.type === 'spot' ? activeSymbol.symbol.toLowerCase() : null;
+
+        if (subscribedSpotDepth.current && subscribedSpotDepth.current !== currentActiveSpotDepth) {
             sendSpot(JSON.stringify({
-                method: 'SUBSCRIBE',
-                params: [`${activeSymbol.symbol.toLowerCase()}@depth20@100ms`],
+                method: 'UNSUBSCRIBE',
+                params: [`${subscribedSpotDepth.current}@depth20@100ms`],
                 id: Date.now() + 2,
             }));
+            subscribedSpotDepth.current = null;
+        }
+
+        if (currentActiveSpotDepth && subscribedSpotDepth.current !== currentActiveSpotDepth) {
+            sendSpot(JSON.stringify({
+                method: 'SUBSCRIBE',
+                params: [`${currentActiveSpotDepth}@depth20@100ms`],
+                id: Date.now() + 3,
+            }));
+            subscribedSpotDepth.current = currentActiveSpotDepth;
         }
 
         subscribedSpot.current = spotWatch;
-    }, [spotWatch.join(','), sendSpot, activeSymbol.symbol, activeSymbol.type]);
+    }, [spotWatch.join(','), sendSpot, activeSymbol.symbol, activeSymbol.type, spotState]);
 
     useEffect(() => {
+        if (futuresState !== ReadyState.OPEN) {
+            subscribedFutures.current = [];
+            subscribedFuturesDepth.current = null;
+            return;
+        }
+
         // Handle Futures Subscriptions
         const toUnsubFut = subscribedFutures.current.filter(s => !futuresWatch.includes(s));
         const toSubFut = futuresWatch.filter(s => !subscribedFutures.current.includes(s));
@@ -185,59 +265,42 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
             sendFutures(JSON.stringify({
                 method: 'UNSUBSCRIBE',
                 params: toUnsubFut.flatMap(s => [`${s}@aggTrade`, `${s}@forceOrder`, `${s}@openInterest@500ms`, `${s}@markPrice`]),
-                id: Date.now() + 3,
+                id: Date.now() + 4,
             }));
         }
         if (toSubFut.length > 0) {
             sendFutures(JSON.stringify({
                 method: 'SUBSCRIBE',
                 params: toSubFut.flatMap(s => [`${s}@aggTrade`, `${s}@forceOrder`, `${s}@openInterest@500ms`, `${s}@markPrice`]),
-                id: Date.now() + 4,
-            }));
-        }
-
-        // Depth for active Futures
-        if (activeSymbol.type === 'futures') {
-            sendFutures(JSON.stringify({
-                method: 'SUBSCRIBE',
-                params: [`${activeSymbol.symbol.toLowerCase()}@depth20@100ms`],
                 id: Date.now() + 5,
             }));
         }
 
+        // Depth for active Futures
+        const currentActiveFuturesDepth = activeSymbol.type === 'futures' ? activeSymbol.symbol.toLowerCase() : null;
+
+        if (subscribedFuturesDepth.current && subscribedFuturesDepth.current !== currentActiveFuturesDepth) {
+            sendFutures(JSON.stringify({
+                method: 'UNSUBSCRIBE',
+                params: [`${subscribedFuturesDepth.current}@depth20@100ms`],
+                id: Date.now() + 6,
+            }));
+            subscribedFuturesDepth.current = null;
+        }
+
+        if (currentActiveFuturesDepth && subscribedFuturesDepth.current !== currentActiveFuturesDepth) {
+            sendFutures(JSON.stringify({
+                method: 'SUBSCRIBE',
+                params: [`${currentActiveFuturesDepth}@depth20@100ms`],
+                id: Date.now() + 7,
+            }));
+            subscribedFuturesDepth.current = currentActiveFuturesDepth;
+        }
+
         subscribedFutures.current = futuresWatch;
-    }, [futuresWatch.join(','), sendFutures, activeSymbol.symbol, activeSymbol.type]);
+    }, [futuresWatch.join(','), sendFutures, activeSymbol.symbol, activeSymbol.type, futuresState]);
 
-    const deepBidsRef = useRef<OrderBookLevel[]>([]);
-    const deepAsksRef = useRef<OrderBookLevel[]>([]);
-    const fastBidsRef = useRef<OrderBookLevel[]>([]);
-    const fastAsksRef = useRef<OrderBookLevel[]>([]);
-    
-    const tradeBufferRef = useRef<Trade[]>([]);
-    const lastBookSyncRef = useRef<number>(0);
-    const SYNC_INTERVAL_MS = 250;
-
-    const updateMergedBook = (lastUpdateId?: number, force = false) => {
-        if (!isVisibleRef.current || !activeSymbolRef.current) return;
-        
-        const now = Date.now();
-        if (!force && now - lastBookSyncRef.current < SYNC_INTERVAL_MS) return;
-        lastBookSyncRef.current = now;
-
-        const currentActive = activeSymbolRef.current;
-        const mergedBids = [...fastBidsRef.current, ...deepBidsRef.current.filter(l => 
-            currentActive.type === 'spot' ? true : l.price < (fastBidsRef.current[fastBidsRef.current.length - 1]?.price || 0)
-        )].slice(0, 100);
-        const mergedAsks = [...fastAsksRef.current, ...deepAsksRef.current.filter(l => 
-            currentActive.type === 'spot' ? true : l.price > (fastAsksRef.current[fastAsksRef.current.length - 1]?.price || 0)
-        )].slice(0, 100);
-
-        setOrderBook(currentActive.symbol, {
-            bids: mergedBids,
-            asks: mergedAsks,
-            lastUpdateId: lastUpdateId || 0
-        });
-    };
+    // Removed duplicate updateMergedBook declaration (moved to before handleMessage — bug fix #2)
 
     // --- Deep Liquidity REST Poller ---
     useEffect(() => {
@@ -282,7 +345,8 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
         fetchDeepBook();
 
         return () => clearInterval(depthInterval);
-    }, [activeSymbol.symbol, activeSymbol.type, isVisible]);
+    // Bug fix #1: removed isVisible — inner guard handles it; isVisible in deps causes burst refetch on tab focus
+    }, [activeSymbol.symbol, activeSymbol.type]);
 
     // --- Trade Batch Flusher ---
     useEffect(() => {

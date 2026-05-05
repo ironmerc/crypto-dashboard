@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { type MarketType } from '../constants/binance';
 
@@ -46,10 +46,17 @@ export function FundingRateMonitor({ symbol, type }: FundingRateMonitorProps) {
     const longShortRatio = useTerminalStore(s => s.longShortRatio[symbolUpper] ?? 1);
     const oiHistory = useTerminalStore(s => s.oiHistory[symbolUpper] ?? EMPTY_HISTORY);
 
+    // Bug fix #8: use a live clock so countdown ticks every second instead of freezing
+    const [liveNow, setLiveNow] = useState(() => Date.now());
+    useEffect(() => {
+        const timer = setInterval(() => setLiveNow(Date.now()), 1000);
+        return () => clearInterval(timer);
+    }, []);
+
     const countdown = useMemo(() => {
         if (!nextFundingTime) return 0;
-        return Math.max(0, nextFundingTime - Date.now());
-    }, [nextFundingTime]);
+        return Math.max(0, nextFundingTime - liveNow);
+    }, [nextFundingTime, liveNow]);
 
     const last8History = useMemo(() => {
         const bucketSize = 8 * 60 * 60 * 1000;

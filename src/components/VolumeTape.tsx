@@ -4,6 +4,9 @@ import { BarChart2 } from 'lucide-react';
 import { type MarketType } from '../constants/binance';
 import { formatPrice, formatAmount, formatValue } from '../utils/formatters';
 
+// Bug fix #8: stable module-level fallback to avoid new reference on every render
+const EMPTY_TRADES: import('../store/useTerminalStore').Trade[] = [];
+
 interface VolumeTapeProps {
     symbol: string;
     type: MarketType;
@@ -11,7 +14,7 @@ interface VolumeTapeProps {
 
 export function VolumeTape({ symbol, type }: VolumeTapeProps) {
     const trades = useTerminalStore(state => state.recentTrades[symbol]);
-    const recentTrades = trades || [];
+    const recentTrades = trades ?? EMPTY_TRADES;
 
     const vDelta = useTerminalStore(state => state.volumeDelta[symbol]);
     const delta = vDelta || { buyVolume: 0, sellVolume: 0, delta: 0 };

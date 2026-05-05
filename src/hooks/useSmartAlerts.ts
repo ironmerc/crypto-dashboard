@@ -54,9 +54,11 @@ export function useSmartAlerts(symbol: string) {
             // Only alert if we have a valid price
             const price = state.livePrices[symbol];
             if (!price) return;
+
+            // Bug fix #2: check category BEFORE consuming cooldown
             const isCategoryEnabled = (category: string) => config.globalEnabled && config.categories?.[category] !== false;
 
-            // Helper to check cooldown locally first to avoid spamming the backend or generating duplicate UI events
+            // Bug fix #1: canAlert is now only called after category check — no early `return` that exits the whole tick
             const canAlert = (key: string, cooldownMs: number) => {
                 if (!lastAlerts.current[key] || now - lastAlerts.current[key] > cooldownMs) {
                     lastAlerts.current[key] = now;
@@ -68,35 +70,24 @@ export function useSmartAlerts(symbol: string) {
             // 1. ATR Expansion (Breakout Risk)
             const atr = state.currentATR[symbol];
             const atrSma = state.currentAtrSma[symbol];
-            if (atr && atrSma) {
+            if (atr && atrSma && isCategoryEnabled('atr_expand')) {
                 const ratio = atr / atrSma;
-                // Use configurable cooldown or default to 5m
                 const cdSecs = (config.cooldowns && config.cooldowns['atr_expand']) || 300;
                 const atrThreshold = thresholds.atrExpansionRatio || 1.3;
 
                 if (ratio > atrThreshold && canAlert(`ATR_EXPANSION_${symbol}`, cdSecs * 1000)) {
-                    if (!isCategoryEnabled('atr_expand')) return;
-
-                    const title = 'VOLATILITY EXPANSION';
-                    const msg = `ATR is ${ratio.toFixed(2)}x its moving average. Breakout likely underway.`;
-
                     state.addEvent({
-                        type: 'SmartAlert',
-                        symbol,
-                        price,
-                        amount: 0,
-                        value: ratio,
-                        side: 'NEUTRAL',
-                        timestamp: now,
-                        title: title,
-                        message: msg,
+                        type: 'SmartAlert', symbol, price, amount: 0, value: ratio,
+                        side: 'NEUTRAL', timestamp: now,
+                        title: 'VOLATILITY EXPANSION',
+                        message: `ATR is ${ratio.toFixed(2)}x its moving average. Breakout likely underway.`,
                     });
                 }
             }
 
-            // 2. Open Interest Spike (> 1.5% in 5m)
+            // 2. Open Interest Spike (> threshold in 5m)
             const oiHistory = state.oiHistory[symbol];
-            if (oiHistory && oiHistory.length > 0) {
+            if (oiHistory && oiHistory.length > 0 && isCategoryEnabled('oi_spike')) {
                 const fiveMinsAgo = now - 5 * 60 * 1000;
                 const windowHistory = oiHistory.filter(h => h.timestamp >= fiveMinsAgo);
 
@@ -104,27 +95,16 @@ export function useSmartAlerts(symbol: string) {
                     const oldest = windowHistory[0].value;
                     const newest = windowHistory[windowHistory.length - 1].value;
                     const oiChangePct = ((newest - oldest) / Math.abs(oldest)) * 100;
-
                     const cdSecs = (config.cooldowns && config.cooldowns['oi_spike']) || 600;
                     const oiThreshold = thresholds.oiSpikePercentage || 1.5;
 
                     if (Math.abs(oiChangePct) > oiThreshold && canAlert(`OI_SPIKE_${symbol}`, cdSecs * 1000)) {
-                        if (!isCategoryEnabled('oi_spike')) return;
-
                         const isUp = oiChangePct > 0;
-                        const title = isUp ? 'OI SPIKE DETECTED' : 'OI FLUSH DETECTED';
-                        const msg = `Open Interest ${isUp ? 'increased' : 'dropped'} by ${Math.abs(oiChangePct).toFixed(2)}% in 5m.`;
-
                         state.addEvent({
-                            type: 'SmartAlert',
-                            symbol,
-                            price,
-                            amount: 0,
-                            value: newest,
-                            side: isUp ? 'LONG' : 'SHORT',
-                            timestamp: now,
-                            title: title,
-                            message: msg,
+                            type: 'SmartAlert', symbol, price, amount: 0, value: newest,
+                            side: isUp ? 'LONG' : 'SHORT', timestamp: now,
+                            title: isUp ? 'OI SPIKE DETECTED' : 'OI FLUSH DETECTED',
+                            message: `Open Interest ${isUp ? 'increased' : 'dropped'} by ${Math.abs(oiChangePct).toFixed(2)}% in 5m.`,
                         });
                     }
                 }
@@ -132,13 +112,11 @@ export function useSmartAlerts(symbol: string) {
 
             // 3. MACD Crossover Signal
             const macd = state.currentMACD[symbol];
-            if (macd) {
+            if (macd && isCategoryEnabled('macd_cross')) {
                 const cdSecs = config.cooldowns?.['macd_cross'] ?? 300;
                 const freshnessRatio = thresholds.macdFreshnessRatio ?? 0.1;
-                // Bull cross: macd > signal && histogram positive (freshly crossed)
                 if (macd.macd > macd.signal && macd.histogram > 0 && macd.histogram < Math.abs(macd.macd) * freshnessRatio) {
                     if (canAlert(`MACD_BULL_${symbol}`, cdSecs * 1000)) {
-                        if (!isCategoryEnabled('macd_cross')) return;
                         state.addEvent({
                             type: 'SmartAlert', symbol, price, amount: 0, value: macd.histogram,
                             side: 'LONG', timestamp: now,
@@ -148,7 +126,6 @@ export function useSmartAlerts(symbol: string) {
                     }
                 } else if (macd.macd < macd.signal && macd.histogram < 0 && Math.abs(macd.histogram) < Math.abs(macd.macd) * freshnessRatio) {
                     if (canAlert(`MACD_BEAR_${symbol}`, cdSecs * 1000)) {
-                        if (!isCategoryEnabled('macd_cross')) return;
                         state.addEvent({
                             type: 'SmartAlert', symbol, price, amount: 0, value: macd.histogram,
                             side: 'SHORT', timestamp: now,
@@ -159,7 +136,7 @@ export function useSmartAlerts(symbol: string) {
                 }
             }
 
-            // 4. Bollinger Band Squeeze Breakout
+            // 4. Bollinger Band Squeeze / Breakout
             const bb = state.currentBB[symbol];
             if (bb && bb.width !== undefined) {
                 const bbSqueezeWidthPct = thresholds.bbSqueezeWidthPct ?? 2.0;
@@ -171,24 +148,21 @@ export function useSmartAlerts(symbol: string) {
 
                 if (nextBBState !== prevBBState.current) {
                     prevBBState.current = nextBBState;
-                    if (nextBBState === 'Squeeze' && canAlert(`BB_SQUEEZE_${symbol}`, (config.cooldowns?.['bb_squeeze'] ?? 600) * 1000)) {
-                        if (!isCategoryEnabled('bb_squeeze')) return;
+                    if (nextBBState === 'Squeeze' && isCategoryEnabled('bb_squeeze') && canAlert(`BB_SQUEEZE_${symbol}`, (config.cooldowns?.['bb_squeeze'] ?? 600) * 1000)) {
                         state.addEvent({
                             type: 'SmartAlert', symbol, price, amount: 0, value: bb.width,
                             side: 'NEUTRAL', timestamp: now,
                             title: 'BB SQUEEZE DETECTED',
                             message: `Bollinger Bands width compressed to ${bb.width.toFixed(2)}%. Breakout imminent.`,
                         });
-                    } else if (nextBBState === 'BreakoutUp' && canAlert(`BB_BREAKOUT_UP_${symbol}`, (config.cooldowns?.['bb_breakout'] ?? 600) * 1000)) {
-                        if (!isCategoryEnabled('bb_breakout')) return;
+                    } else if (nextBBState === 'BreakoutUp' && isCategoryEnabled('bb_breakout') && canAlert(`BB_BREAKOUT_UP_${symbol}`, (config.cooldowns?.['bb_breakout'] ?? 600) * 1000)) {
                         state.addEvent({
                             type: 'SmartAlert', symbol, price, amount: 0, value: bb.upper,
                             side: 'LONG', timestamp: now,
                             title: 'BB UPPER BREAKOUT',
                             message: `Price broke above upper Bollinger Band (${bb.upper.toFixed(4)}). Momentum expanding.`,
                         });
-                    } else if (nextBBState === 'BreakoutDown' && canAlert(`BB_BREAKOUT_DOWN_${symbol}`, (config.cooldowns?.['bb_breakout'] ?? 600) * 1000)) {
-                        if (!isCategoryEnabled('bb_breakout')) return;
+                    } else if (nextBBState === 'BreakoutDown' && isCategoryEnabled('bb_breakout') && canAlert(`BB_BREAKOUT_DOWN_${symbol}`, (config.cooldowns?.['bb_breakout'] ?? 600) * 1000)) {
                         state.addEvent({
                             type: 'SmartAlert', symbol, price, amount: 0, value: bb.lower,
                             side: 'SHORT', timestamp: now,
@@ -201,12 +175,11 @@ export function useSmartAlerts(symbol: string) {
 
             // 5. StochRSI Extreme
             const stochRsi = state.currentStochRSI[symbol];
-            if (stochRsi) {
+            if (stochRsi && isCategoryEnabled('stoch_extreme')) {
                 const cdSecs = config.cooldowns?.['stoch_extreme'] ?? 300;
                 const stochOverbought = thresholds.stochOverbought ?? 85;
                 const stochOversold = thresholds.stochOversold ?? 15;
                 if (stochRsi.k > stochOverbought && stochRsi.k > stochRsi.d && canAlert(`STOCHRSI_OB_${symbol}`, cdSecs * 1000)) {
-                    if (!isCategoryEnabled('stoch_extreme')) return;
                     state.addEvent({
                         type: 'SmartAlert', symbol, price, amount: 0, value: stochRsi.k,
                         side: 'SHORT', timestamp: now,
@@ -214,7 +187,6 @@ export function useSmartAlerts(symbol: string) {
                         message: `StochRSI K=${stochRsi.k.toFixed(1)} above ${stochOverbought} and crossing down. Potential reversal.`,
                     });
                 } else if (stochRsi.k < stochOversold && stochRsi.k < stochRsi.d && canAlert(`STOCHRSI_OS_${symbol}`, cdSecs * 1000)) {
-                    if (!isCategoryEnabled('stoch_extreme')) return;
                     state.addEvent({
                         type: 'SmartAlert', symbol, price, amount: 0, value: stochRsi.k,
                         side: 'LONG', timestamp: now,
@@ -225,30 +197,31 @@ export function useSmartAlerts(symbol: string) {
             }
 
             // 6. OI / Price Divergence
-            const oiDivergenceLookbackBars = Math.max(2, Math.round(thresholds.oiDivergenceLookbackBars ?? 6));
-            if (oiHistory && oiHistory.length >= oiDivergenceLookbackBars && price) {
-                const ema21 = state.currentEMA21[symbol];
-                const recentOi = oiHistory.slice(-oiDivergenceLookbackBars);
-                const oiTrendUp = recentOi[recentOi.length - 1].value > recentOi[0].value;
-                const priceTrendUp = ema21 ? price > ema21 : false;
-                const cdSecs = config.cooldowns?.['oi_divergence'] ?? 600;
+            if (oiHistory && isCategoryEnabled('oi_divergence')) {
+                const oiDivergenceLookbackBars = Math.max(2, Math.round(thresholds.oiDivergenceLookbackBars ?? 6));
+                if (oiHistory.length >= oiDivergenceLookbackBars) {
+                    const ema21 = state.currentEMA21[symbol];
+                    const recentOi = oiHistory.slice(-oiDivergenceLookbackBars);
+                    const oiTrendUp = recentOi[recentOi.length - 1].value > recentOi[0].value;
+                    const priceTrendUp = ema21 ? price > ema21 : false;
+                    const cdSecs = config.cooldowns?.['oi_divergence'] ?? 600;
 
-                if (priceTrendUp && !oiTrendUp && canAlert(`OI_DIV_BEAR_${symbol}`, cdSecs * 1000)) {
-                    if (!isCategoryEnabled('oi_divergence')) return;
-                    state.addEvent({
-                        type: 'SmartAlert', symbol, price, amount: 0, value: 0,
-                        side: 'SHORT', timestamp: now,
-                        title: 'OI/PRICE BEARISH DIVERGENCE',
-                        message: `Price rising but OI declining. Rally may lack conviction — potential reversal.`,
-                    });
-                } else if (!priceTrendUp && !oiTrendUp && canAlert(`OI_DIV_BULL_${symbol}`, cdSecs * 1000)) {
-                    if (!isCategoryEnabled('oi_divergence')) return;
-                    state.addEvent({
-                        type: 'SmartAlert', symbol, price, amount: 0, value: 0,
-                        side: 'LONG', timestamp: now,
-                        title: 'OI/PRICE BULLISH DIVERGENCE',
-                        message: `Price falling with OI decline — possible short covering. Watch for bounce.`,
-                    });
+                    if (priceTrendUp && !oiTrendUp && canAlert(`OI_DIV_BEAR_${symbol}`, cdSecs * 1000)) {
+                        state.addEvent({
+                            type: 'SmartAlert', symbol, price, amount: 0, value: 0,
+                            side: 'SHORT', timestamp: now,
+                            title: 'OI/PRICE BEARISH DIVERGENCE',
+                            message: `Price rising but OI declining. Rally may lack conviction — potential reversal.`,
+                        });
+                    } else if (!priceTrendUp && !oiTrendUp && canAlert(`OI_DIV_BULL_${symbol}`, cdSecs * 1000)) {
+                        state.addEvent({
+                            type: 'SmartAlert', symbol, price, amount: 0, value: 0,
+                            side: 'LONG', timestamp: now,
+                            // Bug fix #3: price-down + OI-down is confluence (short covering), not "divergence"
+                            title: 'OI/PRICE CORRELATION: SHORT COVERING',
+                            message: `Price falling with OI decline — possible short covering. Watch for bounce.`,
+                        });
+                    }
                 }
             }
 

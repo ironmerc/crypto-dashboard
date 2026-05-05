@@ -57,23 +57,19 @@ export function MarketContext({ symbol, type }: MarketContextProps) {
         momentum
     } = useMemo(() => calculateMarketContextFromState(marketContextState, symbol), [marketContextState, symbol]);
 
-    // 1. Session Awareness (UI specific)
-    const sessionInfo = useMemo(() => {
-        const utcHour = new Date().getUTCHours();
-        const utcMin = new Date().getUTCMinutes();
-        const time = utcHour + utcMin / 60;
-
-        const active = [];
-        if (time >= 0 && time < 9) active.push('Asia');
-        if (time >= 8 && time < 16) active.push('London');
-        if (time >= 13.5 && time < 20) active.push('US');
-
-        const overlap = active.length > 1;
-        return {
-            names: active.length > 0 ? active.join(' / ') : 'After Hours',
-            overlap
-        };
-    }, []);
+    // Bug fix #5: sessionInfo is O(1) pure math — removing useMemo avoids the frozen
+    // snapshot bug where Date.now() was evaluated once and never refreshed.
+    const utcHour = new Date().getUTCHours();
+    const utcMin = new Date().getUTCMinutes();
+    const time = utcHour + utcMin / 60;
+    const sessionNames: string[] = [];
+    if (time >= 0 && time < 9) sessionNames.push('Asia');
+    if (time >= 8 && time < 16) sessionNames.push('London');
+    if (time >= 13.5 && time < 20) sessionNames.push('US');
+    const sessionInfo = {
+        names: sessionNames.length > 0 ? sessionNames.join(' / ') : 'After Hours',
+        overlap: sessionNames.length > 1,
+    };
 
     // Summary Headline
     const headline = useMemo(() => {

@@ -130,16 +130,9 @@ export default function Dashboard() {
     return ((currentValue - oldestValue) / Math.abs(oldestValue)) * 100;
   };
 
-  const [renderTime, setRenderTime] = useState(() => Date.now());
+  // renderTime removed (bug fix #7) — oiDelta/fundingDelta memo now uses Date.now() inline
   const isVisible = usePageVisibility();
   const [liveClock, setLiveClock] = useState(() => Date.now());
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (isVisible) setRenderTime(Date.now());
-    }, 30000);
-    return () => clearInterval(timer);
-  }, [isVisible]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -150,15 +143,20 @@ export default function Dashboard() {
 
   const intervalMs = getIntervalMs(globalInterval);
   const { oiDelta, fundingDelta } = useMemo(() => {
+    // Bug fix #7: use Date.now() inline — renderTime was an unnecessary dep that caused
+    // this memo to recompute every 30s even when oiHistory/fundingHistory hadn't changed.
+    // The data deps (oiHistory, fundingHistory, openInterest, fundingRate) already drive recalculation.
+    const now = Date.now();
     return {
-      oiDelta: calcDelta(oiHistory, openInterest, intervalMs, renderTime),
-      fundingDelta: calcDelta(fundingHistory, fundingRate, intervalMs, renderTime)
+      oiDelta: calcDelta(oiHistory, openInterest, intervalMs, now),
+      fundingDelta: calcDelta(fundingHistory, fundingRate, intervalMs, now)
     };
-  }, [oiHistory, openInterest, fundingHistory, fundingRate, intervalMs, renderTime]);
+  }, [oiHistory, openInterest, fundingHistory, fundingRate, intervalMs]);
 
   const activePriceStale = currentPrice !== undefined && isLivePriceStale(localActiveSymbol, liveClock);
 
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+  // Bug fix #4: guard window access for SSR/build safety
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 1024);
@@ -213,7 +211,7 @@ export default function Dashboard() {
             <span className="hidden sm:inline">DATALINK ENCRYPTED</span>
           </span>
           <span className="border border-terminal-border/60 px-2.5 py-1.5 rounded-md bg-terminal-surface/40 backdrop-blur-sm shrink-0 shadow-sm font-mono font-bold text-terminal-muted">
-            {new Date().toISOString().split('T')[0]}
+            {new Date(liveClock).toISOString().split('T')[0]}
           </span>
         </div>
       </header>

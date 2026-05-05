@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useTerminalStore } from '../store/useTerminalStore';
+import { usePageVisibility } from './usePageVisibility';
 
 const POLL_MS = 10_000;
 
@@ -8,10 +9,14 @@ const POLL_MS = 10_000;
  * VWAP and EMA21 — a simple sector breadth proxy.
  */
 export function useSectorBreadth(symbols: string[]) {
+    // Bug fix #11: added page visibility guard to avoid background computation
+    const isVisible = usePageVisibility();
+
     useEffect(() => {
         if (symbols.length === 0) return;
 
         const compute = () => {
+            if (!isVisible) return;
             const state = useTerminalStore.getState();
             let aboveVWAP = 0;
             let aboveEMA21 = 0;
@@ -35,5 +40,5 @@ export function useSectorBreadth(symbols: string[]) {
         compute();
         const interval = setInterval(compute, POLL_MS);
         return () => clearInterval(interval);
-    }, [symbols]);
+    }, [symbols.join(','), isVisible]);
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import useWebSocket from 'react-use-websocket';
 import { usePageVisibility } from './usePageVisibility';
 
@@ -21,13 +21,15 @@ export function useBinanceTickers(monitoredSymbols: MonitoredSymbol[]) {
     const tickerBufferRef = useRef<Record<string, TickerData>>({});
     const setLivePrice = useTerminalStore(state => state.setLivePrice);
 
-    const createTicker = (symbol: string, price: string, change24h: string, changePercent24h: string, volume24h: string): TickerData => ({
+    // Bug fix #4: stable ref — prevents re-registration of WS handler on every render
+    const createTicker = useCallback((symbol: string, price: string, change24h: string, changePercent24h: string, volume24h: string): TickerData => ({
         symbol,
         price,
         change24h,
         changePercent24h,
         volume24h,
-    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), []);
 
     // Group symbols by type
     const spotSymbols = monitoredSymbols
@@ -40,7 +42,7 @@ export function useBinanceTickers(monitoredSymbols: MonitoredSymbol[]) {
     const spotStreamName = spotSymbols.map(s => `${s}@ticker`).join('/');
     const futuresStreamName = futuresSymbols.map(s => `${s}@ticker`).join('/');
 
-    const handleTickerMessage = (event: MessageEvent) => {
+    const handleTickerMessage = useCallback((event: MessageEvent) => {
         let msg;
         try {
             msg = JSON.parse(event.data);
@@ -59,7 +61,7 @@ export function useBinanceTickers(monitoredSymbols: MonitoredSymbol[]) {
                 (parseFloat(data.v) * parseFloat(data.c) / 1000000).toFixed(2),
             );
         }
-    };
+    }, [createTicker, setLivePrice]);
 
     // Hook for Spot
     useWebSocket(spotSymbols.length > 0 ? `${SPOT_WS_URL}?streams=${spotStreamName}` : null, {

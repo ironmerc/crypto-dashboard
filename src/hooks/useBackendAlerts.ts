@@ -62,12 +62,13 @@ export function useBackendAlerts() {
                 for (const row of ordered) {
                     if (cancelled) return;
 
-                    const found = monitoredSymbols.find(m => 
+                    const found = monitoredSymbols.find(m =>
                         (typeof m === 'string' ? m : m.symbol) === row.symbol?.trim()
                     );
-                    const symbol = (typeof found === 'string' ? found : found?.symbol) || 
-                        (typeof monitoredSymbols[0] === 'string' ? monitoredSymbols[0] : monitoredSymbols[0]?.symbol) || 
-                        'BTCUSDT';
+                    // Bug fix #9: use raw bot symbol if not in monitored list — don't misattribute to first symbol
+                    const symbol = found
+                        ? (typeof found === 'string' ? found : found.symbol)
+                        : (row.symbol?.trim() || 'UNKNOWN');
 
                     const { title, body } = parseBotHistoryMessage(row.message, row.category, row.tf);
                     const parsedTs = Date.parse(row.timestamp);

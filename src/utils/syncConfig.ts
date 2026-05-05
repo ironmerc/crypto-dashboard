@@ -2,7 +2,7 @@ import { useTerminalStore } from '../store/useTerminalStore';
 import telegramConfigSchema from '../../schemas/telegram-config.schema.json';
 import { logSchemaWarnings, validateBySchemaWarnOnly } from './schemaValidation';
 
-let syncTimeout: any = null;
+let syncTimeout: ReturnType<typeof setTimeout> | null = null;
 
 /**
  * Fetches the current configuration from the Python bot backend and updates the store.

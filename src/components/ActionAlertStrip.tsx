@@ -1,12 +1,13 @@
 import { useEffect, useState, useMemo } from 'react';
-import { useTerminalStore } from '../store/useTerminalStore';
+import { useTerminalStore, type MarketEvent } from '../store/useTerminalStore';
 import { Zap, AlertTriangle, FishSymbol, Flame } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatPrice } from '../utils/formatters';
 
 export function ActionAlertStrip() {
     const events = useTerminalStore(state => state.events);
-    const [activeAlert, setActiveAlert] = useState<any>(null);
+    // Bug fix #6: typed as MarketEvent | null instead of any to catch undefined symbol at compile time
+    const [activeAlert, setActiveAlert] = useState<MarketEvent | null>(null);
 
     // Get the most recent event
     const latestEvent = useMemo(() => {

@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react';
-import axios from 'axios';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { usePageVisibility } from './usePageVisibility';
 import { type MarketType } from '../constants/binance';
@@ -11,6 +10,7 @@ export function useOpenInterest(symbol: string, type: MarketType) {
     const backfillFundingHistory = useTerminalStore(state => state.backfillFundingHistory);
     const setLongShortRatio = useTerminalStore(state => state.setLongShortRatio);
     const globalInterval = useTerminalStore(state => state.globalInterval);
+    // Bug fix #2: include isVisible in the dep array so the closure is fresh on tab restore
     const isVisible = usePageVisibility();
     const hasBackfilled = useRef<Record<string, boolean>>({});
 
@@ -18,55 +18,68 @@ export function useOpenInterest(symbol: string, type: MarketType) {
         if (!symbol || type !== 'futures') return;
 
         const symbolUpper = symbol.toUpperCase();
+        // Bug fix #1: AbortController prevents stale symbol responses writing to wrong symbol
+        const controller = new AbortController();
+        const { signal } = controller;
 
         const fetchMetrics = async () => {
             if (!isVisible) return;
             try {
                 // Fetch Open Interest
-                const response = await axios.get(`https://fapi.binance.com/fapi/v1/openInterest`, {
-                    params: { symbol: symbolUpper }
-                });
-                if (response.data && response.data.openInterest) {
-                    setOpenInterest(symbolUpper, parseFloat(response.data.openInterest));
+                const oiRes = await fetch(
+                    `https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbolUpper}`,
+                    { signal }
+                );
+                if (oiRes.ok) {
+                    const oiData = await oiRes.json();
+                    if (oiData?.openInterest) {
+                        setOpenInterest(symbolUpper, parseFloat(oiData.openInterest));
+                    }
                 }
 
-                // Fetch Funding Rate + next funding time + predicted rate from mark/index premium
-                const frRes = await axios.get(`https://fapi.binance.com/fapi/v1/premiumIndex`, {
-                    params: { symbol: symbolUpper }
-                });
-                if (frRes.data) {
-                    const { lastFundingRate, nextFundingTime, markPrice, indexPrice } = frRes.data;
-                    if (lastFundingRate) {
-                        setFundingRate(symbolUpper, parseFloat(lastFundingRate));
-                    }
-                    // Predicted rate: 8h premium = (markPrice - indexPrice) / indexPrice
-                    // Binance caps funding at ±0.75%
-                    if (markPrice && indexPrice) {
-                        const mark = parseFloat(markPrice);
-                        const index = parseFloat(indexPrice);
-                        if (index > 0) {
-                            const premium = (mark - index) / index;
-                            const predicted = Math.max(-0.0075, Math.min(0.0075, premium));
-                            setPredictedFunding(symbolUpper, predicted, nextFundingTime ? parseInt(nextFundingTime) : 0);
+                // Fetch Funding Rate + next funding time + predicted rate
+                const frRes = await fetch(
+                    `https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbolUpper}`,
+                    { signal }
+                );
+                if (frRes.ok) {
+                    const frData = await frRes.json();
+                    if (frData) {
+                        const { lastFundingRate, nextFundingTime, markPrice, indexPrice } = frData;
+                        if (lastFundingRate) {
+                            setFundingRate(symbolUpper, parseFloat(lastFundingRate));
                         }
-                    } else if (nextFundingTime) {
-                        setPredictedFunding(symbolUpper, 0, parseInt(nextFundingTime));
+                        if (markPrice && indexPrice) {
+                            const mark = parseFloat(markPrice);
+                            const index = parseFloat(indexPrice);
+                            if (index > 0) {
+                                const premium = (mark - index) / index;
+                                const predicted = Math.max(-0.0075, Math.min(0.0075, premium));
+                                setPredictedFunding(symbolUpper, predicted, nextFundingTime ? parseInt(nextFundingTime) : 0);
+                            }
+                        } else if (nextFundingTime) {
+                            setPredictedFunding(symbolUpper, 0, parseInt(nextFundingTime));
+                        }
                     }
                 }
 
-                // Backfill funding history once per symbol on first visible fetch
+                // Backfill funding history once per symbol
                 if (!hasBackfilled.current[symbolUpper]) {
                     hasBackfilled.current[symbolUpper] = true;
                     try {
-                        const histRes = await axios.get(`https://fapi.binance.com/fapi/v1/fundingRate`, {
-                            params: { symbol: symbolUpper, limit: 48 }
-                        });
-                        if (Array.isArray(histRes.data) && histRes.data.length > 0) {
-                            const history = histRes.data.map((r: { fundingTime: number; fundingRate: string }) => ({
-                                timestamp: r.fundingTime,
-                                value: parseFloat(r.fundingRate)
-                            }));
-                            backfillFundingHistory(symbolUpper, history);
+                        const histRes = await fetch(
+                            `https://fapi.binance.com/fapi/v1/fundingRate?symbol=${symbolUpper}&limit=48`,
+                            { signal }
+                        );
+                        if (histRes.ok) {
+                            const histData = await histRes.json();
+                            if (Array.isArray(histData) && histData.length > 0) {
+                                const history = histData.map((r: { fundingTime: number; fundingRate: string }) => ({
+                                    timestamp: r.fundingTime,
+                                    value: parseFloat(r.fundingRate),
+                                }));
+                                backfillFundingHistory(symbolUpper, history);
+                            }
                         }
                     } catch {
                         // backfill is best-effort
@@ -82,13 +95,18 @@ export function useOpenInterest(symbol: string, type: MarketType) {
                 }
 
                 // Fetch L/S Ratio
-                const lsRes = await axios.get(`https://fapi.binance.com/futures/data/globalLongShortAccountRatio`, {
-                    params: { symbol: symbolUpper, period: mappedPeriod }
-                });
-                if (lsRes.data && lsRes.data.length > 0) {
-                    setLongShortRatio(symbolUpper, parseFloat(lsRes.data[0].longShortRatio));
+                const lsRes = await fetch(
+                    `https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${symbolUpper}&period=${mappedPeriod}`,
+                    { signal }
+                );
+                if (lsRes.ok) {
+                    const lsData = await lsRes.json();
+                    if (Array.isArray(lsData) && lsData.length > 0) {
+                        setLongShortRatio(symbolUpper, parseFloat(lsData[0].longShortRatio));
+                    }
                 }
             } catch (error) {
+                if (error instanceof Error && error.name === 'AbortError') return;
                 console.error('Failed to fetch futures metrics:', error);
             }
         };
@@ -99,6 +117,10 @@ export function useOpenInterest(symbol: string, type: MarketType) {
 
         const interval = setInterval(fetchMetrics, 60000);
 
-        return () => clearInterval(interval);
-    }, [symbol, setOpenInterest, setFundingRate, setPredictedFunding, backfillFundingHistory, setLongShortRatio, globalInterval, isVisible]);
+        return () => {
+            controller.abort();
+            clearInterval(interval);
+        };
+    // Bug fix #2: isVisible now in dep array so closure refreshes on tab restore
+    }, [symbol, type, isVisible, setOpenInterest, setFundingRate, setPredictedFunding, backfillFundingHistory, setLongShortRatio, globalInterval]);
 }

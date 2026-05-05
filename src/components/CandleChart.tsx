@@ -256,12 +256,14 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
         macdSeriesRef.current = macdSeries;
         macdSignalSeriesRef.current = macdSignalSeries;
 
-        // Fetch initial klines + indicators from bot server (single request, no Binance client fetch)
+        // Bug fix #4: use a mounted flag so stale indicator writes don't land in the store after unmount
+        let mounted = true;
         const initUrl = buildIndicatorUrl(type, symbol, globalInterval);
         if (!initUrl) return;
         fetch(initUrl)
             .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
             .then((ind: IndicatorResponse) => {
+                if (!mounted) return; // Component unmounted — discard stale response
                 if ('error' in ind || !ind?.klines?.length || !seriesRef.current) return;
 
                 const cdata = buildValidChartCandles(ind.klines);
@@ -350,7 +352,8 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
         };
 
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && isSettingAlert) {
+            // Bug fix #11: use ref to avoid stale closure (isSettingAlert captured at mount never updates)
+            if (e.key === 'Escape' && isSettingAlertRef.current) {
                 setIsSettingAlert(false);
             }
         };
@@ -360,6 +363,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
         fetchPriceAlerts(); // Initial fetch
 
         return () => {
+            mounted = false;
             window.removeEventListener('keydown', handleKeyDown);
             chart.unsubscribeClick(handleChartClick);
             chart.remove();
@@ -466,6 +470,8 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                 .catch((e: unknown) => { if (e instanceof Error && e.name !== 'AbortError') { /* bot server not available */ } });
         };
 
+        // Bug fix #5: run immediately on mount
+        fetchIndicators();
         const indicatorPoll = setInterval(fetchIndicators, 15000);
         return () => { clearInterval(indicatorPoll); controller.abort(); };
     }, [symbol, type, globalInterval]);

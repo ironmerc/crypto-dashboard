@@ -1,11 +1,17 @@
 export function calculateEMA(data: number[], period: number) {
     const k = 2 / (period + 1);
-    const emaData = [];
-    let ema = data[0];
+    const emaData: (number | null)[] = [];
+    let ema = 0;
+    let warmupSum = 0;
+    // Bug fix: was O(n²) — recomputed slice().reduce() on every warmup step; now O(n) incremental sum
     for (let i = 0; i < data.length; i++) {
+        warmupSum += data[i];
         if (i < period - 1) {
+            ema = warmupSum / (i + 1);
             emaData.push(null);
-            ema = data.slice(0, i + 1).reduce((sum, v) => sum + v, 0) / (i + 1);
+        } else if (i === period - 1) {
+            ema = warmupSum / period;
+            emaData.push(ema);
         } else {
             ema = (data[i] - ema) * k + ema;
             emaData.push(ema);
