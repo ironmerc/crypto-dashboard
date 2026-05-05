@@ -9,14 +9,6 @@ BOT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
 if BOT_DIR not in sys.path:
     sys.path.insert(0, BOT_DIR)
 
-if "websockets" not in sys.modules:
-    sys.modules["websockets"] = types.SimpleNamespace(connect=None)
-if "pandas" not in sys.modules:
-    sys.modules["pandas"] = types.SimpleNamespace(DataFrame=None, Series=None)
-if "numpy" not in sys.modules:
-    sys.modules["numpy"] = types.SimpleNamespace(errstate=None, isnan=None, maximum=None)
-if "aiohttp" not in sys.modules:
-    sys.modules["aiohttp"] = types.SimpleNamespace(ClientSession=None)
 
 from market_engine import MarketEngine  # noqa: E402
 

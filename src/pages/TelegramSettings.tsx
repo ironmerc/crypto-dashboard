@@ -94,8 +94,8 @@ export default function TelegramSettings() {
                     const data = await res.json();
                     setHistory(data);
                 }
-            } catch {
-                // Silent catch for history
+            } catch (err: any) {
+                if (err.name !== 'AbortError') {}
             }
         };
 

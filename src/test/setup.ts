@@ -8,6 +8,13 @@ vi.mock('react-use-websocket', () => ({
         lastJsonMessage: null,
         readyState: 1,
     })),
+    ReadyState: {
+        UNINSTANTIATED: -1,
+        CONNECTING: 0,
+        OPEN: 1,
+        CLOSING: 2,
+        CLOSED: 3,
+    },
 }));
 
 // Mock ResizeObserver which is often needed for charts/UI

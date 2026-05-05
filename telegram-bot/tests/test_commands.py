@@ -15,17 +15,7 @@ BOT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
 if BOT_DIR not in sys.path:
     sys.path.insert(0, BOT_DIR)
 
-# Stub heavy optional deps before any import that might pull them in
-for _mod in ("websockets", "pandas", "numpy"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = types.ModuleType(_mod)
-
-# Minimal aiohttp stub so commands/alert.py imports cleanly
-if "aiohttp" not in sys.modules:
-    _aiohttp = types.ModuleType("aiohttp")
-    _aiohttp.ClientSession = MagicMock
-    _aiohttp.ClientError = Exception
-    sys.modules["aiohttp"] = _aiohttp
+# Real modules will be imported
 
 import commands  # noqa: E402
 from commands import (  # noqa: E402

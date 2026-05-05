@@ -15,30 +15,7 @@ if BOT_DIR not in sys.path:
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test-token")
 os.environ.setdefault("TELEGRAM_CHAT_ID", "123456")
 
-for _mod, _stub in [
-    ("websockets", {"connect": None}),
-    ("pandas", {"DataFrame": None, "Series": None}),
-    ("numpy", {"errstate": None, "isnan": None, "maximum": None}),
-    ("yaml", {"safe_load": None}),
-]:
-    if _mod not in sys.modules:
-        sys.modules[_mod] = types.SimpleNamespace(**_stub)
-
-# aiohttp needs richer stubs so `from aiohttp import web, ClientSession, ClientError` works
-if "aiohttp" not in sys.modules:
-    _web = types.SimpleNamespace(
-        Application=None, RouteTableDef=None,
-        json_response=None, Response=None, Request=None,
-        AppRunner=None, TCPSite=None,
-        middleware=lambda f: f,
-    )
-    sys.modules["aiohttp"] = types.SimpleNamespace(
-        web=_web,
-        ClientSession=None,
-        ClientError=Exception,
-        ClientTimeout=None,
-    )
-    sys.modules["aiohttp.web"] = _web
+# Real modules will be imported
 
 from bot import _validate_alert  # noqa: E402
 
