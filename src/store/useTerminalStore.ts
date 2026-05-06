@@ -4,6 +4,7 @@ import {
     type PriceAlertDirection,
     normalizePriceAlertDirection,
 } from './priceAlerts';
+import { BOT_API } from '../constants/api';
 
 export type EventType = 'Whale' | 'Liquidation' | 'Wall' | 'SmartAlert';
 export type Side = 'BUY' | 'SELL' | 'LONG' | 'SHORT' | 'NEUTRAL';
@@ -101,19 +102,18 @@ export interface ConfigSaveResult {
     error?: string;
 }
 
-const DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES = ['1h', '4h', '1d', '1w', '1M'];
 const DEFAULT_TIMEFRAMES_BY_CATEGORY: Record<string, string[]> = {
-    atr_expand: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
-    ema_cross: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
-    level_testing: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
-    oi_spike: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
-    rsi_extreme: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
-    rvol_spike: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
-    macd_cross: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
-    bb_squeeze: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
-    bb_breakout: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
-    stoch_extreme: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
-    oi_divergence: [...DEFAULT_TIMEFRAME_SENSITIVE_TIMEFRAMES],
+    atr_expand: [],
+    ema_cross: [],
+    level_testing: [],
+    oi_spike: [],
+    rsi_extreme: [],
+    rvol_spike: [],
+    macd_cross: [],
+    bb_squeeze: [],
+    bb_breakout: [],
+    stoch_extreme: [],
+    oi_divergence: [],
 };
 
 const DEFAULT_TELEGRAM_THRESHOLDS: TelegramThresholds = {
@@ -201,7 +201,7 @@ const normalizeTelegramConfig = (config: Partial<TelegramConfig>): TelegramConfi
 
 const postTelegramConfig = async (config: TelegramConfig): Promise<{ ok: boolean; config?: TelegramConfig; error?: string }> => {
     try {
-        const resp = await fetch('/api/bot/config', {
+        const resp = await fetch(BOT_API.CONFIG, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(config),
@@ -325,7 +325,7 @@ const syncConfigToBot = async () => {
     try {
         const state = useTerminalStore.getState();
         if (!state.isConfigFetched) return;
-        const resp = await fetch('/api/bot/config', {
+        const resp = await fetch(BOT_API.CONFIG, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(state.telegramConfig)
@@ -560,7 +560,7 @@ export const useTerminalStore = create<TerminalState>()(
             addPriceAlert: async (alert) => {
                 try {
                     const normalizedAlert = normalizePriceAlert(alert);
-                    const resp = await fetch(`/api/bot/alerts/price`, {
+                    const resp = await fetch(BOT_API.PRICE_ALERTS, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ action: 'add', alert: normalizedAlert })
@@ -575,7 +575,7 @@ export const useTerminalStore = create<TerminalState>()(
                 const previousAlerts = get().priceAlerts;
                 set({ priceAlerts: previousAlerts.filter((a: PriceAlert) => a.id !== id) });
                 try {
-                    const resp = await fetch(`/api/bot/alerts/price`, {
+                    const resp = await fetch(BOT_API.PRICE_ALERTS, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ action: 'remove', id })
@@ -591,7 +591,7 @@ export const useTerminalStore = create<TerminalState>()(
             },
             fetchPriceAlerts: async () => {
                 try {
-                    const resp = await fetch(`/api/bot/alerts/price`);
+                    const resp = await fetch(BOT_API.PRICE_ALERTS);
                     if (resp.ok) {
                         const data = await resp.json();
                         set({ priceAlerts: data.map(normalizePriceAlert) });
@@ -733,15 +733,10 @@ export const useTerminalStore = create<TerminalState>()(
             storage: createJSONStorage(() => localStorage),
             partialize: (state) => ({
                 theme: state.theme,
-                telegramConfig: state.telegramConfig,
                 priceAlerts: state.priceAlerts,
             }),
             onRehydrateStorage: () => (state) => {
                 if (state) {
-                    // Bug fix #3: events not persisted so this filter was dead code
-                    if (state.telegramConfig) {
-                        state.telegramConfig = normalizeTelegramConfig(state.telegramConfig);
-                    }
                     state.priceAlerts = (state.priceAlerts || []).map((alert) =>
                         normalizePriceAlert(alert as Partial<PriceAlert> & { side?: string })
                     );

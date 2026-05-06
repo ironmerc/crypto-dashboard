@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { usePageVisibility } from './usePageVisibility';
 import { formatTelegramMessageText } from '../utils/telegramMessageFormatting';
+import { BOT_API } from '../constants/api';
 
 interface BotHistoryEntry {
     timestamp: string;
@@ -51,7 +52,7 @@ export function useBackendAlerts() {
             if (!isVisible) return;
 
             try {
-                const res = await fetch('/api/bot/history');
+                const res = await fetch(BOT_API.HISTORY);
                 if (!res.ok) return;
 
                 const history = await res.json() as BotHistoryEntry[];

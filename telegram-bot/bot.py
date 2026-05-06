@@ -21,7 +21,8 @@ from schema_validation import (
     validate_by_schema_warn_only,
 )
 from market_engine import MarketEngine
-from commands import _BOT_COMMANDS, _STEP_REGISTRIES, get_pending, cleanup_expired_loop
+from commands import _BOT_COMMANDS, _STEP_REGISTRIES, get_pending, set_pending, clear_pending, cleanup_expired_loop
+from constants import BOT_INTERNAL_URL, BOT_PORT, BotRoutes
 from validation import VALID_SYMBOL_RE
 
 # Configure logging
@@ -50,7 +51,8 @@ if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
 alert_queue = asyncio.Queue()
 
 # Cooldown tracker keyed by type+symbol+timeframe to avoid cross-symbol suppression
-cooldown_tracker = {}
+cooldown_tracker: dict = {}
+_cooldown_lock = asyncio.Lock()
 
 # Persistent Bot Configuration
 _CONFIG_DIR = os.path.join(os.path.dirname(__file__) or ".", "data")
@@ -239,7 +241,10 @@ async def process_queue():
                 message = alert.get("message", "Alert from Crypto Terminal")
                 alert_type = str(alert.get("type", "default"))
                 alert["type"] = alert_type  # normalize for downstream policy helpers
-                cooldown_sec = float(alert.get("cooldown", 0) or 0)
+                try:
+                    cooldown_sec = float(alert.get("cooldown", 0) or 0)
+                except (TypeError, ValueError):
+                    cooldown_sec = 0.0
                 severity = alert.get("severity", "info")
                 symbol = alert.get("symbol", "")
                 category = str(alert.get("category", alert_type))
@@ -256,9 +261,11 @@ async def process_queue():
                 # Check cooldown to prevent spam
                 current_time = asyncio.get_event_loop().time()
                 cooldown_key = build_cooldown_key(alert)
-                last_sent = cooldown_tracker.get(cooldown_key, 0)
-                
-                if current_time - last_sent < cooldown_sec:
+                async with _cooldown_lock:
+                    last_sent = cooldown_tracker.get(cooldown_key, 0)
+                    on_cooldown = current_time - last_sent < cooldown_sec
+
+                if on_cooldown:
                     logger.info(f"Alert '{cooldown_key}' is on cooldown. Dropping message.")
                     alert_queue.task_done()
                     continue
@@ -270,15 +277,15 @@ async def process_queue():
                     "category": category,
                     "severity": severity,
                     "message": message,
-                    "tf": tf
+                    "tf": tf or "*",
                 })
 
                 # Send message
                 success = await send_to_telegram(session, message)
-                
+
                 if success:
-                    # Update cooldown tracker on success
-                    cooldown_tracker[cooldown_key] = current_time
+                    async with _cooldown_lock:
+                        cooldown_tracker[cooldown_key] = current_time
 
                 alert_queue.task_done()
             except asyncio.CancelledError:
@@ -314,10 +321,14 @@ async def handle_get_config(request):
     """Returns the current bot configuration."""
     return web.json_response(bot_config)
 
-def deep_update(base_dict, updates):
+def deep_update(base_dict, updates, _depth=0):
+    if _depth > 8:
+        raise ValueError("Config nesting too deep")
+    if not isinstance(updates, dict):
+        raise TypeError(f"Expected dict for config update, got {type(updates).__name__}")
     for key, value in updates.items():
         if isinstance(value, dict) and key in base_dict and isinstance(base_dict[key], dict):
-            deep_update(base_dict[key], value)
+            deep_update(base_dict[key], value, _depth + 1)
         else:
             base_dict[key] = value
     return base_dict
@@ -348,8 +359,8 @@ async def handle_post_config(request):
         logger.info("Bot configuration updated from frontend via deep merge.")
         return web.json_response({"status": "success", "config": bot_config})
     except Exception as e:
-        logger.error(f"Failed to update config: {e}")
-        return web.json_response({"error": str(e)}, status=400)
+        logger.error(f"Failed to update config: {e}", exc_info=True)
+        return web.json_response({"error": "Failed to update configuration"}, status=400)
 
 @web.middleware
 async def cors_middleware(request, handler):
@@ -377,7 +388,6 @@ async def handle_status(request):
     return web.json_response({
         "status": "online",
         "bot_username": bot_username,
-        "target_chat_id": TELEGRAM_CHAT_ID,
         "last_message_timestamp": last_successful_message_timestamp,
         "server_time_utc": get_iso_now()
     }, status=200)
@@ -734,15 +744,15 @@ async def init_app():
     """Initialize the aiohttp web application."""
     global _engine
     app = web.Application(middlewares=[cors_middleware])
-    app.router.add_post('/alert', handle_alert)
-    app.router.add_get('/health', handle_health)
-    app.router.add_get('/status', handle_status)
-    app.router.add_get('/history', handle_history)
-    app.router.add_get('/config', handle_get_config)
-    app.router.add_post('/config', handle_post_config)
-    app.router.add_get('/alerts/price', handle_get_price_alerts)
-    app.router.add_post('/alerts/price', handle_post_price_alert)
-    app.router.add_get('/market/{market_type}/{symbol}/{timeframe}', handle_get_market_data)
+    app.router.add_post(BotRoutes.ALERT,        handle_alert)
+    app.router.add_get(BotRoutes.HEALTH,         handle_health)
+    app.router.add_get(BotRoutes.STATUS,         handle_status)
+    app.router.add_get(BotRoutes.HISTORY,        handle_history)
+    app.router.add_get(BotRoutes.CONFIG,         handle_get_config)
+    app.router.add_post(BotRoutes.CONFIG,        handle_post_config)
+    app.router.add_get(BotRoutes.PRICE_ALERTS,   handle_get_price_alerts)
+    app.router.add_post(BotRoutes.PRICE_ALERTS,  handle_post_price_alert)
+    app.router.add_get(BotRoutes.MARKET,         handle_get_market_data)
 
     # Load persistence
     load_config()
@@ -752,7 +762,7 @@ async def init_app():
     setup_alert_commands(BotContext())
 
     # Start the market engine (server-side indicator computation + alert generation)
-    _engine = MarketEngine(bot_url="http://localhost:8888")
+    _engine = MarketEngine(bot_url=BOT_INTERNAL_URL)
     app['market_engine'] = asyncio.create_task(_engine.run())
 
     # Start the background tasks
@@ -765,4 +775,4 @@ async def init_app():
     return app
 
 if __name__ == '__main__':
-    web.run_app(init_app(), host='0.0.0.0', port=8888)
+    web.run_app(init_app(), host='0.0.0.0', port=BOT_PORT)

@@ -39,7 +39,7 @@ DEFAULT_THRESHOLDS = {
 }
 SUPPORTED_TIMEFRAMES = ("1m", "3m", "5m", "15m", "1h", "4h", "1d", "1w", "1M")
 SUPPORTED_TIMEFRAMES_SET = set(SUPPORTED_TIMEFRAMES)
-DEFAULT_HIGHER_TIMEFRAMES = ["1h", "4h", "1d", "1w", "1M"]
+DEFAULT_HIGHER_TIMEFRAMES: list[str] = []  # empty = allow all timeframes; user configures per-category restrictions via settings
 TIMEFRAME_SENSITIVE_CATEGORIES = (
     "atr_expand",
     "ema_cross",
@@ -175,6 +175,6 @@ def normalize_config_shape(config: dict[str, Any]) -> tuple[dict[str, Any], bool
     if tf_changed:
         normalized["timeframes"] = rebuilt_timeframes
         changed = True
-        notes.append("normalized timeframe configuration and defaulted sensitive categories to >=1h")
+        notes.append("normalized timeframe configuration for sensitive categories")
 
     return normalized, changed, notes

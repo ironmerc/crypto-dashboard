@@ -31,8 +31,8 @@ export default function DashboardSettings() {
     useEffect(() => {
         setLoadingSymbols(true);
         const endpoint = marketType === 'futures' 
-            ? `${BINANCE_ENDPOINTS.FUTURES.REST}/fapi/v1/exchangeInfo`
-            : `${BINANCE_ENDPOINTS.SPOT.REST}/api/v3/exchangeInfo`;
+            ? `${BINANCE_ENDPOINTS.FUTURES.REST}${BINANCE_ENDPOINTS.FUTURES.PATHS.EXCHANGE_INFO}`
+            : `${BINANCE_ENDPOINTS.SPOT.REST}${BINANCE_ENDPOINTS.SPOT.PATHS.EXCHANGE_INFO}`;
 
         fetch(endpoint)
             .then((r) => r.json())

@@ -5,6 +5,7 @@ import useWebSocket from 'react-use-websocket';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { inferPriceAlertDirection } from '../store/priceAlerts';
 import { type MarketType, KLINE_INTERVALS } from '../constants/binance';
+import { BOT_API } from '../constants/api';
 import { getWsUrl } from '../utils/market';
 import { formatPrice } from '../utils/formatters';
 import { ManualPriceAlertControl } from './ManualPriceAlertControl';
@@ -17,7 +18,7 @@ function buildIndicatorUrl(type: MarketType, symbol: string, interval: string): 
     if (!VALID_SYMBOL_RE.test(symbol)) return null;
     if (!ALLOWED_MARKET_TYPES.has(type)) return null;
     if (!ALLOWED_INTERVALS.has(interval)) return null;
-    return `/api/bot/market/${type}/${symbol}/${interval}`;
+    return BOT_API.MARKET(type, symbol, interval);
 }
 
 interface CandleChartProps {
@@ -331,7 +332,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                         ? { k: ind.stoch_k[lastIndex], d: ind.stoch_d[lastIndex] } : undefined,
                 });
             })
-            .then(() => { hasInitialDataRef.current = true; })
+            .then(() => { if (mounted) hasInitialDataRef.current = true; })
             .catch(() => { /* bot server not running, chart remains empty */ });
 
         // 1.5 Click to set Alert
@@ -344,7 +345,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                 const price = seriesRef.current.coordinateToPrice(param.point.y);
                 if (price) {
                     const newAlert = {
-                        id: Math.random().toString(36).substr(2, 9),
+                        id: Math.random().toString(36).slice(2, 11),
                         symbol: symbol,
                         price: price, // Maintain full precision
                         direction: getAlertDirection(price),
@@ -633,7 +634,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
         const p = parseFloat(manualAlertPrice);
         if (!isNaN(p) && p > 0) {
             addPriceAlert({
-                id: Math.random().toString(36).substr(2, 9),
+                id: Math.random().toString(36).slice(2, 11),
                 symbol: symbol,
                 price: p,
                 direction: getAlertDirection(p),

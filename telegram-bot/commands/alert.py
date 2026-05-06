@@ -32,6 +32,7 @@ from commands import (
     set_pending,
 )
 from validation import VALID_SYMBOL_RE as _ALERT_SYMBOL_RE
+from constants import BINANCE_FUTURES_REST, BINANCE_SPOT_REST, BinanceFuturesPaths, BinanceSpotPaths
 
 logger = logging.getLogger(__name__)
 
@@ -120,9 +121,9 @@ def setup(ctx) -> None:
             return False
         try:
             url = (
-                "https://fapi.binance.com/fapi/v1/exchangeInfo"
+                f"{BINANCE_FUTURES_REST}{BinanceFuturesPaths.EXCHANGE_INFO}"
                 if market_type == "futures"
-                else "https://api.binance.com/api/v3/exchangeInfo"
+                else f"{BINANCE_SPOT_REST}{BinanceSpotPaths.EXCHANGE_INFO}"
             )
             async with session.get(url, timeout=10) as resp:
                 if resp.status != 200:
@@ -138,9 +139,9 @@ def setup(ctx) -> None:
         try:
             qs = urlencode({"symbol": symbol})
             url = (
-                f"https://fapi.binance.com/fapi/v1/ticker/price?{qs}"
+                f"{BINANCE_FUTURES_REST}{BinanceFuturesPaths.TICKER_PRICE}?{qs}"
                 if market_type == "futures"
-                else f"https://api.binance.com/api/v3/ticker/price?{qs}"
+                else f"{BINANCE_SPOT_REST}{BinanceSpotPaths.TICKER_PRICE}?{qs}"
             )
             async with session.get(url, timeout=5) as resp:
                 if resp.status == 200:

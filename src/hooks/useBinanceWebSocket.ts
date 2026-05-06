@@ -99,8 +99,8 @@ export function useBinanceTickers(monitoredSymbols: MonitoredSymbol[]) {
 
         const fetchTicker = async (symbol: string, type: 'spot' | 'futures') => {
             const baseUrl = type === 'spot'
-                ? 'https://api.binance.com/api/v3/ticker/24hr'
-                : 'https://fapi.binance.com/fapi/v1/ticker/24hr';
+                ? `${BINANCE_ENDPOINTS.SPOT.REST}${BINANCE_ENDPOINTS.SPOT.PATHS.TICKER_24HR}`
+                : `${BINANCE_ENDPOINTS.FUTURES.REST}${BINANCE_ENDPOINTS.FUTURES.PATHS.TICKER_24HR}`;
 
             try {
                 const response = await fetch(`${baseUrl}?symbol=${symbol}`, { signal: controller.signal });

@@ -22,18 +22,20 @@ except ImportError:
     def threshold_trigger(*args, **kwargs): return False
     def build_alert_metadata(*args, **kwargs): return {}
 
+from constants import (
+    BINANCE_FUTURES_WS, BINANCE_SPOT_WS,
+    BINANCE_FUTURES_REST, BINANCE_SPOT_REST,
+    BinanceFuturesPaths, BinanceSpotPaths,
+    BOT_INTERNAL_URL, BotRoutes,
+)
+
 logger = logging.getLogger(__name__)
 
-# Configurable Constants
 WATCH_SYMBOLS = [{"symbol": "BTCUSDT", "type": "futures"}, {"symbol": "ETHUSDT", "type": "futures"}]
-BINANCE_FUTURES_WS = "wss://fstream.binance.com/ws/"
-BINANCE_SPOT_WS = "wss://stream.binance.com:9443/ws/"
-BINANCE_FUTURES_API = "https://fapi.binance.com"
-BINANCE_SPOT_API = "https://api.binance.com"
 ALL_TIMEFRAMES = ["1m", "3m", "5m", "15m", "1h", "4h", "1d", "1w", "1M"]
 
 class MarketEngine:
-    def __init__(self, bot_url: str = "http://localhost:8888"):
+    def __init__(self, bot_url: str = BOT_INTERNAL_URL):
         self.bot_url = bot_url
         self.config: Dict[str, Any] = {}
         self.monitored_symbols: List[Dict[str, str]] = [] # List of {"symbol": "...", "type": "..."}
@@ -75,7 +77,7 @@ class MarketEngine:
         """Polls the bot for updated configuration."""
         async with ClientSession() as session:
             try:
-                async with session.get(f"{self.bot_url}/config") as resp:
+                async with session.get(f"{self.bot_url}{BotRoutes.CONFIG}") as resp:
                     if resp.status == 200:
                         self.config = await resp.json()
                         raw_symbols = self.config.get("monitoredSymbols", WATCH_SYMBOLS)
@@ -92,9 +94,9 @@ class MarketEngine:
     async def fetch_historical_klines(self, symbol: str, timeframe: str, market_type: str = "futures", limit: int = 100) -> List[List[Any]]:
         """Fetches historical klines from Binance REST API (Spot or Futures)."""
         if market_type == "spot":
-            url = f"{BINANCE_SPOT_API}/api/v3/klines"
+            url = f"{BINANCE_SPOT_REST}{BinanceSpotPaths.KLINES}"
         else:
-            url = f"{BINANCE_FUTURES_API}/fapi/v1/klines"
+            url = f"{BINANCE_FUTURES_REST}{BinanceFuturesPaths.KLINES}"
             
         params = {
             "symbol": symbol,
@@ -133,7 +135,7 @@ class MarketEngine:
             "flow": {},
             "volatility": {},
             "levels": {},
-            "klines": {tf: [] for tf in ALL_TIMEFRAMES},
+            "klines": {tf: deque(maxlen=500) for tf in ALL_TIMEFRAMES},
             "funding_rate": 0.0,
             "rsi_state": {},
             "summary_hash": {},
@@ -192,7 +194,7 @@ class MarketEngine:
         self.config["priceAlerts"] = alerts
         async with ClientSession() as session:
             try:
-                async with session.post(f"{self.bot_url}/config", json={"priceAlerts": alerts}) as resp:
+                async with session.post(f"{self.bot_url}{BotRoutes.CONFIG}", json={"priceAlerts": alerts}) as resp:
                     if resp.status != 200:
                         logger.warning(f"Failed to sync price alerts to bot: {await resp.text()}")
             except Exception as e:
@@ -359,7 +361,7 @@ class MarketEngine:
         
         async with ClientSession() as session:
             try:
-                async with session.post(f"{self.bot_url}/alert", json=payload) as resp:
+                async with session.post(f"{self.bot_url}{BotRoutes.ALERT}", json=payload) as resp:
                     if resp.status != 202:
                         logger.warning(f"Bot rejected alert: {await resp.text()}")
             except Exception as e:
@@ -580,6 +582,7 @@ class MarketEngine:
 
     async def monitor_market(self, market_type: str) -> None:
         """Subscribes to Binance streams for a specific market type (spot or futures)."""
+        _backoff = 5
         while True:
             relevant_symbols = [s["symbol"] for s in self.monitored_symbols if s.get("type", "futures") == market_type]
             
@@ -594,41 +597,40 @@ class MarketEngine:
             streams = []
             for s in relevant_symbols:
                 sym = s.lower()
-                streams.extend([f"{sym}@aggTrade"])
+                streams.append(f"{sym}@aggTrade")
                 if market_type == "futures":
-                    streams.extend([
-                        f"{sym}@forceOrder",
-                        f"{sym}@openInterest@500ms",
-                        f"{sym}@markPrice"
-                    ])
+                    streams.extend([f"{sym}@forceOrder", f"{sym}@markPrice"])
                 for tf in ALL_TIMEFRAMES:
                     streams.append(f"{sym}@kline_{tf}")
-            
+
             ws_base = BINANCE_FUTURES_WS if market_type == "futures" else BINANCE_SPOT_WS
-            ws_url = f"{ws_base}stream?streams={'/'.join(streams)}"
+            ws_url = f"{ws_base}/stream?streams={'/'.join(streams)}"
         
             try:
                 async with websockets.connect(ws_url) as ws:
                     logger.info(f"Connected to Binance {market_type.upper()} Stream: {len(streams)} feeds")
+                    _backoff = 5  # reset on successful connect
                     while True:
                         current_relevant = [s["symbol"] for s in self.monitored_symbols if s.get("type", "futures") == market_type]
                         if current_relevant != relevant_symbols:
                             logger.info(f"{market_type.upper()} Symbols changed. Reconnecting...")
                             break
-                            
+
                         try:
                             msg = await asyncio.wait_for(ws.recv(), timeout=1.0)
                             data = json.loads(msg)
-                            # Handle stream format where result is in 'data'
                             payload = data.get("data", data)
                             await self.handle_message(payload, market_type)
                         except asyncio.TimeoutError:
                             continue
+                        except json.JSONDecodeError:
+                            logger.warning(f"Malformed WS message from {market_type} stream — skipping")
                         except Exception as e:
-                            logger.error(f"Error handling {market_type} message: {e}")
+                            logger.error(f"Error handling {market_type} message: {e}", exc_info=True)
             except Exception as e:
-                logger.error(f"{market_type.upper()} WS Connection lost: {e}. Retrying in 5s...")
-                await asyncio.sleep(5)
+                logger.error(f"{market_type.upper()} WS Connection lost: {e}. Retrying in {_backoff}s...")
+                await asyncio.sleep(_backoff)
+                _backoff = min(_backoff * 2, 60)
 
     def get_thresholds(self, symbol: str) -> Dict[str, Any]:
         """Safely retrieves thresholds for a symbol or global defaults."""
@@ -786,9 +788,8 @@ class MarketEngine:
             if not k['x']: return
             # Bar is closed — commit it and clear open slot
             open_klines.pop(tf, None)
-            klines_tf = symbol_state.setdefault("klines", {}).setdefault(tf, [])
+            klines_tf = symbol_state.setdefault("klines", {}).setdefault(tf, deque(maxlen=500))
             klines_tf.append([k['t'], k['o'], k['h'], k['l'], k['c'], k['v']])
-            if len(klines_tf) > 500: klines_tf.pop(0)
 
             if len(klines_tf) >= 30:
                 ind = self.calculate_indicators(symbol, tf)

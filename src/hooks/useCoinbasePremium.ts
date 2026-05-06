@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { usePageVisibility } from './usePageVisibility';
+import { THIRD_PARTY_API } from '../constants/api';
 
-const COINBASE_BASE = 'https://api.exchange.coinbase.com';
+const COINBASE_BASE = THIRD_PARTY_API.COINBASE_BASE;
 const POLL_MS = 15_000;
 
 // Symbols confirmed to return 404 — skip permanently for the session

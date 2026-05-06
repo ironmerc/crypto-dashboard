@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { usePageVisibility } from './usePageVisibility';
-import { type MarketType } from '../constants/binance';
+import { BINANCE_ENDPOINTS, type MarketType } from '../constants/binance';
+
+const { REST: FREST, PATHS: FP } = BINANCE_ENDPOINTS.FUTURES;
 
 export function useOpenInterest(symbol: string, type: MarketType) {
     const setOpenInterest = useTerminalStore(state => state.setOpenInterest);
@@ -27,19 +29,20 @@ export function useOpenInterest(symbol: string, type: MarketType) {
             try {
                 // Fetch Open Interest
                 const oiRes = await fetch(
-                    `https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbolUpper}`,
+                    `${FREST}${FP.OPEN_INTEREST}?symbol=${symbolUpper}`,
                     { signal }
                 );
                 if (oiRes.ok) {
                     const oiData = await oiRes.json();
-                    if (oiData?.openInterest) {
+                    // Guard: symbol may have changed while fetch was in-flight
+                    if (oiData?.openInterest && oiData.symbol === symbolUpper) {
                         setOpenInterest(symbolUpper, parseFloat(oiData.openInterest));
                     }
                 }
 
                 // Fetch Funding Rate + next funding time + predicted rate
                 const frRes = await fetch(
-                    `https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbolUpper}`,
+                    `${FREST}${FP.PREMIUM_INDEX}?symbol=${symbolUpper}`,
                     { signal }
                 );
                 if (frRes.ok) {
@@ -68,7 +71,7 @@ export function useOpenInterest(symbol: string, type: MarketType) {
                     hasBackfilled.current[symbolUpper] = true;
                     try {
                         const histRes = await fetch(
-                            `https://fapi.binance.com/fapi/v1/fundingRate?symbol=${symbolUpper}&limit=48`,
+                            `${FREST}${FP.FUNDING_RATE}?symbol=${symbolUpper}&limit=48`,
                             { signal }
                         );
                         if (histRes.ok) {
@@ -96,7 +99,7 @@ export function useOpenInterest(symbol: string, type: MarketType) {
 
                 // Fetch L/S Ratio
                 const lsRes = await fetch(
-                    `https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${symbolUpper}&period=${mappedPeriod}`,
+                    `${FREST}${FP.LONG_SHORT_RATIO}?symbol=${symbolUpper}&period=${mappedPeriod}`,
                     { signal }
                 );
                 if (lsRes.ok) {

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { usePageVisibility } from './usePageVisibility';
+import { THIRD_PARTY_API } from '../constants/api';
 
 export interface FearGreedData {
     value: string;
@@ -21,7 +22,7 @@ export function useFearGreedIndex() {
             // Bug fix #10: skip fetch when tab is hidden
             if (!isVisible) return;
             try {
-                const res = await fetch('https://api.alternative.me/fng/', { signal: controller.signal });
+                const res = await fetch(THIRD_PARTY_API.FEAR_GREED, { signal: controller.signal });
                 if (!res.ok) return;
                 const json = await res.json();
                 if (json?.data?.length > 0) {

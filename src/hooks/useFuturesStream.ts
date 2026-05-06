@@ -94,7 +94,7 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
             // Only buffer trades for the active symbol — other watched symbols must not pollute the tape
             if (msg.s.toUpperCase() === activeSymbolRef.current.symbol.toUpperCase()) {
                 tradeBufferRef.current.push({
-                    id: Math.random().toString(36).substr(2, 9),
+                    id: Math.random().toString(36).slice(2, 11),
                     price,
                     amount: qty,
                     side,
@@ -333,37 +333,35 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
     // --- Deep Liquidity REST Poller ---
     useEffect(() => {
         let isFetching = false;
+        let unmounted = false;
         const fetchDeepBook = async () => {
             if (isFetching || !isVisibleRef.current) return;
-            
+
             const currentSymbol = activeSymbol.symbol;
-            if (!currentSymbol || currentSymbol.length < 5) return; // Skip invalid symbols
+            if (!currentSymbol || currentSymbol.length < 5) return;
             isFetching = true;
             try {
-                const apiBase = activeSymbol.type === 'spot' ? 'https://api.binance.com' : 'https://fapi.binance.com';
-                const apiPath = activeSymbol.type === 'spot' ? '/api/v3/depth' : '/fapi/v1/depth';
-                const limit = activeSymbol.type === 'spot' ? 1000 : 1000;
-
-                const res = await fetch(`${apiBase}${apiPath}?symbol=${currentSymbol.toUpperCase()}&limit=${limit}`);
+                const apiBase = activeSymbol.type === 'spot' ? BINANCE_ENDPOINTS.SPOT.REST : BINANCE_ENDPOINTS.FUTURES.REST;
+                const apiPath = activeSymbol.type === 'spot' ? BINANCE_ENDPOINTS.SPOT.PATHS.DEPTH : BINANCE_ENDPOINTS.FUTURES.PATHS.DEPTH;
+                const params = new URLSearchParams({ symbol: currentSymbol.toUpperCase(), limit: '1000' });
+                const res = await fetch(`${apiBase}${apiPath}?${params}`);
                 if (!res.ok) throw new Error('Network response was not ok');
                 const data = await res.json();
 
-                // Double check if symbol is still active
-                if (activeSymbolRef.current.symbol !== currentSymbol) return;
+                if (unmounted || activeSymbolRef.current.symbol !== currentSymbol) return;
 
-                const processLevels = (levels: any[]): OrderBookLevel[] => {
-                    return levels.map((level: any) => {
+                const processLevels = (levels: any[]): OrderBookLevel[] =>
+                    levels.map((level: any) => {
                         const price = parseFloat(level[0]);
                         const amount = parseFloat(level[1]);
                         return { price, amount, value: price * amount };
                     });
-                };
 
                 deepBidsRef.current = processLevels(data.bids);
                 deepAsksRef.current = processLevels(data.asks);
                 updateMergedBook(data.lastUpdateId);
             } catch (error) {
-                console.error("Deep orderbook fetch error:", error);
+                if (!unmounted) console.error("Deep orderbook fetch error:", error);
             } finally {
                 isFetching = false;
             }
@@ -372,7 +370,7 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
         const depthInterval = setInterval(fetchDeepBook, activeSymbol.type === 'spot' ? 30000 : 15000);
         fetchDeepBook();
 
-        return () => clearInterval(depthInterval);
+        return () => { unmounted = true; clearInterval(depthInterval); };
     // Bug fix #1: removed isVisible — inner guard handles it; isVisible in deps causes burst refetch on tab focus
     }, [activeSymbol.symbol, activeSymbol.type]);
 

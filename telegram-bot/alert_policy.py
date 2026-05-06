@@ -57,9 +57,7 @@ def should_accept_alert(
     if tf:
         enabled_tfs = config.get("timeframes", {}).get(category)
         if isinstance(enabled_tfs, list):
-            if not enabled_tfs:
-                return False
-            if tf not in enabled_tfs:
+            if enabled_tfs and tf not in enabled_tfs:
                 return False
         else:
             monitored_tfs = config.get("monitoredTimeframes")

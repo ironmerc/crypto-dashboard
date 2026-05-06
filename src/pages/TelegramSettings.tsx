@@ -5,6 +5,7 @@ import { sendTelegramAlert, getCurrentSession } from '../hooks/useSmartAlerts';
 import { ShieldAlert, ArrowLeft, Activity, Clock, Bell, Sliders, Zap, Globe, Info } from 'lucide-react';
 import { fetchConfigFromBot } from '../utils/syncConfig';
 import { formatTelegramMessageText } from '../utils/telegramMessageFormatting';
+import { BOT_API } from '../constants/api';
 import {
     ALERT_CATEGORY_IDS,
     ALL_SESSIONS,
@@ -75,7 +76,7 @@ export default function TelegramSettings() {
 
         const fetchStatus = async () => {
             try {
-                const res = await fetch('/api/bot/status', { signal: abortController.signal });
+                const res = await fetch(BOT_API.STATUS, { signal: abortController.signal });
                 if (res.ok) {
                     const data = await res.json();
                     setStatus(data);
@@ -89,7 +90,7 @@ export default function TelegramSettings() {
 
         const fetchHistory = async () => {
             try {
-                const res = await fetch('/api/bot/history', { signal: abortController.signal });
+                const res = await fetch(BOT_API.HISTORY, { signal: abortController.signal });
                 if (res.ok) {
                     const data = await res.json();
                     setHistory(data);

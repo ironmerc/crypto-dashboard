@@ -1,6 +1,7 @@
 import { useTerminalStore } from '../store/useTerminalStore';
 import telegramConfigSchema from '../../schemas/telegram-config.schema.json';
 import { logSchemaWarnings, validateBySchemaWarnOnly } from './schemaValidation';
+import { BOT_API } from '../constants/api';
 
 let syncTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -8,7 +9,7 @@ let syncTimeout: ReturnType<typeof setTimeout> | null = null;
  * Fetches the current configuration from the Python bot backend and updates the store.
  */
 export const fetchConfigFromBot = async () => {
-    const botUrl = import.meta.env.VITE_TELEGRAM_BOT_URL || '/api/bot/config';
+    const botUrl = import.meta.env.VITE_TELEGRAM_BOT_URL || BOT_API.CONFIG;
     const requestVersion = useTerminalStore.getState().configSyncVersion;
     try {
         console.log('[Sync] Fetching config from bot...');
@@ -56,7 +57,7 @@ export const syncConfigToBot = async () => {
         const config = useTerminalStore.getState().telegramConfig;
         const warnings = validateBySchemaWarnOnly(config, telegramConfigSchema as any, { partial: false });
         logSchemaWarnings('config:sync', warnings);
-        const botUrl = import.meta.env.VITE_TELEGRAM_BOT_URL || '/api/bot/config';
+        const botUrl = import.meta.env.VITE_TELEGRAM_BOT_URL || BOT_API.CONFIG;
 
         try {
             console.log('[Sync] Propagation triggered...', config);
