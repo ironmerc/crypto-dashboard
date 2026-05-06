@@ -105,6 +105,12 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
     const macdSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const macdSignalSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const currentPriceRef = useRef<number>(0);
+    const hasInitialDataRef = useRef(false);
+    const lastCandleDataRef = useRef<{ time: number; open: number; high: number; low: number } | null>(null);
+    // Monotonic high/low between polls — prevents candle wick from snapping back on each tick
+    const runningHighRef = useRef<number>(0);
+    const runningLowRef = useRef<number>(Infinity);
+    const lastLiveUpdateRef = useRef<number>(0);
 
     // Indicator States for HUD
     const [latestAtr, setLatestAtr] = useState<number | null>(null);
@@ -189,14 +195,6 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                 precision: 6, // High base precision for small coins
                 minMove: 0.000001, // Support penny coin increments
             },
-            autoscaleInfoProvider: () => {
-                const p = currentPriceRef.current;
-                if (!p) return null;
-                return {
-                    priceRange: { minValue: p * 0.95, maxValue: p * 1.05 },
-                    margins: { above: 0, below: 0 },
-                };
-            }
         });
 
         const ema21Series = chart.addSeries(LineSeries, {
@@ -272,6 +270,12 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                 try { seriesRef.current.setData(cdata.map(({ index, ...candle }) => candle) as any); }
                 catch { return; }
 
+                // Seed running refs so the live price effect can start immediately (no 5s wait for first poll)
+                const initLast = cdata[cdata.length - 1];
+                lastCandleDataRef.current = { time: initLast.time, open: initLast.open, high: initLast.high, low: initLast.low };
+                runningHighRef.current = initLast.high;
+                runningLowRef.current = initLast.low;
+
                 // Dynamic precision from last close price
                 const lastIndex = cdata[cdata.length - 1].index;
                 const lastClose = cdata[cdata.length - 1].close;
@@ -327,6 +331,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                         ? { k: ind.stoch_k[lastIndex], d: ind.stoch_d[lastIndex] } : undefined,
                 });
             })
+            .then(() => { hasInitialDataRef.current = true; })
             .catch(() => { /* bot server not running, chart remains empty */ });
 
         // 1.5 Click to set Alert
@@ -381,12 +386,20 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
             bbLowerSeriesRef.current = null;
             macdSeriesRef.current = null;
             macdSignalSeriesRef.current = null;
+            hasInitialDataRef.current = false;
+            lastCandleDataRef.current = null;
+            runningHighRef.current = 0;
+            runningLowRef.current = Infinity;
         };
     }, [symbol, type, globalInterval]);
 
-    // 2. Real-time updates via WebSocket
-    const wsUrl = getWsUrl(symbol, globalInterval, type);
-    const { lastJsonMessage } = useWebSocket(wsUrl);
+    // 2. Real-time kline updates via WebSocket (spot only)
+    // Futures: Binance has removed direct-path stream URL support on all fstream endpoints.
+    // Futures klines are kept live by the 5s indicator poll below (see section 2b).
+    const { lastJsonMessage } = useWebSocket(
+        type === 'spot' ? getWsUrl(symbol, globalInterval, 'spot') : null,
+        { shouldReconnect: () => true, reconnectInterval: 3000 }
+    );
 
     useEffect(() => {
         if (lastJsonMessage && seriesRef.current) {
@@ -401,7 +414,6 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                     close: parseFloat(kline.c),
                     volume: parseFloat(kline.v),
                 };
-
                 if (
                     isFiniteNumber(updateData.time) && updateData.time > 0 &&
                     isFiniteNumber(updateData.open) && isFiniteNumber(updateData.high) &&
@@ -414,6 +426,31 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
             }
         }
     }, [lastJsonMessage]);
+
+    // 2c. Live price → update current candle close in real-time (closes the gap between ticker and chart)
+    // runningHighRef / runningLowRef accumulate monotonically between polls so the wick never
+    // snaps back when an individual trade comes in at a price below the running high.
+    useEffect(() => {
+        if (!currentPrice || !seriesRef.current || !hasInitialDataRef.current || !lastCandleDataRef.current) return;
+        // Throttle: max one chart redraw per 250 ms — aggTrade fires many times/sec and each
+        // redraw shifts the Y-axis if autoscale recalculates, causing visible oscillation
+        const now = Date.now();
+        if (now - lastLiveUpdateRef.current < 250) return;
+        lastLiveUpdateRef.current = now;
+        const { time, open } = lastCandleDataRef.current;
+        runningHighRef.current = Math.max(runningHighRef.current, currentPrice);
+        runningLowRef.current = Math.min(runningLowRef.current, currentPrice);
+        try {
+            seriesRef.current.update({
+                time: time as any,
+                open,
+                high: runningHighRef.current,
+                low: runningLowRef.current,
+                close: currentPrice,
+            } as any);
+            currentPriceRef.current = currentPrice;
+        } catch { /* ignore stale series during reinit */ }
+    }, [currentPrice]);
 
     // 2b. Poll server every 5s for latest indicator values (host-side computation)
     useEffect(() => {
@@ -431,6 +468,43 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
                     const last = lastCandle.index;
                     const time = lastCandle.time as any;
                     currentPriceRef.current = lastCandle.close;
+                    const isNewCandle = lastCandleDataRef.current?.time !== lastCandle.time;
+                    lastCandleDataRef.current = {
+                        time: lastCandle.time,
+                        open: lastCandle.open,
+                        high: lastCandle.high,
+                        low: lastCandle.low,
+                    };
+                    if (isNewCandle) {
+                        // New candle boundary — reset running extremes to fresh poll values
+                        runningHighRef.current = lastCandle.high;
+                        runningLowRef.current = lastCandle.low;
+                    } else {
+                        // Same candle — never shrink accumulated extremes (REST lags live trades)
+                        runningHighRef.current = Math.max(runningHighRef.current, lastCandle.high);
+                        runningLowRef.current = Math.min(runningLowRef.current, lastCandle.low);
+                    }
+
+                    // Recovery: if init fetch failed (e.g. bot was starting up), load full data now
+                    if (!hasInitialDataRef.current && seriesRef.current) {
+                        const times = candles.map(c => c.time);
+                        const toPoints = (arr: (number | null)[]) =>
+                            candles.map((c, i) => ({ time: times[i], value: arr[c.index] }))
+                                .filter((d): d is { time: number; value: number } => isFiniteNumber(d.value) && isFiniteNumber(d.time)) as any;
+                        try {
+                            seriesRef.current.setData(candles.map(({ index, ...c }) => c) as any);
+                            ema21SeriesRef.current?.setData(toPoints(ind.ema21));
+                            ema50SeriesRef.current?.setData(toPoints(ind.ema50));
+                            vwapSeriesRef.current?.setData(toPoints(ind.vwap));
+                            rsiSeriesRef.current?.setData(toPoints(ind.rsi));
+                            bbUpperSeriesRef.current?.setData(toPoints(ind.bb_upper));
+                            bbMiddleSeriesRef.current?.setData(toPoints(ind.bb_middle));
+                            bbLowerSeriesRef.current?.setData(toPoints(ind.bb_lower));
+                            macdSeriesRef.current?.setData(toPoints(ind.macd));
+                            macdSignalSeriesRef.current?.setData(toPoints(ind.macd_signal));
+                            hasInitialDataRef.current = true;
+                        } catch { /* stale refs during reinit */ }
+                    }
 
                     if (typeof ind.ema21[last] === 'number' && ema21SeriesRef.current) ema21SeriesRef.current.update({ time, value: ind.ema21[last]! });
                     if (typeof ind.ema50[last] === 'number' && ema50SeriesRef.current) ema50SeriesRef.current.update({ time, value: ind.ema50[last]! });
@@ -472,7 +546,7 @@ export function CandleChart({ symbol, type }: CandleChartProps) {
 
         // Bug fix #5: run immediately on mount
         fetchIndicators();
-        const indicatorPoll = setInterval(fetchIndicators, 15000);
+        const indicatorPoll = setInterval(fetchIndicators, 5000);
         return () => { clearInterval(indicatorPoll); controller.abort(); };
     }, [symbol, type, globalInterval]);
 

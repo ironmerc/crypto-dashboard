@@ -27,15 +27,12 @@ describe('useFuturesStream', () => {
             [{ symbol: 'BTCUSDT', type: 'futures' }, { symbol: 'ETHUSDT', type: 'futures' }]
         ));
 
-        // Since we have two useWebSocket calls in the hook, sendMessage will be mapped to both.
-        // The futures effect should trigger a SUBSCRIBE call.
-        expect(sendMessage).toHaveBeenCalledWith(expect.stringContaining('openInterest@500ms'));
-        expect(sendMessage).toHaveBeenCalledWith(expect.stringContaining('aggTrade'));
+        // Market socket: forceOrder and markPrice via SUBSCRIBE
         expect(sendMessage).toHaveBeenCalledWith(expect.stringContaining('forceOrder'));
         expect(sendMessage).toHaveBeenCalledWith(expect.stringContaining('markPrice'));
-        
-        // Check for depth subscription for active symbol
-        expect(sendMessage).toHaveBeenCalledWith(expect.stringContaining('depth20@100ms'));
+        // aggTrade is now handled via combined-stream URL (not sendMessage)
+        // Public socket: depth for active symbol via SUBSCRIBE
+        expect(sendMessage).toHaveBeenCalledWith(expect.stringContaining('depth@100ms'));
     });
 
     it('handles openInterestUpdate messages', () => {

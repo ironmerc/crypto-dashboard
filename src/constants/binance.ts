@@ -2,10 +2,17 @@ export const BINANCE_ENDPOINTS = {
     SPOT: {
         REST: 'https://api.binance.com',
         WS: 'wss://stream.binance.com:9443/ws',
+        WS_STREAM: 'wss://stream.binance.com:9443/stream',
     },
     FUTURES: {
         REST: 'https://fapi.binance.com',
         WS: 'wss://fstream.binance.com/ws',
+        WS_STREAM: 'wss://fstream.binance.com/stream',
+        WS_PUBLIC: 'wss://fstream.binance.com/public/ws',
+        WS_MARKET: 'wss://fstream.binance.com/market/ws',
+        WS_PRIVATE: 'wss://fstream.binance.com/private/ws',
+        WS_PUBLIC_STREAM: 'wss://fstream.binance.com/public/stream',
+        WS_MARKET_STREAM: 'wss://fstream.binance.com/market/stream',
     }
 } as const;
 

@@ -39,6 +39,7 @@ export function useSmartAlerts(symbol: string) {
     const lastAlerts = useRef<Record<string, number>>({});
     const prevBBState = useRef<'Squeeze' | 'BreakoutUp' | 'BreakoutDown' | 'Normal'>('Normal');
     const isVisible = usePageVisibility();
+    const globalInterval = useTerminalStore(state => state.globalInterval);
 
     useEffect(() => {
         const interval = setInterval(() => {
@@ -55,8 +56,13 @@ export function useSmartAlerts(symbol: string) {
             const price = state.livePrices[symbol];
             if (!price) return;
 
-            // Bug fix #2: check category BEFORE consuming cooldown
-            const isCategoryEnabled = (category: string) => config.globalEnabled && config.categories?.[category] !== false;
+            // Check category enabled AND that the current interval is in the configured timeframe list
+            const isCategoryEnabled = (category: string) => {
+                if (!config.globalEnabled || config.categories?.[category] === false) return false;
+                const allowedTf = config.timeframes?.[category as keyof typeof config.timeframes];
+                if (allowedTf && allowedTf.length > 0 && !allowedTf.includes(globalInterval)) return false;
+                return true;
+            };
 
             // Bug fix #1: canAlert is now only called after category check — no early `return` that exits the whole tick
             const canAlert = (key: string, cooldownMs: number) => {
@@ -76,12 +82,9 @@ export function useSmartAlerts(symbol: string) {
                 const atrThreshold = thresholds.atrExpansionRatio || 1.3;
 
                 if (ratio > atrThreshold && canAlert(`ATR_EXPANSION_${symbol}`, cdSecs * 1000)) {
-                    state.addEvent({
-                        type: 'SmartAlert', symbol, price, amount: 0, value: ratio,
-                        side: 'NEUTRAL', timestamp: now,
-                        title: 'VOLATILITY EXPANSION',
-                        message: `ATR is ${ratio.toFixed(2)}x its moving average. Breakout likely underway.`,
-                    });
+                    const msg = `ATR is ${ratio.toFixed(2)}x its moving average. Breakout likely underway.`;
+                    state.addEvent({ type: 'SmartAlert', symbol, price, amount: 0, value: ratio, side: 'NEUTRAL', timestamp: now, title: 'VOLATILITY EXPANSION', message: msg });
+                    sendTelegramAlert(`[${symbol}] VOLATILITY EXPANSION`, msg, 'atr_expand', cdSecs, 'atr_expand');
                 }
             }
 
@@ -100,12 +103,10 @@ export function useSmartAlerts(symbol: string) {
 
                     if (Math.abs(oiChangePct) > oiThreshold && canAlert(`OI_SPIKE_${symbol}`, cdSecs * 1000)) {
                         const isUp = oiChangePct > 0;
-                        state.addEvent({
-                            type: 'SmartAlert', symbol, price, amount: 0, value: newest,
-                            side: isUp ? 'LONG' : 'SHORT', timestamp: now,
-                            title: isUp ? 'OI SPIKE DETECTED' : 'OI FLUSH DETECTED',
-                            message: `Open Interest ${isUp ? 'increased' : 'dropped'} by ${Math.abs(oiChangePct).toFixed(2)}% in 5m.`,
-                        });
+                        const title = isUp ? 'OI SPIKE DETECTED' : 'OI FLUSH DETECTED';
+                        const msg = `Open Interest ${isUp ? 'increased' : 'dropped'} by ${Math.abs(oiChangePct).toFixed(2)}% in 5m.`;
+                        state.addEvent({ type: 'SmartAlert', symbol, price, amount: 0, value: newest, side: isUp ? 'LONG' : 'SHORT', timestamp: now, title, message: msg });
+                        sendTelegramAlert(`[${symbol}] ${title}`, msg, 'oi_spike', cdSecs, 'oi_spike');
                     }
                 }
             }
@@ -117,21 +118,15 @@ export function useSmartAlerts(symbol: string) {
                 const freshnessRatio = thresholds.macdFreshnessRatio ?? 0.1;
                 if (macd.macd > macd.signal && macd.histogram > 0 && macd.histogram < Math.abs(macd.macd) * freshnessRatio) {
                     if (canAlert(`MACD_BULL_${symbol}`, cdSecs * 1000)) {
-                        state.addEvent({
-                            type: 'SmartAlert', symbol, price, amount: 0, value: macd.histogram,
-                            side: 'LONG', timestamp: now,
-                            title: 'MACD BULL CROSS',
-                            message: `MACD crossed above signal. Histogram: ${macd.histogram.toFixed(4)}`,
-                        });
+                        const msg = `MACD crossed above signal. Histogram: ${macd.histogram.toFixed(4)}`;
+                        state.addEvent({ type: 'SmartAlert', symbol, price, amount: 0, value: macd.histogram, side: 'LONG', timestamp: now, title: 'MACD BULL CROSS', message: msg });
+                        sendTelegramAlert(`[${symbol}] MACD BULL CROSS`, msg, 'macd_cross', cdSecs, 'macd_cross');
                     }
                 } else if (macd.macd < macd.signal && macd.histogram < 0 && Math.abs(macd.histogram) < Math.abs(macd.macd) * freshnessRatio) {
                     if (canAlert(`MACD_BEAR_${symbol}`, cdSecs * 1000)) {
-                        state.addEvent({
-                            type: 'SmartAlert', symbol, price, amount: 0, value: macd.histogram,
-                            side: 'SHORT', timestamp: now,
-                            title: 'MACD BEAR CROSS',
-                            message: `MACD crossed below signal. Histogram: ${macd.histogram.toFixed(4)}`,
-                        });
+                        const msg = `MACD crossed below signal. Histogram: ${macd.histogram.toFixed(4)}`;
+                        state.addEvent({ type: 'SmartAlert', symbol, price, amount: 0, value: macd.histogram, side: 'SHORT', timestamp: now, title: 'MACD BEAR CROSS', message: msg });
+                        sendTelegramAlert(`[${symbol}] MACD BEAR CROSS`, msg, 'macd_cross', cdSecs, 'macd_cross');
                     }
                 }
             }
@@ -149,26 +144,20 @@ export function useSmartAlerts(symbol: string) {
                 if (nextBBState !== prevBBState.current) {
                     prevBBState.current = nextBBState;
                     if (nextBBState === 'Squeeze' && isCategoryEnabled('bb_squeeze') && canAlert(`BB_SQUEEZE_${symbol}`, (config.cooldowns?.['bb_squeeze'] ?? 600) * 1000)) {
-                        state.addEvent({
-                            type: 'SmartAlert', symbol, price, amount: 0, value: bb.width,
-                            side: 'NEUTRAL', timestamp: now,
-                            title: 'BB SQUEEZE DETECTED',
-                            message: `Bollinger Bands width compressed to ${bb.width.toFixed(2)}%. Breakout imminent.`,
-                        });
+                        const cd = config.cooldowns?.['bb_squeeze'] ?? 600;
+                        const msg = `Bollinger Bands width compressed to ${bb.width.toFixed(2)}%. Breakout imminent.`;
+                        state.addEvent({ type: 'SmartAlert', symbol, price, amount: 0, value: bb.width, side: 'NEUTRAL', timestamp: now, title: 'BB SQUEEZE DETECTED', message: msg });
+                        sendTelegramAlert(`[${symbol}] BB SQUEEZE DETECTED`, msg, 'bb_squeeze', cd, 'bb_squeeze');
                     } else if (nextBBState === 'BreakoutUp' && isCategoryEnabled('bb_breakout') && canAlert(`BB_BREAKOUT_UP_${symbol}`, (config.cooldowns?.['bb_breakout'] ?? 600) * 1000)) {
-                        state.addEvent({
-                            type: 'SmartAlert', symbol, price, amount: 0, value: bb.upper,
-                            side: 'LONG', timestamp: now,
-                            title: 'BB UPPER BREAKOUT',
-                            message: `Price broke above upper Bollinger Band (${bb.upper.toFixed(4)}). Momentum expanding.`,
-                        });
+                        const cd = config.cooldowns?.['bb_breakout'] ?? 600;
+                        const msg = `Price broke above upper Bollinger Band (${bb.upper.toFixed(4)}). Momentum expanding.`;
+                        state.addEvent({ type: 'SmartAlert', symbol, price, amount: 0, value: bb.upper, side: 'LONG', timestamp: now, title: 'BB UPPER BREAKOUT', message: msg });
+                        sendTelegramAlert(`[${symbol}] BB UPPER BREAKOUT`, msg, 'bb_breakout', cd, 'bb_breakout');
                     } else if (nextBBState === 'BreakoutDown' && isCategoryEnabled('bb_breakout') && canAlert(`BB_BREAKOUT_DOWN_${symbol}`, (config.cooldowns?.['bb_breakout'] ?? 600) * 1000)) {
-                        state.addEvent({
-                            type: 'SmartAlert', symbol, price, amount: 0, value: bb.lower,
-                            side: 'SHORT', timestamp: now,
-                            title: 'BB LOWER BREAKOUT',
-                            message: `Price broke below lower Bollinger Band (${bb.lower.toFixed(4)}). Selling pressure expanding.`,
-                        });
+                        const cd = config.cooldowns?.['bb_breakout'] ?? 600;
+                        const msg = `Price broke below lower Bollinger Band (${bb.lower.toFixed(4)}). Selling pressure expanding.`;
+                        state.addEvent({ type: 'SmartAlert', symbol, price, amount: 0, value: bb.lower, side: 'SHORT', timestamp: now, title: 'BB LOWER BREAKOUT', message: msg });
+                        sendTelegramAlert(`[${symbol}] BB LOWER BREAKOUT`, msg, 'bb_breakout', cd, 'bb_breakout');
                     }
                 }
             }
@@ -180,19 +169,13 @@ export function useSmartAlerts(symbol: string) {
                 const stochOverbought = thresholds.stochOverbought ?? 85;
                 const stochOversold = thresholds.stochOversold ?? 15;
                 if (stochRsi.k > stochOverbought && stochRsi.k > stochRsi.d && canAlert(`STOCHRSI_OB_${symbol}`, cdSecs * 1000)) {
-                    state.addEvent({
-                        type: 'SmartAlert', symbol, price, amount: 0, value: stochRsi.k,
-                        side: 'SHORT', timestamp: now,
-                        title: 'STOCHRSI OVERBOUGHT',
-                        message: `StochRSI K=${stochRsi.k.toFixed(1)} above ${stochOverbought} and crossing down. Potential reversal.`,
-                    });
+                    const msg = `StochRSI K=${stochRsi.k.toFixed(1)} above ${stochOverbought} and crossing down. Potential reversal.`;
+                    state.addEvent({ type: 'SmartAlert', symbol, price, amount: 0, value: stochRsi.k, side: 'SHORT', timestamp: now, title: 'STOCHRSI OVERBOUGHT', message: msg });
+                    sendTelegramAlert(`[${symbol}] STOCHRSI OVERBOUGHT`, msg, 'stoch_extreme', cdSecs, 'stoch_extreme');
                 } else if (stochRsi.k < stochOversold && stochRsi.k < stochRsi.d && canAlert(`STOCHRSI_OS_${symbol}`, cdSecs * 1000)) {
-                    state.addEvent({
-                        type: 'SmartAlert', symbol, price, amount: 0, value: stochRsi.k,
-                        side: 'LONG', timestamp: now,
-                        title: 'STOCHRSI OVERSOLD',
-                        message: `StochRSI K=${stochRsi.k.toFixed(1)} below ${stochOversold} and crossing up. Potential bounce.`,
-                    });
+                    const msg = `StochRSI K=${stochRsi.k.toFixed(1)} below ${stochOversold} and crossing up. Potential bounce.`;
+                    state.addEvent({ type: 'SmartAlert', symbol, price, amount: 0, value: stochRsi.k, side: 'LONG', timestamp: now, title: 'STOCHRSI OVERSOLD', message: msg });
+                    sendTelegramAlert(`[${symbol}] STOCHRSI OVERSOLD`, msg, 'stoch_extreme', cdSecs, 'stoch_extreme');
                 }
             }
 
@@ -207,20 +190,13 @@ export function useSmartAlerts(symbol: string) {
                     const cdSecs = config.cooldowns?.['oi_divergence'] ?? 600;
 
                     if (priceTrendUp && !oiTrendUp && canAlert(`OI_DIV_BEAR_${symbol}`, cdSecs * 1000)) {
-                        state.addEvent({
-                            type: 'SmartAlert', symbol, price, amount: 0, value: 0,
-                            side: 'SHORT', timestamp: now,
-                            title: 'OI/PRICE BEARISH DIVERGENCE',
-                            message: `Price rising but OI declining. Rally may lack conviction — potential reversal.`,
-                        });
+                        const msg = `Price rising but OI declining. Rally may lack conviction — potential reversal.`;
+                        state.addEvent({ type: 'SmartAlert', symbol, price, amount: 0, value: 0, side: 'SHORT', timestamp: now, title: 'OI/PRICE BEARISH DIVERGENCE', message: msg });
+                        sendTelegramAlert(`[${symbol}] OI/PRICE BEARISH DIVERGENCE`, msg, 'oi_divergence', cdSecs, 'oi_divergence');
                     } else if (!priceTrendUp && !oiTrendUp && canAlert(`OI_DIV_BULL_${symbol}`, cdSecs * 1000)) {
-                        state.addEvent({
-                            type: 'SmartAlert', symbol, price, amount: 0, value: 0,
-                            side: 'LONG', timestamp: now,
-                            // Bug fix #3: price-down + OI-down is confluence (short covering), not "divergence"
-                            title: 'OI/PRICE CORRELATION: SHORT COVERING',
-                            message: `Price falling with OI decline — possible short covering. Watch for bounce.`,
-                        });
+                        const msg = `Price falling with OI decline — possible short covering. Watch for bounce.`;
+                        state.addEvent({ type: 'SmartAlert', symbol, price, amount: 0, value: 0, side: 'LONG', timestamp: now, title: 'OI/PRICE CORRELATION: SHORT COVERING', message: msg });
+                        sendTelegramAlert(`[${symbol}] SHORT COVERING SIGNAL`, msg, 'oi_divergence', cdSecs, 'oi_divergence');
                     }
                 }
             }

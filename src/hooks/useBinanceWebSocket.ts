@@ -4,9 +4,10 @@ import { usePageVisibility } from './usePageVisibility';
 
 import { useTerminalStore, type MonitoredSymbol } from '../store/useTerminalStore';
 import { formatPrice } from '../utils/formatters';
+import { BINANCE_ENDPOINTS } from '../constants/binance';
 
-const FUTURES_WS_URL = 'wss://fstream.binance.com/stream';
-const SPOT_WS_URL = 'wss://stream.binance.com:9443/stream';
+const FUTURES_WS_URL = BINANCE_ENDPOINTS.FUTURES.WS_MARKET_STREAM;
+const SPOT_WS_URL = BINANCE_ENDPOINTS.SPOT.WS_STREAM;
 
 export interface TickerData {
     symbol: string;
@@ -151,7 +152,7 @@ export interface OrderBookData {
 export function useBinanceOrderBook(symbol: string, type: 'spot' | 'futures', limit: number = 20) {
     const [orderBook, setOrderBook] = useState<OrderBookData>({ bids: [], asks: [] });
     const isVisible = usePageVisibility();
-    const baseUrl = type === 'spot' ? SPOT_WS_URL : FUTURES_WS_URL;
+    const baseUrl = type === 'spot' ? SPOT_WS_URL : BINANCE_ENDPOINTS.FUTURES.WS_PUBLIC_STREAM;
     const streamUrl = symbol.length >= 5 ? `${baseUrl}?streams=${symbol.toLowerCase()}@depth${limit}@100ms` : null;
 
     const { lastJsonMessage } = useWebSocket(streamUrl, {

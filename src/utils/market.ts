@@ -11,9 +11,16 @@ export const getKlineUrl = (symbol: string, interval: string, type: MarketType, 
 };
 
 export const getWsUrl = (symbol: string, interval: string, type: MarketType) => {
-    const { WS } = getMarketUrls(type);
+    const urls = getMarketUrls(type);
     const streamName = `${symbol.toLowerCase()}@kline_${interval}`;
-    return `${WS}/${streamName}`;
+    
+    if (type === 'spot') {
+        return `${urls.WS}/${streamName}`;
+    }
+    
+    // Futures klines use the general /ws/ endpoint — /public/ws/ only accepts SUBSCRIBE messages,
+    // not direct stream URLs, so it rejects connections immediately.
+    return `${(urls as any).WS}/${streamName}`;
 };
 
 export const formatSymbolDisplay = (symbol: string, type: MarketType) => {

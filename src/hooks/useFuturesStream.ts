@@ -2,10 +2,9 @@ import { useEffect, useRef } from 'react';
 import useWebSocket, { ReadyState } from 'react-use-websocket';
 import { useTerminalStore, type MonitoredSymbol, type OrderBookLevel, type Side, type Trade } from '../store/useTerminalStore';
 import { usePageVisibility } from './usePageVisibility';
-import { type MarketType } from '../constants/binance';
+import { BINANCE_ENDPOINTS, type MarketType } from '../constants/binance';
 
-const FUTURES_WS = 'wss://fstream.binance.com/ws';
-const SPOT_WS = 'wss://stream.binance.com:9443/ws';
+const SPOT_WS = BINANCE_ENDPOINTS.SPOT.WS;
 
 export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: MonitoredSymbol[]) {
     const setPrice = useTerminalStore(state => state.setPrice);
@@ -49,29 +48,23 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
         if (!force && now - lastBookSyncRef.current < SYNC_INTERVAL_MS) return;
         lastBookSyncRef.current = now;
 
-        const currentActive = activeSymbolRef.current;
-        // Bug fix #3: sort bids descending, asks ascending so spread and DOM are correct
-        const mergedBids = [
-            ...fastBidsRef.current,
-            ...deepBidsRef.current.filter(l =>
-                currentActive.type === 'spot' ? true : l.price < (fastBidsRef.current[0]?.price || Infinity)
-            )
-        ]
+        const mergedBidsMap = new Map<number, OrderBookLevel>();
+        for (const l of deepBidsRef.current) mergedBidsMap.set(l.price, l);
+        for (const l of fastBidsRef.current) mergedBidsMap.set(l.price, l);
+        
+        const mergedBids = Array.from(mergedBidsMap.values())
             .sort((a, b) => b.price - a.price)
-            .filter((l, i, arr) => i === 0 || l.price !== arr[i - 1].price) // deduplicate
             .slice(0, 100);
 
-        const mergedAsks = [
-            ...fastAsksRef.current,
-            ...deepAsksRef.current.filter(l =>
-                currentActive.type === 'spot' ? true : l.price > (fastAsksRef.current[0]?.price || 0)
-            )
-        ]
+        const mergedAsksMap = new Map<number, OrderBookLevel>();
+        for (const l of deepAsksRef.current) mergedAsksMap.set(l.price, l);
+        for (const l of fastAsksRef.current) mergedAsksMap.set(l.price, l);
+
+        const mergedAsks = Array.from(mergedAsksMap.values())
             .sort((a, b) => a.price - b.price)
-            .filter((l, i, arr) => i === 0 || l.price !== arr[i - 1].price) // deduplicate
             .slice(0, 100);
 
-        setOrderBook(currentActive.symbol, {
+        setOrderBook(activeSymbolRef.current.symbol, {
             bids: mergedBids,
             asks: mergedAsks,
             lastUpdateId: lastUpdateId || 0
@@ -85,6 +78,8 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
         } catch (e) {
             return;
         }
+        // Unwrap combined stream envelope {stream, data} — same pattern as useBinanceWebSocket
+        if (msg && !msg.e && msg.data) msg = msg.data;
         if (!msg || !msg.e) return;
 
         if (msg.e === 'aggTrade') {
@@ -95,15 +90,19 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
 
             setPrice(msg.s, price);
             setLivePrice(msg.s, price, 'trade', msg.T);
-            if (!isVisibleRef.current) return;
 
-            tradeBufferRef.current.push({
-                id: Math.random().toString(36).substr(2, 9),
-                price,
-                amount: qty,
-                side,
-                timestamp: msg.T
-            });
+            // Only buffer trades for the active symbol — other watched symbols must not pollute the tape
+            if (msg.s.toUpperCase() === activeSymbolRef.current.symbol.toUpperCase()) {
+                tradeBufferRef.current.push({
+                    id: Math.random().toString(36).substr(2, 9),
+                    price,
+                    amount: qty,
+                    side,
+                    timestamp: msg.T
+                });
+            }
+
+            if (!isVisibleRef.current) return;
 
             // Whale Detection
             const config = useTerminalStore.getState().telegramConfig;
@@ -153,7 +152,7 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
             const applyDiff = (existing: OrderBookLevel[], updates: any[]): OrderBookLevel[] => {
                 const map = new Map<number, OrderBookLevel>();
                 for (const lvl of existing) map.set(lvl.price, lvl);
-                for (const u of updates) {
+                for (const u of updates || []) {
                     const price = parseFloat(u[0]);
                     const amount = parseFloat(u[1]);
                     if (amount === 0) {
@@ -164,8 +163,12 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
                 }
                 return Array.from(map.values());
             };
-            fastBidsRef.current = applyDiff(fastBidsRef.current, msg.b);
-            fastAsksRef.current = applyDiff(fastAsksRef.current, msg.a);
+            fastBidsRef.current = applyDiff(fastBidsRef.current, msg.b)
+                .sort((a, b) => b.price - a.price)
+                .slice(0, 100);
+            fastAsksRef.current = applyDiff(fastAsksRef.current, msg.a)
+                .sort((a, b) => a.price - b.price)
+                .slice(0, 100);
             if (isVisibleRef.current) updateMergedBook(msg.u);
         }
 
@@ -182,14 +185,33 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
     const spotWatch = watchSymbols.filter(m => m.type === 'spot').map(m => m.symbol.toLowerCase());
     const futuresWatch = watchSymbols.filter(m => m.type === 'futures').map(m => m.symbol.toLowerCase());
 
-    // Separate WS connections
+    // aggTrade via WS_MARKET_STREAM — WS_PUBLIC_STREAM is also rejected; market/stream accepts
+    // both market and public streams (confirmed: @ticker is public yet works on market/stream)
+    const futuresAggTradeUrl = futuresWatch.length > 0
+        ? `${BINANCE_ENDPOINTS.FUTURES.WS_MARKET_STREAM}?streams=${futuresWatch.map(s => `${s}@aggTrade`).join('/')}`
+        : null;
+    useWebSocket(futuresAggTradeUrl, {
+        shouldReconnect: () => true,
+        reconnectInterval: 3000,
+        onMessage: (event: MessageEvent) => handleMessage(event, 'futures'),
+    });
+
+    // Spot aggTrade + depth subscriptions
     const { sendMessage: sendSpot, readyState: spotState } = useWebSocket(SPOT_WS, {
         shouldReconnect: () => true,
         reconnectInterval: 3000,
         onMessage: (event: MessageEvent) => handleMessage(event, 'spot'),
     });
 
-    const { sendMessage: sendFutures, readyState: futuresState } = useWebSocket(FUTURES_WS, {
+    // Futures depth subscriptions (subscription-based on public WS)
+    const { sendMessage: sendFuturesPublic, readyState: futuresPublicState } = useWebSocket(BINANCE_ENDPOINTS.FUTURES.WS_PUBLIC, {
+        shouldReconnect: () => true,
+        reconnectInterval: 3000,
+        onMessage: (event: MessageEvent) => handleMessage(event, 'futures'),
+    });
+
+    // Futures market event subscriptions (forceOrder, markPrice)
+    const { sendMessage: sendFuturesMarket, readyState: futuresMarketState } = useWebSocket(BINANCE_ENDPOINTS.FUTURES.WS_MARKET, {
         shouldReconnect: () => true,
         reconnectInterval: 3000,
         onMessage: (event: MessageEvent) => handleMessage(event, 'futures'),
@@ -232,7 +254,7 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
         if (subscribedSpotDepth.current && subscribedSpotDepth.current !== currentActiveSpotDepth) {
             sendSpot(JSON.stringify({
                 method: 'UNSUBSCRIBE',
-                params: [`${subscribedSpotDepth.current}@depth20@100ms`],
+                params: [`${subscribedSpotDepth.current}@depth@100ms`],
                 id: Date.now() + 2,
             }));
             subscribedSpotDepth.current = null;
@@ -241,7 +263,7 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
         if (currentActiveSpotDepth && subscribedSpotDepth.current !== currentActiveSpotDepth) {
             sendSpot(JSON.stringify({
                 method: 'SUBSCRIBE',
-                params: [`${currentActiveSpotDepth}@depth20@100ms`],
+                params: [`${currentActiveSpotDepth}@depth@100ms`],
                 id: Date.now() + 3,
             }));
             subscribedSpotDepth.current = currentActiveSpotDepth;
@@ -250,55 +272,61 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
         subscribedSpot.current = spotWatch;
     }, [spotWatch.join(','), sendSpot, activeSymbol.symbol, activeSymbol.type, spotState]);
 
+    // Market Subscriptions — forceOrder, markPrice only (openInterest has no WS stream)
     useEffect(() => {
-        if (futuresState !== ReadyState.OPEN) {
+        if (futuresMarketState !== ReadyState.OPEN) {
             subscribedFutures.current = [];
-            subscribedFuturesDepth.current = null;
             return;
         }
 
-        // Handle Futures Subscriptions
         const toUnsubFut = subscribedFutures.current.filter(s => !futuresWatch.includes(s));
         const toSubFut = futuresWatch.filter(s => !subscribedFutures.current.includes(s));
 
         if (toUnsubFut.length > 0) {
-            sendFutures(JSON.stringify({
+            sendFuturesMarket(JSON.stringify({
                 method: 'UNSUBSCRIBE',
-                params: toUnsubFut.flatMap(s => [`${s}@aggTrade`, `${s}@forceOrder`, `${s}@openInterest@500ms`, `${s}@markPrice`]),
+                params: toUnsubFut.flatMap(s => [`${s}@forceOrder`, `${s}@markPrice`]),
                 id: Date.now() + 4,
             }));
         }
         if (toSubFut.length > 0) {
-            sendFutures(JSON.stringify({
+            sendFuturesMarket(JSON.stringify({
                 method: 'SUBSCRIBE',
-                params: toSubFut.flatMap(s => [`${s}@aggTrade`, `${s}@forceOrder`, `${s}@openInterest@500ms`, `${s}@markPrice`]),
+                params: toSubFut.flatMap(s => [`${s}@forceOrder`, `${s}@markPrice`]),
                 id: Date.now() + 5,
             }));
         }
 
-        // Depth for active Futures
+        subscribedFutures.current = futuresWatch;
+    }, [futuresWatch.join(','), sendFuturesMarket, futuresMarketState]);
+
+    // Public Subscriptions (Depth)
+    useEffect(() => {
+        if (futuresPublicState !== ReadyState.OPEN) {
+            subscribedFuturesDepth.current = null;
+            return;
+        }
+
         const currentActiveFuturesDepth = activeSymbol.type === 'futures' ? activeSymbol.symbol.toLowerCase() : null;
 
         if (subscribedFuturesDepth.current && subscribedFuturesDepth.current !== currentActiveFuturesDepth) {
-            sendFutures(JSON.stringify({
+            sendFuturesPublic(JSON.stringify({
                 method: 'UNSUBSCRIBE',
-                params: [`${subscribedFuturesDepth.current}@depth20@100ms`],
+                params: [`${subscribedFuturesDepth.current}@depth@100ms`],
                 id: Date.now() + 6,
             }));
             subscribedFuturesDepth.current = null;
         }
 
         if (currentActiveFuturesDepth && subscribedFuturesDepth.current !== currentActiveFuturesDepth) {
-            sendFutures(JSON.stringify({
+            sendFuturesPublic(JSON.stringify({
                 method: 'SUBSCRIBE',
-                params: [`${currentActiveFuturesDepth}@depth20@100ms`],
+                params: [`${currentActiveFuturesDepth}@depth@100ms`],
                 id: Date.now() + 7,
             }));
             subscribedFuturesDepth.current = currentActiveFuturesDepth;
         }
-
-        subscribedFutures.current = futuresWatch;
-    }, [futuresWatch.join(','), sendFutures, activeSymbol.symbol, activeSymbol.type, futuresState]);
+    }, [activeSymbol.symbol, activeSymbol.type, sendFuturesPublic, futuresPublicState]);
 
     // Removed duplicate updateMergedBook declaration (moved to before handleMessage — bug fix #2)
 
