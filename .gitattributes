@@ -1,0 +1,38 @@
+# Normalize all text files to LF in the repo; convert on checkout per-platform.
+* text=auto eol=lf
+
+# Source files — always LF
+*.ts   text eol=lf
+*.tsx  text eol=lf
+*.js   text eol=lf
+*.jsx  text eol=lf
+*.py   text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.css  text eol=lf
+*.html text eol=lf
+*.sh   text eol=lf
+
+# Config files
+.editorconfig   text eol=lf
+.eslintrc*      text eol=lf
+.prettierrc*    text eol=lf
+Dockerfile*     text eol=lf
+nginx.conf      text eol=lf
+
+# Windows-specific files that must stay CRLF
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# Binary — no line-ending conversion
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.eot  binary

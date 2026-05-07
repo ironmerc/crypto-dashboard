@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import { useTerminalStore } from '../store/useTerminalStore';
 import { usePageVisibility } from './usePageVisibility';
 import { BINANCE_ENDPOINTS, type MarketType } from '../constants/binance';
+import { TIMING } from '../constants/timing';
+import { FUNDING_HISTORY_LIMIT } from '../constants/alerts';
 
 const { REST: FREST, PATHS: FP } = BINANCE_ENDPOINTS.FUTURES;
 
@@ -71,7 +73,7 @@ export function useOpenInterest(symbol: string, type: MarketType) {
                     hasBackfilled.current[symbolUpper] = true;
                     try {
                         const histRes = await fetch(
-                            `${FREST}${FP.FUNDING_RATE}?symbol=${symbolUpper}&limit=48`,
+                            `${FREST}${FP.FUNDING_RATE}?symbol=${symbolUpper}&limit=${FUNDING_HISTORY_LIMIT}`,
                             { signal }
                         );
                         if (histRes.ok) {
@@ -110,7 +112,7 @@ export function useOpenInterest(symbol: string, type: MarketType) {
                 }
             } catch (error) {
                 if (error instanceof Error && error.name === 'AbortError') return;
-                console.error('Failed to fetch futures metrics:', error);
+                // best-effort metrics poll — retries on next interval
             }
         };
 
@@ -118,7 +120,7 @@ export function useOpenInterest(symbol: string, type: MarketType) {
             fetchMetrics();
         }
 
-        const interval = setInterval(fetchMetrics, 60000);
+        const interval = setInterval(fetchMetrics, TIMING.OI_POLL_MS);
 
         return () => {
             controller.abort();

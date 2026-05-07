@@ -73,7 +73,8 @@ class AlertPolicyTests(unittest.TestCase):
         )
         self.assertFalse(allowed)
 
-    def test_empty_category_timeframes_blocks_all_tf_alerts(self):
+    def test_empty_category_timeframes_allows_all_tf(self):
+        """Empty list [] means 'allow all' — previously incorrectly returned False."""
         allowed = alert_policy.should_accept_alert(
             alert={"type": "atr_expand", "symbol": "BTCUSDT", "tf": "5m"},
             config={
@@ -81,7 +82,7 @@ class AlertPolicyTests(unittest.TestCase):
                 "timeframes": {"atr_expand": []},
             },
         )
-        self.assertFalse(allowed)
+        self.assertTrue(allowed)
 
     def test_monitored_timeframes_fallback_blocks_hidden_tf(self):
         allowed = alert_policy.should_accept_alert(

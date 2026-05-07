@@ -3,6 +3,8 @@ import useWebSocket, { ReadyState } from 'react-use-websocket';
 import { useTerminalStore, type MonitoredSymbol, type OrderBookLevel, type Side, type Trade } from '../store/useTerminalStore';
 import { usePageVisibility } from './usePageVisibility';
 import { BINANCE_ENDPOINTS, type MarketType } from '../constants/binance';
+import { TIMING } from '../constants/timing';
+import { ORDER_BOOK_LIMIT, DEPTH_REST_LIMIT } from '../constants/alerts';
 
 const SPOT_WS = BINANCE_ENDPOINTS.SPOT.WS;
 
@@ -23,7 +25,7 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
     const fastAsksRef = useRef<OrderBookLevel[]>([]);
     const tradeBufferRef = useRef<Trade[]>([]);
     const lastBookSyncRef = useRef<number>(0);
-    const SYNC_INTERVAL_MS = 250;
+    const SYNC_INTERVAL_MS = TIMING.ORDER_BOOK_SYNC_MS;
 
     const activeSymbolRef = useRef(activeSymbol);
     const watchSymbolsRef = useRef(watchSymbols);
@@ -54,7 +56,7 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
         
         const mergedBids = Array.from(mergedBidsMap.values())
             .sort((a, b) => b.price - a.price)
-            .slice(0, 100);
+            .slice(0, ORDER_BOOK_LIMIT);
 
         const mergedAsksMap = new Map<number, OrderBookLevel>();
         for (const l of deepAsksRef.current) mergedAsksMap.set(l.price, l);
@@ -62,7 +64,7 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
 
         const mergedAsks = Array.from(mergedAsksMap.values())
             .sort((a, b) => a.price - b.price)
-            .slice(0, 100);
+            .slice(0, ORDER_BOOK_LIMIT);
 
         setOrderBook(activeSymbolRef.current.symbol, {
             bids: mergedBids,
@@ -149,7 +151,7 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
         else if (msg.e === 'depthUpdate' && msg.s.toUpperCase() === activeSymbolRef.current.symbol.toUpperCase()) {
             // Bug fix #8: apply depth update as a diff, not a full snapshot replacement.
             // Zero-quantity levels are removals; non-zero are upserts.
-            const applyDiff = (existing: OrderBookLevel[], updates: any[]): OrderBookLevel[] => {
+            const applyDiff = (existing: OrderBookLevel[], updates: [string, string][]): OrderBookLevel[] => {
                 const map = new Map<number, OrderBookLevel>();
                 for (const lvl of existing) map.set(lvl.price, lvl);
                 for (const u of updates || []) {
@@ -165,10 +167,10 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
             };
             fastBidsRef.current = applyDiff(fastBidsRef.current, msg.b)
                 .sort((a, b) => b.price - a.price)
-                .slice(0, 100);
+                .slice(0, ORDER_BOOK_LIMIT);
             fastAsksRef.current = applyDiff(fastAsksRef.current, msg.a)
                 .sort((a, b) => a.price - b.price)
-                .slice(0, 100);
+                .slice(0, ORDER_BOOK_LIMIT);
             if (isVisibleRef.current) updateMergedBook(msg.u);
         }
 
@@ -192,28 +194,28 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
         : null;
     useWebSocket(futuresAggTradeUrl, {
         shouldReconnect: () => true,
-        reconnectInterval: 3000,
+        reconnectInterval: TIMING.WS_RECONNECT_MS,
         onMessage: (event: MessageEvent) => handleMessage(event, 'futures'),
     });
 
     // Spot aggTrade + depth subscriptions
     const { sendMessage: sendSpot, readyState: spotState } = useWebSocket(SPOT_WS, {
         shouldReconnect: () => true,
-        reconnectInterval: 3000,
+        reconnectInterval: TIMING.WS_RECONNECT_MS,
         onMessage: (event: MessageEvent) => handleMessage(event, 'spot'),
     });
 
     // Futures depth subscriptions (subscription-based on public WS)
     const { sendMessage: sendFuturesPublic, readyState: futuresPublicState } = useWebSocket(BINANCE_ENDPOINTS.FUTURES.WS_PUBLIC, {
         shouldReconnect: () => true,
-        reconnectInterval: 3000,
+        reconnectInterval: TIMING.WS_RECONNECT_MS,
         onMessage: (event: MessageEvent) => handleMessage(event, 'futures'),
     });
 
     // Futures market event subscriptions (forceOrder, markPrice)
     const { sendMessage: sendFuturesMarket, readyState: futuresMarketState } = useWebSocket(BINANCE_ENDPOINTS.FUTURES.WS_MARKET, {
         shouldReconnect: () => true,
-        reconnectInterval: 3000,
+        reconnectInterval: TIMING.WS_RECONNECT_MS,
         onMessage: (event: MessageEvent) => handleMessage(event, 'futures'),
     });
 
@@ -343,7 +345,7 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
             try {
                 const apiBase = activeSymbol.type === 'spot' ? BINANCE_ENDPOINTS.SPOT.REST : BINANCE_ENDPOINTS.FUTURES.REST;
                 const apiPath = activeSymbol.type === 'spot' ? BINANCE_ENDPOINTS.SPOT.PATHS.DEPTH : BINANCE_ENDPOINTS.FUTURES.PATHS.DEPTH;
-                const params = new URLSearchParams({ symbol: currentSymbol.toUpperCase(), limit: '1000' });
+                const params = new URLSearchParams({ symbol: currentSymbol.toUpperCase(), limit: String(DEPTH_REST_LIMIT) });
                 const res = await fetch(`${apiBase}${apiPath}?${params}`);
                 if (!res.ok) throw new Error('Network response was not ok');
                 const data = await res.json();
@@ -361,13 +363,13 @@ export function useFuturesStream(activeSymbol: MonitoredSymbol, watchSymbols: Mo
                 deepAsksRef.current = processLevels(data.asks);
                 updateMergedBook(data.lastUpdateId);
             } catch (error) {
-                if (!unmounted) console.error("Deep orderbook fetch error:", error);
+                // best-effort deep book poll — silently retry on next interval
             } finally {
                 isFetching = false;
             }
         };
 
-        const depthInterval = setInterval(fetchDeepBook, activeSymbol.type === 'spot' ? 30000 : 15000);
+        const depthInterval = setInterval(fetchDeepBook, activeSymbol.type === 'spot' ? TIMING.DEPTH_POLL_SPOT_MS : TIMING.DEPTH_POLL_FUTURES_MS);
         fetchDeepBook();
 
         return () => { unmounted = true; clearInterval(depthInterval); };

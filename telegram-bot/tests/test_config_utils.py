@@ -81,7 +81,8 @@ class ConfigUtilsTests(unittest.TestCase):
         self.assertEqual(normalized["timeframes"]["atr_expand"], ["5m", "1h", "1w"])
         self.assertEqual(normalized["timeframes"]["oi_spike"], ["15m", "4h", "1M"])
 
-    def test_defaults_sensitive_categories_to_high_timeframes(self):
+    def test_defaults_missing_categories_to_empty_allow_all(self):
+        """Missing sensitive categories are added with [] (allow all) — not a restrictive list."""
         original = {
             "timeframes": {
                 "atr_expand": ["1h", "4h"],
@@ -92,13 +93,13 @@ class ConfigUtilsTests(unittest.TestCase):
 
         self.assertTrue(changed)
         self.assertEqual(normalized["timeframes"]["atr_expand"], ["1h", "4h"])
-        self.assertEqual(normalized["timeframes"]["ema_cross"], ["1h", "4h", "1d", "1w", "1M"])
-        self.assertEqual(normalized["timeframes"]["rsi_extreme"], ["1h", "4h", "1d", "1w", "1M"])
-        self.assertEqual(normalized["timeframes"]["macd_cross"], ["1h", "4h", "1d", "1w", "1M"])
-        self.assertEqual(normalized["timeframes"]["bb_squeeze"], ["1h", "4h", "1d", "1w", "1M"])
-        self.assertEqual(normalized["timeframes"]["bb_breakout"], ["1h", "4h", "1d", "1w", "1M"])
-        self.assertEqual(normalized["timeframes"]["stoch_extreme"], ["1h", "4h", "1d", "1w", "1M"])
-        self.assertEqual(normalized["timeframes"]["oi_divergence"], ["1h", "4h", "1d", "1w", "1M"])
+        self.assertEqual(normalized["timeframes"]["ema_cross"], [])
+        self.assertEqual(normalized["timeframes"]["rsi_extreme"], [])
+        self.assertEqual(normalized["timeframes"]["macd_cross"], [])
+        self.assertEqual(normalized["timeframes"]["bb_squeeze"], [])
+        self.assertEqual(normalized["timeframes"]["bb_breakout"], [])
+        self.assertEqual(normalized["timeframes"]["stoch_extreme"], [])
+        self.assertEqual(normalized["timeframes"]["oi_divergence"], [])
 
     def test_sensitive_category_defaults_exclude_dead_alert_categories(self):
         defaults = config_utils.default_timeframes_for_sensitive_categories()
